@@ -1,7 +1,12 @@
 -- Numbers Assassin Universe: every tunable gameplay number lives here.
 -- Decisions approved by the designer are marked "approved"; "placeholder" values are expected to change.
 
+-- Owner, 2026-09-23: every ability effect lasts 1.75x longer (locks, blinds, marks, boosts, stances, clones,
+-- trails, barriers, readings). Wind-ups, cooldowns, ranges and speeds are unchanged. Base values are the sheet's.
+local EFFECT_TIME = 1.75
+
 local Constants = {
+	ABILITY_EFFECT_TIME_SCALE = EFFECT_TIME,
 	-- Match size and flow
 	MAX_PLAYERS = 12,
 	MIN_PLAYERS_TO_START = 2, -- approved
@@ -39,10 +44,120 @@ local Constants = {
 	SPRINT_CAMERA_ROLL_DEGREES = 5, -- camera leans into turns
 	SPRINT_CAMERA_BOB = 0.12, -- studs of vertical bob per stride
 
-	-- Abilities (Phase 3; listed now so balance lives in one place)
+	-- Abilities (approved sheet, docs/ABILITIES.md). Every character: a mild and an ultimate.
 	MILD_COOLDOWN = 8,
 	ULTIMATE_COOLDOWN = 20,
-	ULTIMATE_RESPAWN_REDUCTION = 10,
+	ULTIMATE_RESPAWN_REDUCTION = 10, -- a respawn takes this much off the ultimate's remaining cooldown
+	MAX_INPUT_LOCK = 2 * EFFECT_TIME, -- approved cap (2 s), scaled with the owner's 1.75x: 3.5 s
+	ABILITY_MILD_KEY = Enum.KeyCode.Q,
+	ABILITY_ULTIMATE_KEY = Enum.KeyCode.E,
+	ABILITY_CHARGE_SLOW = 0.45, -- walk-speed multiplier while charging an ultimate (placeholder)
+	DEFAULT_CHARACTER = "Goku",
+
+	-- Goku (approved 2026-09-23)
+	GOKU_TRANSMISSION_DISTANCE = 18, -- Phase Shift lands on a random open spot this far away
+	GOKU_TRANSMISSION_TELL = 0.3,
+	GOKU_WAVE_CHARGE = 1.2,
+	GOKU_WAVE_LENGTH = 60,
+	GOKU_WAVE_RADIUS = 3.5, -- placeholder: how close to the beam's centre line counts as a hit
+	GOKU_WAVE_LOCK = 2 * EFFECT_TIME,
+	GOKU_WAVE_KNOCKBACK = 70, -- studs/second along the beam (placeholder)
+
+	-- Luffy (approved 2026-09-23)
+	LUFFY_GRAPPLE_RANGE = 45,
+	LUFFY_GRAPPLE_TELL = 0.3,
+	LUFFY_GRAPPLE_SPEED = 120, -- studs/second pull
+	LUFFY_GATLING_WINDUP = 1,
+	LUFFY_GATLING_DURATION = 1.5 * EFFECT_TIME,
+	LUFFY_GATLING_PULSES = 5, -- hit checks spread across the flurry (3 at 1.5 s; 5 keeps the same rhythm at 2.6 s)
+	LUFFY_GATLING_RANGE = 15,
+	LUFFY_GATLING_HALF_ANGLE = 50, -- degrees either side of where Luffy aims (placeholder)
+	LUFFY_GATLING_PUSH = 40, -- studs/second per pulse (placeholder)
+
+	-- Krillin
+	KRILLIN_FLARE_TELL = 0.4,
+	KRILLIN_FLARE_RANGE = 25,
+	KRILLIN_FLARE_FACING = 60, -- degrees: opponents looking at Krillin within this cone are blinded
+	KRILLIN_FLARE_BLIND = 1.5 * EFFECT_TIME,
+	KRILLIN_DISC_TELL = 0.8,
+	KRILLIN_DISC_LENGTH = 60,
+	KRILLIN_DISC_SPEED = 30, -- "slow disc": 2 s to travel its full length
+	KRILLIN_DISC_RADIUS = 5, -- how close it must pass to mark someone (placeholder)
+	KRILLIN_DISC_MARK = 5 * EFFECT_TIME,
+	KRILLIN_DISC_READ_RANGE = 200, -- approved exception: marked plates readable this far, line of sight only
+
+	-- Vegeta
+	VEGETA_PRIDE_TELL = 0.3,
+	VEGETA_PRIDE_SPEED = 1.3,
+	VEGETA_PRIDE_SECONDS = 4 * EFFECT_TIME,
+	VEGETA_BLAST_RANGE = 50,
+	VEGETA_BLAST_WARN = 1,
+	VEGETA_BLAST_RADIUS = 10, -- placeholder
+	VEGETA_BLAST_LOCK = 1.5 * EFFECT_TIME,
+	VEGETA_BLAST_LAUNCH = 60, -- upward studs/second (placeholder)
+
+	-- Zoro
+	ZORO_GUARD_TELL = 0.3,
+	ZORO_GUARD_SECONDS = 2 * EFFECT_TIME,
+	ZORO_GUARD_SLOW = 0.5,
+	ZORO_TORNADO_WINDUP = 1,
+	ZORO_TORNADO_LENGTH = 40,
+	ZORO_TORNADO_SPEED = 20,
+	ZORO_TORNADO_RADIUS = 7, -- placeholder
+	ZORO_TORNADO_DRAG = 30, -- studs/second toward and along with the tornado (placeholder)
+
+	-- L
+	L_CAMERA_TELL = 0.3,
+	L_CAMERA_SECONDS = 20 * EFFECT_TIME,
+	L_CAMERA_RANGE = 25,
+	L_DEDUCTION_TELL = 0.8,
+	L_DEDUCTION_SECONDS = 7, -- owner, 2026-09-23: set to 7 s (overrides the 1.75x scaling)
+
+	-- Naruto
+	NARUTO_CLONE_TELL = 0.3,
+	NARUTO_CLONE_SECONDS = 4 * EFFECT_TIME,
+	NARUTO_CLONE_SPEED = 18, -- studs/second the clone runs (placeholder)
+	NARUTO_SPHERE_WINDUP = 0.6,
+	NARUTO_SPHERE_LUNGE = 20,
+	NARUTO_SPHERE_SPEED = 80,
+	NARUTO_SPHERE_RADIUS = 4, -- placeholder
+	NARUTO_SPHERE_LAUNCH = 55, -- forward studs/second; with the upward kick this carries ~25 studs
+	NARUTO_SPHERE_LOCK = 2 * EFFECT_TIME,
+
+	-- Ichigo
+	ICHIGO_FLASH_TELL = 0.3,
+	ICHIGO_FLASH_DISTANCE = 22,
+	ICHIGO_FLASH_SPEED = 160,
+	ICHIGO_FLASH_HIDE = 0.4 * EFFECT_TIME, -- the plate vanishes for this long
+	ICHIGO_WAVE_CHARGE = 1,
+	ICHIGO_WAVE_LENGTH = 40,
+	ICHIGO_WAVE_WIDTH = 14, -- placeholder
+	ICHIGO_TRAIL_SECONDS = 3 * EFFECT_TIME,
+	ICHIGO_TRAIL_SLOW = 0.6, -- 40 % slower
+
+	-- Sasuke
+	SASUKE_DASH_TELL = 0.3,
+	SASUKE_DASH_DISTANCE = 30,
+	SASUKE_DASH_SPEED = 170,
+	SASUKE_EYE_TELL = 0.8,
+	SASUKE_EYE_SECONDS = 6 * EFFECT_TIME,
+	SASUKE_EYE_AIM = 15, -- degrees: the marked opponent is the visible one closest to where you aim
+
+	-- Gojo
+	GOJO_BLINK_TELL = 0.3,
+	GOJO_BLINK_RANGE = 30, -- to where you look (the point at the centre of your screen), capped at this range
+	LOOK_EYE_MAX_OFFSET = 40, -- the client's camera position is trusted only this close to its character
+	GOJO_INFINITY_TELL = 0.8,
+	GOJO_BARRIER_SECONDS = 4 * EFFECT_TIME,
+	GOJO_BARRIER_RADIUS = 10,
+	GOJO_BARRIER_PUSH = 50, -- placeholder
+	GOJO_READ_SECONDS = 10 * EFFECT_TIME, -- approved: reading ends after 3 eliminations or 10 s (now 17.5 s)
+	GOJO_READ_ELIMINATIONS = 3,
+	UNLIMITED_READ_RANGE = 10000, -- "any distance" for reading exceptions (a finite number travels safely over remotes)
+
+	-- Owner request 2026-09-23: in Studio every character is unlocked for testing. Live servers ignore
+	-- this (ownership there comes from the shop and Game Passes).
+	DEV_UNLOCK_ALL_IN_STUDIO = true,
 
 	-- Number plates (owner rule, 2026-09-23): you can only read someone's number when you're within
 	-- reading range (11 studs) AND they are facing you. The server discloses a code only when this holds

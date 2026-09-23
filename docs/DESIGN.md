@@ -11,8 +11,8 @@ Source of truth for approved decisions, contracts and phase status. Code constan
 | 2 — Playable vertical slice (FFA, graybox lobby + arena, per-observer plates, code entry, respawn, HUD) | Built; 32/32 unit tests; solo live playtest passed; **multi-client check passed (owner, 2026-09-23)** |
 | 2.1 — Owner changes (2026-09-23): spawn invisibility, original names, reference-style lobby with portrait bubbles, run FOV | Built and solo-tested; portraits uploaded (asset ids in `CharacterDefs`) and showing in game |
 | 2.2 — Owner changes (2026-09-23): 2-step facing plates, arena rework, aggressive FIGHT button, random hidden spawns, smaller HUD, anime sprint | Built; 37/37 unit tests; solo-tested; plate rule between players passed the owner's 3-player check (2026-09-23) |
-| 3 prep — Ability sheet | Proposed in `docs/ABILITIES.md`, **awaiting approval** |
-| 3 — Team mode, economy, persistence, Robux entitlements, abilities, respawn character select | Not started (needs the ability sheet approved) |
+| 3 prep — Ability sheet | **Approved 2026-09-23** (`docs/ABILITIES.md`; Goku and Gojo changed, Krillin/Sasuke/Gojo reading exceptions) |
+| 3 — Team mode, economy, persistence, Robux entitlements, abilities, respawn character select | **Plan approved 2026-09-23** (all 8 items). Abilities: **all 10 characters built** (placeholder VFX; effect durations x1.75 per owner) + equip (pedestal and respawn screen); 62/62 unit tests; every ability fired solo except Hunter's Eye (needs a target). Next: multi-client check of abilities, then saves, shop, Game Passes, 6v6 |
 | 4 — Polish, 5 more maps (plan only until map 1 plays well), 12-player stress test | Not started |
 
 ## Locked decisions
@@ -30,6 +30,7 @@ Source of truth for approved decisions, contracts and phase status. Code constan
 | Wrong codes | **1st wrong code in a life → screen shake; 2nd wrong code in the same life → the submitter is eliminated** (no credit/yen to anyone; normal 3 s respawn). Counter resets every life (approved) |
 | Stale codes | A code retired in the last 5 s (someone else got the target first) → "already down", no strike. After 5 s it is an ordinary wrong code |
 | Anti-flood | 0.3 s server debounce between submissions; never counts as a strike |
+| Abilities | Approved sheet in `docs/ABILITIES.md`. Q = mild, E = ultimate (two on-screen buttons on touch). Server-authoritative: `Lib/AbilityRules` (cooldowns, respawn rule, hit geometry) + `Systems/AbilityService` + one module per character in `Systems/Abilities`. An input lock is recorded in `MatchCore` and rejects submissions with `locked` (never a strike, capped at 2 s, protected fighters immune). Knockbacks and the grapple pull are applied by the affected player's own client (Roblox simulates characters there) |
 | Code entry | F / CODE button opens the box. **Confirming a full 4-digit code, right or wrong, closes it; the next code needs F / CODE again** (owner rule, 2026-09-23). The result shows as a HUD toast. An incomplete code doesn't count as confirming: the box stays open and asks for all 4 digits |
 | Spawn protection | **For 3 s after every spawn (round start, respawn, mid-round join) the fighter has no plate for anyone and sees no plates** (owner rule, 2026-09-23). Enforced on the server: no codes exist in either direction until it ends, and submissions answer "protected" (no strike). Dying also wipes your own view, so numbers remembered from a previous life never land. Retired codes aren't reissued to the same observer for 30 s |
 | Run FOV | Camera FOV widens 70° → 96° while running on the ground, easing back when you stop; held while airborne (owner request: "drastic") |
@@ -72,6 +73,11 @@ Waiting ──(≥MIN queued)──▶ Intermission ──(15 s)──▶ InRoun
 | MatchFeed | Event | S→all | `{kind="eliminated", victim, attacker?, cause}` / `{kind="spawned", userId}` |
 | UpdateCurrency | Event | S→one player | `{yen}` |
 | PurchaseItem | Function | C→S | reserved for Phase 3 (answers `coming_soon`) |
+| UseAbility | Function | C→S | `(slot: "mild" or "ultimate", aim: Vector3, eye: Vector3)` → `{status, readyAt?}` (aim = camera direction, eye = camera position, trusted only within 40 studs of the character); status ∈ ok, cooldown, casting, protected, not_alive, not_in_match, not_available, no_target, no_room, malformed. The aim is only a direction hint; every range/cone/line-of-sight check is server-side |
+| EquipCharacter | Function | C→S | `(characterId)` → `{status, equipped?}`; status ∈ equipped, not_owned, in_fight, unknown. Allowed in the lobby or while waiting to respawn |
+| AbilityState | Event | S→one player | `{equipped, character?, implemented?, mild = {name, readyAt}?, ultimate = {name, readyAt}?}` |
+| AbilityFX | Event | S→all | `{kind, caster, ...}` visuals only, so every tell is visible to everyone |
+| AbilityEffect | Event | S→one player | `{kind = "knockback", velocity}` / `{kind = "grapple", target, speed}` / `{kind = "clearCode"}` / `{kind = "lock", untilTime}` |
 
 Changes from the Phase 1 proposal: `SubmitCode` takes **only the typed code** (the server resolves the
 target from the observer's own table, so a client can't probe specific players), and the separate
@@ -129,27 +135,29 @@ Solo testing in Studio: set attribute `NAU_DevMinPlayers = 1` on ServerScriptSer
 | 9 | Sasuke | Naruto | Robux |
 | 10 | Satoru Gojo | Jujutsu Kaisen | Robux |
 
-### IP decision (recorded 2026-09-23)
+### IP decision (recorded 2026-09-23, updated the same day)
 
-The owner overrode the original-character plan: the game uses the franchise character names, and the
-lobby bubbles use portraits cut from reference art the owner supplied. No license has been confirmed.
-Recorded risk: franchise holders can issue takedowns against Roblox experiences, and selling Robux
-passes for licensed characters (Sasuke, Gojo) is the highest-risk part. If the experience ever needs
-to go IP-clean, this is the prepared fallback mapping (names only; looks and abilities would also need
-to be distinct):
+The owner first chose the franchise character names; later on 2026-09-23 the owner **renamed the roster in
+game**. Players now see only these names; the franchise is no longer shown on the pedestal card. Internal ids
+(code, ability modules, portrait pipeline) keep the old keys and are never shown to players.
 
-| Slot | In game | Original fallback |
+| Slot | Internal id | In game |
 |---|---|---|
-| 1 | Goku | Kael, the Wandering Cultivator |
-| 2 | Monkey D. Luffy | Rennick Voss, the Coilreach |
-| 3 | Krillin | Doss, the Ringcaster |
-| 4 | Vegeta | Thren Vask, the Iron Commander |
-| 5 | Roronoa Zoro | Kestrel Doriane, the Stance-Shifter |
-| 6 | L | Whisper, the Analyst |
-| 7 | Naruto | Sable Fennshade, the Mirage |
-| 8 | Ichigo | Kaidon Reave, the Riftblade |
-| 9 | Sasuke | Corvin Ashwraith, the Stormmark |
-| 10 | Satoru Gojo | Aureth, the Unseen |
+| 1 | Goku | Gokai |
+| 2 | Luffy | Luffo |
+| 3 | Krillin | Krillo |
+| 4 | Vegeta | Vejaro |
+| 5 | Zoro | Zorin |
+| 6 | L | Eli |
+| 7 | Naruto | Nariko |
+| 8 | Ichigo | Ichiro |
+| 9 | Sasuke | Sazuki (Robux) |
+| 10 | Gojo | Gozen (Robux) |
+
+Remaining recorded risk: the lobby portraits are silhouettes cut from franchise reference art the owner
+supplied (no license confirmed) and the abilities are modelled on the franchises. No franchise attack names remain
+("Instant Transmission" was renamed Phase Shift, 2026-09-23). Selling Robux passes for characters recognisable as licensed ones (Sazuki, Gozen)
+is still the highest-risk part. The earlier original-name fallback list is superseded by the table above.
 
 ### Lobby bubble portraits
 
@@ -176,7 +184,8 @@ original open examination ground.
 
 UI style (owner, 2026-09-23: "cleaner and more aggressive", colours not distracting): charcoal slabs with
 sharp corners, Oswald condensed display type, off-white text, one muted blood-red accent used as thin bars.
-In-match HUD: a YOU · clock · LEAD scoreboard, a draining spawn-protection bar, kill-feed rows with a
+In-match HUD: a YOU · clock · LEAD scoreboard at the very top of the screen (owner, 2026-09-23), an ELIMINATIONS
+leaderboard on the left (every fighter, most to least, you in gold), a draining spawn-protection bar, kill-feed rows with a
 coloured edge, toasts, a big banner with a red slash, and a desaturated "ELIMINATED/MISFIRE" screen while
 you wait to respawn. Every text panel sizes itself to its text so nothing spills out of its box.
 

@@ -23,6 +23,13 @@ local DEFINITIONS: { [string]: string } = {
 	LifeState = "RemoteEvent", -- S->one player { alive, inMatch, respawnAt?, cause?, byName? }
 	MatchFeed = "RemoteEvent", -- S->all { kind = "eliminated" | "spawned", ... }
 
+	-- Abilities (approved sheet, docs/ABILITIES.md)
+	UseAbility = "RemoteFunction", -- C->S (slot: "mild" | "ultimate", aim: Vector3, eye: Vector3) -> { status }
+	EquipCharacter = "RemoteFunction", -- C->S (characterId) -> { status, equipped? }
+	AbilityState = "RemoteEvent", -- S->one { equipped, character?, mild = { name, readyAt }?, ultimate = {...}? }
+	AbilityFX = "RemoteEvent", -- S->all { kind, caster, ... } visuals only; every client draws the tell
+	AbilityEffect = "RemoteEvent", -- S->one { kind = "knockback" | "grapple" | "clearCode" | "lock", ... }
+
 	-- Economy (names kept from the original scaffold)
 	UpdateCurrency = "RemoteEvent", -- S->one player { yen }
 	PurchaseItem = "RemoteFunction", -- C->S (characterId) -> { status } (Phase 3; answers "coming_soon" for now)

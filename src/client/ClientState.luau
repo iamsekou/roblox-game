@@ -9,9 +9,10 @@ local ClientState = {}
 
 ClientState.round = nil :: any -- latest RoundState broadcast
 ClientState.life = { alive = true, inMatch = false } :: any -- latest LifeState for this player
+ClientState.ability = { equipped = "Goku" } :: any -- latest AbilityState: equipped character, slots, cooldowns
 
 local changed = Instance.new("BindableEvent")
-ClientState.Changed = changed.Event -- fires with "round" or "life"
+ClientState.Changed = changed.Event -- fires with "round", "life" or "ability"
 
 local localPlayer = Players.LocalPlayer
 
@@ -59,6 +60,13 @@ function ClientState.Start()
 		end
 		ClientState.life = life
 		changed:Fire("life")
+	end)
+	Remotes.AbilityState.OnClientEvent:Connect(function(state)
+		if type(state) ~= "table" then
+			return
+		end
+		ClientState.ability = state
+		changed:Fire("ability")
 	end)
 	task.spawn(function()
 		local ok, snapshot = pcall(function()

@@ -14,6 +14,7 @@ export type Participant = {
 	team: string?,
 	alive: boolean,
 	protectedUntil: number?, -- set while spawn-protected
+	inputLockedUntil: number, -- an ability's "can't type codes" lock (approved: at most maxInputLock)
 	lifeId: number,
 	strikes: number,
 	score: number,
@@ -29,12 +30,13 @@ export type Winner = {
 
 export type SubmitResult = {
 	status: string,
-	-- "eliminated" | "wrong" | "self_eliminated" | "stale" | "teammate" | "protected"
+	-- "eliminated" | "wrong" | "self_eliminated" | "stale" | "teammate" | "protected" | "locked" | "clone"
 	-- | "malformed" | "rate_limited" | "not_alive" | "not_in_match" | "round_over"
 	targetId: number?,
 	strikes: number?,
 	strikesLeft: number?,
 	winner: Winner?,
+	decoyOwner: number?, -- set with "clone": whose Shadow Clone was popped
 }
 
 export type Config = {
@@ -45,6 +47,7 @@ export type Config = {
 	staleWindow: number,
 	reuseCooldown: number?,
 	protectionSeconds: number?,
+	maxInputLock: number?,
 	codeLength: number,
 	generator: ((observer: number, target: number) -> string)?,
 	onCodeChange: ((observer: number, target: number, code: string?) -> ())?,
@@ -59,6 +62,8 @@ function MatchCore.new(config: Config)
 		config = config,
 		participants = {} :: { [number]: Participant },
 		teamScores = {} :: { [string]: number },
+		decoys = {} :: { [number]: { owner: number } }, -- Naruto's clones: ids below DECOY_ID_BASE, codes like any target
+		nextDecoy = 0,
 		ended = false,
 		winner = nil :: Winner?,
 		suddenDeath = false,
@@ -104,6 +109,7 @@ function MatchCore:addParticipant(id: number, team: string?, _now: number): bool
 		team = team,
 		alive = false,
 		protectedUntil = nil,
+		inputLockedUntil = -math.huge,
 		lifeId = 0,
 		strikes = 0,
 		score = 0,
@@ -120,6 +126,7 @@ function MatchCore:removeParticipant(id: number, now: number)
 	if not self.participants[id] then
 		return
 	end
+	self:_removeDecoysOf(id, now)
 	self.codes:retireTarget(id, now)
 	self.codes:removeObserver(id)
 	self.participants[id] = nil
@@ -137,6 +144,7 @@ function MatchCore:spawn(id: number, now: number): number?
 	p.strikes = 0
 	p.lifeId += 1
 	p.lastSubmitAt = -math.huge
+	p.inputLockedUntil = -math.huge
 	p.protectedUntil = now + protection
 	if protection <= 0 then
 		self:releaseProtection(id, now)
@@ -158,6 +166,11 @@ function MatchCore:releaseProtection(id: number, now: number): boolean
 			self.codes:issue(id, otherId, now) -- I can see them
 		end
 	end
+	for decoyId, decoy in self.decoys do
+		if decoy.owner ~= id then
+			self.codes:issue(id, decoyId, now) -- and everyone else's clones
+		end
+	end
 	return true
 end
 
@@ -166,8 +179,45 @@ function MatchCore:_endLife(id: number, now: number)
 	local p = self.participants[id]
 	p.alive = false
 	p.protectedUntil = nil
+	self:_removeDecoysOf(id, now)
 	self.codes:retireTarget(id, now)
 	self.codes:retireView(id, now)
+end
+
+-- Decoys (Naruto's Shadow Clone, approved): a clone is a target with its own code for every active
+-- observer except its owner. Typing a clone's code pops it: no strike, no kill, no credit.
+-- Returns the decoy's id, or nil if the owner isn't active. Decoy ids live far below any user id:
+-- live user ids are positive, but Studio's local test players are -1, -2, ... so small negatives are taken.
+local DECOY_ID_BASE = -1000000000
+
+function MatchCore:addDecoy(ownerId: number, now: number): number?
+	if self.ended or not self:isActive(ownerId) then
+		return nil
+	end
+	self.nextDecoy += 1
+	local decoyId = DECOY_ID_BASE - self.nextDecoy
+	self.decoys[decoyId] = { owner = ownerId }
+	for id in self.participants do
+		if id ~= ownerId and self:isActive(id) then
+			self.codes:issue(id, decoyId, now)
+		end
+	end
+	return decoyId
+end
+
+function MatchCore:removeDecoy(decoyId: number, now: number)
+	if self.decoys[decoyId] then
+		self.decoys[decoyId] = nil
+		self.codes:retireTarget(decoyId, now)
+	end
+end
+
+function MatchCore:_removeDecoysOf(ownerId: number, now: number)
+	for decoyId, decoy in self.decoys do
+		if decoy.owner == ownerId then
+			self:removeDecoy(decoyId, now)
+		end
+	end
 end
 
 -- Deaths that aren't eliminations (fell into the void, reset): no credit to anyone.
@@ -257,6 +307,19 @@ function MatchCore:endAsDraw(reason: string): Winner
 	return self:_finish({ kind = "draw", reason = reason })
 end
 
+-- An ability's input lock: the fighter can't submit codes for seconds (capped at maxInputLock).
+-- Only active fighters can be locked: spawn-protected ones are immune (approved ground rule 5).
+-- Locks never shorten an existing one. Returns true if the fighter is now locked.
+function MatchCore:lockInput(id: number, now: number, seconds: number): boolean
+	if self.ended or not self:isActive(id) or seconds <= 0 then
+		return false
+	end
+	local p = self.participants[id]
+	local until_ = now + math.min(seconds, self.config.maxInputLock or seconds)
+	p.inputLockedUntil = math.max(p.inputLockedUntil, until_)
+	return true
+end
+
 -- The heart of the game. `rawCode` comes straight from a client and is treated as hostile.
 function MatchCore:submit(observerId: number, rawCode: any, now: number): SubmitResult
 	if self.ended then
@@ -272,6 +335,9 @@ function MatchCore:submit(observerId: number, rawCode: any, now: number): Submit
 	if p.protectedUntil ~= nil then
 		return { status = "protected" } -- can't strike while hidden; never a strike
 	end
+	if now < p.inputLockedUntil then
+		return { status = "locked" } -- an ability jammed their input; never a strike
+	end
 	if
 		typeof(rawCode) ~= "string"
 		or #rawCode ~= self.config.codeLength
@@ -285,6 +351,14 @@ function MatchCore:submit(observerId: number, rawCode: any, now: number): Submit
 	p.lastSubmitAt = now
 
 	local kind, targetId = self.codes:lookup(observerId, rawCode, now)
+	local decoy = kind == "live" and targetId and self.decoys[targetId]
+	if decoy then
+		if self:isTeammate(observerId, decoy.owner) then
+			return { status = "teammate", targetId = targetId }
+		end
+		self:removeDecoy(targetId :: number, now)
+		return { status = "clone", targetId = targetId, decoyOwner = decoy.owner } -- popped; never a strike
+	end
 	if kind == "live" and targetId and targetId ~= observerId then
 		local target = self.participants[targetId]
 		if target and target.alive then

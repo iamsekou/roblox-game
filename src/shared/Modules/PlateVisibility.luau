@@ -19,6 +19,19 @@ function PlateVisibility.canRead(targetCFrame: CFrame, observerPosition: Vector3
 	return flatLook.Unit:Dot(flatOffset.Unit) >= math.cos(math.rad(coneDegrees))
 end
 
+-- Approved reading exceptions (Krillin's Tracking Disc, Sasuke's Hunter's Eye, Gojo's Infinity): a grant
+-- lets one observer read plates beyond the normal rule, from any angle, up to `range`, until `untilTime`.
+-- `targets` limits it to some fighters; nil means every opponent. Line of sight is still required and is
+-- checked by the caller (grants never show numbers through walls).
+export type Grant = { targets: { [number]: boolean }?, range: number, untilTime: number }
+
+function PlateVisibility.grantAllows(grant: Grant, targetId: number, distance: number, now: number): boolean
+	if now >= grant.untilTime or distance > grant.range then
+		return false
+	end
+	return grant.targets == nil or grant.targets[targetId] == true
+end
+
 export type PlateMode = "hidden" | "masked" | "revealed"
 export type PlateRules = {
 	drawDistance: number, -- a blank plate is drawn this close

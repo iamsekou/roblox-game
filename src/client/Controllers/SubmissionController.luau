@@ -55,6 +55,7 @@ local strikesLeft = STRIKE_LIMIT
 local feedbackToken = 0
 local lastLifeAlive: boolean? = nil
 local isTouch = false
+local lockedUntil = -math.huge -- an ability jammed this player's code entry until this server time
 
 local function render()
 	for i = 1, CODE_LENGTH do
@@ -96,6 +97,11 @@ end
 
 local function open()
 	if not ClientState.canSubmit() then
+		return
+	end
+	local jammed = lockedUntil - workspace:GetServerTimeNow()
+	if jammed > 0 then
+		HUDController.toast(string.format("JAMMED: you can't type codes for %.1fs", jammed), "bad")
 		return
 	end
 	isOpen = true
@@ -149,6 +155,10 @@ local function onResult(result: any)
 		HUDController.toast("That's a teammate", "info")
 	elseif status == "protected" then
 		HUDController.toast("Still spawn-protected: you can strike in a moment", "info")
+	elseif status == "clone" then
+		HUDController.toast("It was a clone!", "info") -- Naruto's Shadow Clone popped: no strike, no kill
+	elseif status == "locked" then
+		HUDController.toast("JAMMED: you can't type codes yet", "bad")
 	elseif status == "rate_limited" then
 		HUDController.toast("Too fast, try again", "info")
 	elseif status == "malformed" then
@@ -411,6 +421,27 @@ local function refreshAvailability()
 		close()
 	end
 	render()
+end
+
+-- Luffy's Gatling Barrage: wipes a half-typed code (the box stays open).
+function SubmissionController.clearTyped()
+	if #digits > 0 then
+		table.clear(digits)
+		render()
+		UIMotion.shake(refs.slotsInner)
+	end
+end
+
+-- An input-lock ability landed (the server already rejects codes until then): close the box and say why.
+function SubmissionController.lockUntil(untilTime: number)
+	lockedUntil = math.max(lockedUntil, untilTime)
+	if isOpen then
+		close()
+	end
+	local left = lockedUntil - workspace:GetServerTimeNow()
+	if left > 0 then
+		HUDController.toast(string.format("JAMMED: you can't type codes for %.1fs", left), "bad")
+	end
 end
 
 function SubmissionController.Start()

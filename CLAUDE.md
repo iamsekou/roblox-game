@@ -81,9 +81,13 @@ you eliminate someone by typing the number *you* see on them. Studio place: "InD
 - Studio's input automation refuses the number-row keys (reserved for the default hotbar). Use keypad keys
   when automating tests. This says nothing about real players.
 - `HttpService` is disabled in this experience, so the Studio tools can't fetch local files.
+- **Test → Clients and Servers gives players negative UserIds (-1, -2, ...).** Never treat an id's sign as meaning
+  anything (a plate bug from exactly this hid every plate in multi-client tests, 2026-09-23). Solo Play uses the real,
+  positive id, so solo tests can't catch it.
 
 ## IP
 
-The owner chose to use franchise character names and portraits made from supplied reference art, with the
-risk recorded in `docs/DESIGN.md` ("IP decision"). Don't add new franchise names, art or named attacks without
-the owner's direction. Keep `art/` out of git.
+Players see the owner's renamed roster (Gokai, Luffo, Krillo, Vejaro, Zorin, Eli, Nariko, Ichiro, Sazuki, Gozen);
+internal ids keep the old keys and must never be shown. Portraits are silhouettes from supplied reference art; the risk
+is recorded in `docs/DESIGN.md` ("IP decision"). Don't add franchise names, art or named attacks without the owner's
+direction. Keep `art/` out of git.

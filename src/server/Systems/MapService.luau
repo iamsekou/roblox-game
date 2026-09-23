@@ -89,6 +89,10 @@ local function characterList(): { Instance }
 			table.insert(list, player.Character)
 		end
 	end
+	local decoys = worldFolder and worldFolder:FindFirstChild("Decoys") -- Naruto's clones never block a spawn
+	if decoys then
+		table.insert(list, decoys)
+	end
 	return list
 end
 
@@ -172,6 +176,80 @@ function MapService.findSpawnIn(map: Model, avoid: { Vector3 }): CFrame
 		lookAt = marker + Vector3.new(0, 0, -1)
 	end
 	return CFrame.lookAt(marker, lookAt)
+end
+
+local function insideSpawnArea(map: Model, point: Vector3): boolean
+	local folder = map:FindFirstChild("SpawnArea")
+	for _, box in if folder then folder:GetChildren() else {} do
+		if box:IsA("BasePart") then
+			local lp = box.CFrame:PointToObjectSpace(point)
+			if math.abs(lp.X) <= box.Size.X / 2 and math.abs(lp.Z) <= box.Size.Z / 2 then
+				return true
+			end
+		end
+	end
+	return false
+end
+
+-- A random open spot about `distance` studs from `center` inside the loaded arena (Gokai's Phase
+-- Shift): same open-ground rules as spawning (walkable, room for an avatar, never inside cover,
+-- never outside the map's SpawnArea). Tries directions in a random order; nil if nowhere fits.
+function MapService.findSpotNear(center: Vector3, distance: number, ignore: { Instance }): CFrame?
+	if not arena then
+		return nil
+	end
+	local rayParams = RaycastParams.new()
+	rayParams.FilterDescendantsInstances = ignore
+	rayParams.FilterType = Enum.RaycastFilterType.Exclude
+	local overlapParams = OverlapParams.new()
+	local overlapIgnore = table.clone(ignore)
+	table.insert(overlapIgnore, workspace.Terrain)
+	overlapParams.FilterDescendantsInstances = overlapIgnore
+	overlapParams.FilterType = Enum.RaycastFilterType.Exclude
+	overlapParams.RespectCanCollide = true
+
+	local start = math.random() * math.pi * 2
+	local tries = 16
+	for i = 0, tries - 1 do
+		local angle = start + i * (math.pi * 2 / tries)
+		local r = distance + (math.random() - 0.5) * 2 -- a little spread so it doesn't feel like a fixed ring
+		local probe = center + Vector3.new(math.cos(angle) * r, 0, math.sin(angle) * r)
+		if insideSpawnArea(arena, probe) then
+			local hit = workspace:Raycast(probe + Vector3.new(0, 25, 0), Vector3.new(0, -60, 0), rayParams)
+			local walkable = hit and (hit.Instance:IsA("Terrain") or hit.Instance:GetAttribute("Walkable") == true)
+			if hit and walkable and hit.Normal.Y > 0.7 and math.abs(hit.Position.Y - center.Y) < 12 then
+				local feet = hit.Position
+				local blocked = workspace:GetPartBoundsInBox(CFrame.new(feet + Vector3.new(0, 3.2, 0)), Vector3.new(4, 5.6, 4), overlapParams)
+				if #blocked == 0 then
+					local heading = Vector3.new(feet.X - center.X, 0, feet.Z - center.Z)
+					local marker = feet + Vector3.new(0, 3, 0)
+					return CFrame.lookAt(marker, marker + (if heading.Magnitude > 0.1 then heading.Unit else Vector3.zAxis))
+				end
+			end
+		end
+	end
+	return nil
+end
+
+-- Can an avatar stand with its feet at `feet` (Gojo's Blink)? Inside the arena's SpawnArea and with
+-- room for an avatar (no cover in the way). Returns a CFrame facing `heading`, or nil.
+function MapService.openSpotAt(feet: Vector3, ignore: { Instance }, heading: Vector3): CFrame?
+	if not arena or not insideSpawnArea(arena, feet) then
+		return nil
+	end
+	local overlapParams = OverlapParams.new()
+	local overlapIgnore = table.clone(ignore)
+	table.insert(overlapIgnore, workspace.Terrain)
+	overlapParams.FilterDescendantsInstances = overlapIgnore
+	overlapParams.FilterType = Enum.RaycastFilterType.Exclude
+	overlapParams.RespectCanCollide = true
+	local blocked = workspace:GetPartBoundsInBox(CFrame.new(feet + Vector3.new(0, 3.2, 0)), Vector3.new(3, 5.2, 3), overlapParams)
+	if #blocked > 0 then
+		return nil
+	end
+	local marker = feet + Vector3.new(0, 3, 0)
+	local flat = Vector3.new(heading.X, 0, heading.Z)
+	return CFrame.lookAt(marker, marker + (if flat.Magnitude > 0.1 then flat.Unit else Vector3.zAxis))
 end
 
 function MapService.getLobbySpawn(): CFrame

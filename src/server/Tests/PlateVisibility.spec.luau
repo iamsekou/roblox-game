@@ -83,4 +83,13 @@ test("[PLATE] a revealed number holds just past the edge, then masks", function(
 	T.eq(mode(observerAt(RANGE + Constants.PLATE_HIDE_SLACK_DISTANCE + 0.5, 0), true, true), "masked")
 end)
 
+test("[PLATE] reading exceptions: targets, range and expiry", function()
+	local marked = { targets = { [7] = true }, range = 200, untilTime = 10 }
+	T.eq(PlateVisibility.grantAllows(marked, 7, 150, 5), true, "Krillin's mark at 150 studs")
+	T.eq(PlateVisibility.grantAllows(marked, 8, 150, 5), false, "someone else isn't marked")
+	T.eq(PlateVisibility.grantAllows(marked, 7, 201, 5), false, "past 200 studs")
+	T.eq(PlateVisibility.grantAllows(marked, 7, 50, 10), false, "expired")
+	local everyone = { targets = nil, range = Constants.UNLIMITED_READ_RANGE, untilTime = 10 }
+	T.eq(PlateVisibility.grantAllows(everyone, 99, 500, 9), true, "Gojo: every opponent, any distance")
+end)
 return tests

@@ -12,6 +12,19 @@ local RoundManager = require(script.Parent.RoundManager)
 
 local EliminationService = {}
 
+-- Hooks for AbilityService: a popped Shadow Clone (remove its model) and every elimination (Gojo's
+-- Infinity ends after 3). Handlers run after the rules have already decided; they never change them.
+local clonePoppedHandlers: { (popper: Player, decoyId: number) -> () } = {}
+local eliminationHandlers: { (attacker: Player, victimId: number) -> () } = {}
+
+function EliminationService.onClonePopped(handler: (popper: Player, decoyId: number) -> ())
+	table.insert(clonePoppedHandlers, handler)
+end
+
+function EliminationService.onElimination(handler: (attacker: Player, victimId: number) -> ())
+	table.insert(eliminationHandlers, handler)
+end
+
 local function handleSubmit(player: Player, code: any)
 	local match = RoundManager.getMatch()
 	if not match then
@@ -29,6 +42,9 @@ local function handleSubmit(player: Player, code: any)
 		local victim = Players:GetPlayerByUserId(result.targetId)
 		EconomyService.award(player, Constants.YEN_PER_ELIMINATION, "elimination")
 		RoundManager.onLifeLost(result.targetId, { cause = "code", attacker = player })
+		for _, handler in eliminationHandlers do
+			task.spawn(handler, player, result.targetId)
+		end
 		if result.winner then
 			RoundManager.finish(result.winner)
 		end
@@ -37,6 +53,11 @@ local function handleSubmit(player: Player, code: any)
 			targetName = if victim then victim.DisplayName else "a fighter",
 			yen = Constants.YEN_PER_ELIMINATION,
 		}
+	elseif status == "clone" then
+		for _, handler in clonePoppedHandlers do
+			task.spawn(handler, player, result.targetId)
+		end
+		return { status = status } -- "It was a clone!": no strike, no kill
 	elseif status == "self_eliminated" then
 		RoundManager.onLifeLost(player.UserId, { cause = "strikes" })
 		return { status = status, strikesLeft = 0 }

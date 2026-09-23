@@ -32,6 +32,7 @@ local MESSAGES: { [string]: { string } } = {
 
 local refs: { [string]: any } = {}
 local busy = false
+local refreshCardAction: () -> ()
 
 -- FIGHT button looks: hot red when ready, cold steel once you're queued.
 local FIGHT_READY = ColorSequence.new({
@@ -72,10 +73,48 @@ local function leaveQueue()
 	call(Remotes.LeaveQueue)
 end
 
+-- The card's action: EQUIP for fighters you own (free starters for now), otherwise a locked note.
+refreshCardAction = function()
+	local def = refs.cardDef
+	if not def or not refs.cardAction then
+		return
+	end
+	local ownedList = ClientState.ability.owned
+	local owned = type(ownedList) == "table" and table.find(ownedList, def.id) ~= nil -- server's list (all, in Studio)
+	local equipped = ClientState.ability.equipped == def.id
+	refs.cardAction.AutoButtonColor = owned and not equipped
+	refs.cardAction.BackgroundColor3 = if owned and not equipped then UI.Colors.Accent else UI.Colors.Slot
+	refs.cardAction.TextColor3 = if owned then UI.Colors.Text else UI.Colors.Muted
+	refs.cardAction.Text = if equipped then "EQUIPPED" elseif owned then "EQUIP" else "UNLOCK · SHOP COMING SOON"
+end
+
+local function equipShown()
+	local def = refs.cardDef
+	local ownedList = ClientState.ability.owned
+	local owned = def and type(ownedList) == "table" and table.find(ownedList, def.id) ~= nil
+	if busy or not def or not owned or ClientState.ability.equipped == def.id then
+		return
+	end
+	busy = true
+	local ok, result = pcall(function()
+		return Remotes.EquipCharacter:InvokeServer(def.id)
+	end)
+	busy = false
+	if not ok or type(result) ~= "table" then
+		HUDController.toast("Couldn't reach the server. Try again.", "bad")
+	elseif result.status == "equipped" then
+		HUDController.toast(string.format("%s equipped", def.name), "good")
+	elseif result.status == "in_fight" then
+		HUDController.toast("You can switch in the lobby or while waiting to respawn", "info")
+	elseif result.status == "not_owned" then
+		HUDController.toast("You don't own that fighter yet", "info")
+	end
+end
+
 local function showCard(def: any)
 	refs.cardAccent.BackgroundColor3 = def.accent
 	refs.cardName.Text = def.name
-	refs.cardEpithet.Text = def.franchise or ""
+	refs.cardEpithet.Text = "" -- franchise names aren't shown in game (owner renamed the roster, 2026-09-23)
 	if def.tier == "Free" then
 		refs.cardTier.Text = "FREE STARTER · already yours"
 	elseif def.tier == "Yen" then
@@ -84,6 +123,9 @@ local function showCard(def: any)
 		refs.cardTier.Text = "Robux pass · price announced later"
 	end
 	refs.cardIdentity.Text = def.identity
+	refs.cardAbilities.Text = string.format("Q  %s    E  %s", string.upper(def.abilities.mild), string.upper(def.abilities.ultimate))
+	refs.cardDef = def
+	refreshCardAction()
 	refs.card.Visible = true
 	UIMotion.pop(refs.card)
 end
@@ -140,28 +182,30 @@ local function buildCard(gui: ScreenGui)
 		TextYAlignment = Enum.TextYAlignment.Top,
 		Parent = card,
 	})
-	UI.label({
-		Position = UDim2.fromOffset(0, 142),
+	refs.cardAbilities = UI.label({
+		Position = UDim2.fromOffset(0, 146),
 		Size = UDim2.new(1, 0, 0, 36),
-		TextSize = 13,
-		Font = UI.FontBody,
+		TextSize = 14,
+		Font = UI.Font,
 		TextColor3 = UI.Colors.Muted,
 		TextWrapped = true,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextYAlignment = Enum.TextYAlignment.Top,
-		Text = "Abilities: a mild (8s) and an ultimate (20s), revealed once the ability sheet is approved.",
 		Parent = card,
 	})
-	UI.button({
+	refs.cardAction = UI.button({
+		Name = "Action",
 		Position = UDim2.fromOffset(0, 190),
 		Size = UDim2.new(1, 0, 0, 40),
-		AutoButtonColor = false,
-		BackgroundColor3 = UI.Colors.Slot,
-		TextColor3 = UI.Colors.Muted,
-		Text = "Unlocks coming soon",
+		Font = UI.FontHeavy,
+		TextSize = 17,
 		Parent = card,
-	}, { UI.corner(10) })
+	})
+	refs.cardAction.Activated:Connect(function()
+		task.spawn(equipShown)
+	end)
 	local closeButton = UI.button({
+		Name = "Close",
 		AnchorPoint = Vector2.new(1, 0),
 		Position = UDim2.new(1, 0, 0, 10),
 		Size = UDim2.fromOffset(28, 28),
@@ -300,7 +344,12 @@ end
 
 function LobbyController.Start()
 	build()
-	ClientState.Changed:Connect(refresh)
+	ClientState.Changed:Connect(function(kind)
+		refresh()
+		if kind == "ability" then
+			refreshCardAction()
+		end
+	end)
 	ProximityPromptService.PromptTriggered:Connect(function(prompt, player)
 		if player ~= localPlayer then
 			return

@@ -10,7 +10,8 @@ file/Studio inspection). **[Assumption]** = believed true but not directly check
 Finish verifying the Phase 2 vertical slice, plus the owner's follow-up changes (2.1 and 2.2), before
 Phase 3 starts. Phase 3 (team mode, economy/persistence, Robux entitlements, abilities) is blocked on:
 1. ~~the multi-client verification~~ — **passed, reported by the owner 2026-09-23** (see below), then
-2. the owner approving the ability sheet (`docs/ABILITIES.md`).
+2. ~~the owner approving the ability sheet~~ — **approved 2026-09-23** (`docs/ABILITIES.md`), then
+3. ~~the owner approving the Phase 3 plan~~ — **all 8 items approved 2026-09-23**. Phase 3 is under way.
 
 Do not begin another feature until the next task is done.
 
@@ -192,6 +193,113 @@ Live solo checks (Studio Play, one player, dev min-players = 1). All [Verified],
   same-direction coplanar faces now finds only faces that can't be seen (bottoms resting on the floor, backs buried
   in walls) [Verified]. Flicker itself can't be seen in still screenshots — confirm in Studio [Not tested visually].
 
+### Phase 3, slice 1: ability system + Goku + Luffy (2026-09-23)
+
+Built (all uncommitted on branch ``phase2-vertical-slice``):
+- ``Lib/AbilityRules`` (pure): cooldowns (mild 8 s, ult 20 s), respawn rule (mild ready, ult −10 s, never below now),
+  wind-up blocking, beam and cone hit tests, client-aim sanitising. ``Tests/AbilityRules.spec`` (9 tests).
+- ``MatchCore:lockInput`` + ``locked`` submit status (never a strike, capped at ``MAX_INPUT_LOCK`` = 2 s, protected/dead
+  immune, cleared on a new life). 3 new MatchCore tests.
+- ``Systems/AbilityService``: UseAbility / EquipCharacter, per-life state via the new ``RoundManager.onLifeStarted`` hook,
+  a server-side toolkit for abilities (opponents, raycasts, knockback, lock, clear code, FX, teleport, slow).
+- ``Systems/Abilities/Goku`` (Phase Shift, formerly Instant Transmission, via new ``MapService.findSpotNear``; Energy Wave) and ``Luffy``
+  (Stretch Grapple; Gatling Barrage). All tunables in ``Constants``.
+- Client: ``AbilityController`` (Q/E + touch buttons, HUD slots with cooldown drain, knockback/grapple/clear/lock
+  effects, NEXT LIFE picker on the respawn screen), ``animations/Controllers/AbilityFX`` (placeholder VFX),
+  ``SubmissionController.clearTyped/lockUntil``, pedestal card shows abilities + EQUIP, ``ClientState.ability``.
+- 5 new remotes (see DESIGN.md contract). Ability display names for all 10 characters in ``CharacterDefs``.
+
+Tested [Verified, solo Play]:
+- Unit tests **53/53**.
+- Goku Q: moved 18.8 studs to open ground; Q cooldown started. Goku E: charge orb, then 60-stud beam 1.21 s later;
+  walk 24 → 10.8 during charge → **24.0 after** (bug found and fixed: float compare never restored the speed).
+- Luffy Q: 0.3 s tell, pulled ~42 studs in ~0.5 s. Luffy E: accepted; Q during wind-up refused (``casting``); FX from
+  0.06 s to 2.58 s (1 s wind-up + 1.5 s flurry).
+- Equip rules: mid-fight → ``in_fight``; Gojo → ``not_owned``; junk id → ``unknown``; while down → ``equipped``, and the
+  next life was Luffy (HUD showed his abilities). NEXT LIFE picker visible while down with the equipped one marked.
+- Pedestal card: shows ``Q STRETCH GRAPPLE  E GATLING BARRAGE``; clicking EQUIP → ``EQUIPPED`` + toast.
+- Server/client logs clean. Repo ↔ Studio: all 46 synced files identical (per-file length + hash).
+
+Not tested:
+- **Anything hitting another player** (needs 2+ players): Energy Wave knockback + 2 s lock (and the ``locked`` toast),
+  Gatling push + cleared code, protected targets being immune, teammates excluded. Hit geometry is unit-tested only.
+- How the VFX look in motion (stills can't catch sub-second effects), touch layout of the ability buttons,
+  the ultimate's −10 s after a real respawn (unit-tested only).
+- Ownership is "free starters only" until the shop (item 5) and Game Passes (item 6).
+### Phase 3, slice 2: the other 8 characters (2026-09-23)
+
+Owner: "build all of them now" + temporary access to every character when testing.
+- New ability modules: `Krillin`, `Vegeta`, `Zoro`, `L`, `Naruto`, `Ichigo`, `Sasuke`, `Gojo` (`Systems/Abilities`).
+- `AbilityService` toolkit grew: stacked speed multipliers, Iron Guard immunity, mild-ability blocking (Hunter's
+  Eye), Gojo barriers (stop projectiles), reading grants, blinding, hidden plates, clones, server-picked dash /
+  aim points, per-caster elimination listeners. Ownership = everything in Studio (`DEV_UNLOCK_ALL_IN_STUDIO`),
+  free starters live; `AbilityState` now carries the `owned` list.
+- `MatchCore` decoys (Shadow Clone): negative ids, codes for every active observer except the owner, popping =
+  status `clone` (no strike, no kill), removed when the owner dies/leaves, issued to late joiners. 3 new tests.
+- `NumberAssignmentService`: reading grants (Krillin 200 studs / Sasuke & Gojo any distance, line of sight only),
+  Solar Flare blinding, Flash Step hiding, clone roots. `PlateVisibility.grantAllows` + test.
+- `EliminationService`: `clone` status + hooks (clone popped, elimination). `MapService.openSpotAt`.
+- Client: plates for clones, grants (plates grow with distance so they stay legible), hidden plates, blind;
+  white-out overlay, L's radar arrows, Deduction outlines, warnings, "SEALED" mild; NEXT LIFE picker is a grid of
+  owned characters; pedestal cards use the owned list. `AbilityFX` placeholder visuals for all 8.
+- Implementation choices recorded in `docs/ABILITIES.md` → "Implementation notes".
+
+Tested [Verified, solo Play]:
+- Unit tests **60/60**. Repo ↔ Studio: all 54 synced files identical (combined hash).
+- All 10 characters owned in Studio (picker showed 10). Every mild and ultimate fired with status `ok`, except
+  Hunter's Eye → `no_target` (correct with nobody to mark). Self-effects measured: Vegeta 24 → 31.2; Zoro 24 → 12 →
+  24; L's camera prop appeared; Naruto's clone spawned (decoy id −1, owned by caster, anchored); Sasuke dashed 31.2;
+  Gojo Blink 20.6 and 14.7 studs; slows restore to 24 after charges.
+- **Bug found and fixed:** Gojo's Blink refused whenever the aim met cover (`no_room`); it now lands at the farthest
+  open spot along the aim line.
+- Ultimates answered `cooldown` when chained across a character switch: expected (cooldown is per player; see notes).
+
+Not tested:
+- **Every effect on another player** (needs 2+ players): knockbacks, drags, locks, blinding, marks and reading at
+  range, clone plates and popping, Hunter's Eye seal, barrier push, trail slow, Iron Guard immunity.
+- How the VFX look in motion; touch layout; performance with 12 players casting.
+### Plate regression fix (2026-09-23)
+
+- Owner: no number plates at all in the multi-client test. Cause: slice 2's plate controller treated negative ids as
+  Naruto clones, and Studio's local test players *have* negative user ids (-1, -2, ...), so no opponent got a plate.
+  Clone ids also started at -1 and could collide with Studio players.
+- Fix: clone ids now start below -1,000,000,000 (`MatchCore.DECOY_ID_BASE`); the client tells clones apart by the
+  clone list, never by sign. New test: Studio-style negative ids + clones don't collide, eliminations still work.
+  61/61 [Verified]; repo = Studio (54 files) [Verified]. Plates in a multi-client test [Not tested by Claude — owner
+  to confirm]. Lesson recorded in CLAUDE.md.
+
+### Owner changes (2026-09-23): durations x1.75, Hunter's Eye fix, renamed roster
+
+- All ability effect durations x1.75 via one knob (`EFFECT_TIME` in Constants); the 2 s lock cap is now 3.5 s.
+  Gatling pulses 3 → 5 to keep the push rhythm over the longer flurry.
+- **Hunter's Eye bug** (owner: always "Nothing to grab"): target picking compared the camera's 3D look direction,
+  and the third-person camera looks down at your own character, so a level opponent was always outside the 15°
+  window. Now compared top-down. New test. The message was Luffy's (shared status); each ability now has its own
+  (`nothing_to_grab` / `no_opponent` / `no_point`).
+- Roster renamed in game (`CharacterDefs.name`); the franchise line is no longer shown on the pedestal card.
+- Tests **62/62** [Verified]; durations and names read back in Play [Verified]; lobby bubbles show the new names
+  [Verified screenshot]; repo = Studio (54 files) [Verified]. Hunter's Eye on a real opponent [Not tested — owner].
+
+### Owner changes (2026-09-23): clone fix, leaderboard, HUD at top, Deduction 7 s, look-directed dashes
+
+- **Shadow Clone launched into the sky** (owner): its keep-on-the-ground raycast hit the clone's own torso. The
+  Humanoid keeps body parts colliding, and Roblox ignores `CanQuery = false` on colliding parts, so each frame it
+  found "ground" a stud above itself (measured climbing ~250 studs/s). Fix: every ability raycast, spot check,
+  spawn check and the plate line-of-sight check now exclude the Decoys folder explicitly (the plate LOS bug would
+  also have hidden the clone's own number); the clone's Humanoid state machine is off. Then it barely moved (cover
+  5 studs ahead), so it now steers round cover. Measured [Verified]: 18.6 → 93.6 studs over ~6 s, 3 studs above
+  ground (standing height) throughout.
+- **Leaderboard** (left side): every fighter's eliminations, most to least, you in gold [Verified screenshot, solo].
+- **HUD at the top**: scoreboard and spawn-protection bar moved to a layer that ignores Roblox's top-bar inset
+  [Verified screenshot].
+- **Deduction 7 s** (Constants).
+- **Flash Step / Blink go where you look**: client sends camera position; server `ctx.lookTarget` casts the
+  screen-centre ray. Measured [Verified]: Flash Step aimed at ground 10 / 16 / 21 studs away landed 0.1 / 0.1 / 0.2
+  studs from the spot (after making the client pull home in and stop on its point; before: ~4 studs over). Blink at
+  20 studs landed exactly; at 12 studs said `no_room` (cover beside the spot) [Verified].
+- Tests 62/62 [Verified]; repo = Studio (54 files) [Verified]; logs clean. Not tested: clone plates/popping, the
+  leaderboard with several players, touch layout — owner's multi-client test.
+
 ## 7. Known issues and risks
 
 - **No plate has ever been seen rendered in game.** The plate rule is only proven by unit tests.
@@ -209,6 +317,8 @@ Live solo checks (Studio Play, one player, dev min-players = 1). All [Verified],
 
 ## 8. Single next task
 
-**Owner review of the ability sheet (`docs/ABILITIES.md`).** It is the last gate before Phase 3. Owner: the
-owner (approve / change / reject per character). Claude then presents the Phase 3 plan (team mode, persistence,
-entitlements, abilities) as an approve/deny list before building anything. No new features until then.
+**Multi-client ability check** (owner runs Test → Clients and Servers, 2–3 players; all characters are unlocked in
+Studio). Priority checks: Goku/Naruto/Vegeta hits lock the target ("JAMMED"); Naruto's clone shows a plate to others
+and typing it says "It was a clone!"; Krillin's flare whites out a facing opponent; Krillin/Sasuke/Gojo can read marked
+plates from far away (and not through walls); Zoro's Iron Guard ignores knockback; Hunter's Eye seals the target's Q.
+Then tune numbers, and move on to Phase 3 item 4 (saved progress; needs Studio API access switched on).

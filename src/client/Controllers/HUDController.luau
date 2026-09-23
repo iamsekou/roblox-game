@@ -26,6 +26,7 @@ local FEED_MAX = 5
 local REFRESH_SECONDS = 0.1
 local TOAST_MAX_WIDTH = 520
 local DEATH_SATURATION = -0.85 -- the world drains of colour while you wait to respawn
+local LEADERBOARD_WIDTH = 190
 
 local refs: { [string]: any } = {}
 local lastPhase: string? = nil
@@ -102,16 +103,19 @@ end
 
 local function build()
 	local gui = UI.screen("NAU_HUD", 5)
+	-- Owner, 2026-09-23: the timer and eliminations sit at the very top of the screen. This layer ignores
+	-- Roblox's top-bar inset; the centre of the top bar is free (Roblox's buttons live in the corners).
+	local topGui = UI.screen("NAU_HUDTop", 5, true)
 
 	-- Scoreboard: [YOU] [clock] [LEAD]
 	local board = UI.new("Frame", {
 		Name = "Scoreboard",
 		AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.new(0.5, 0, 0, 8),
+		Position = UDim2.new(0.5, 0, 0, 6),
 		Size = UDim2.fromOffset(0, 50),
 		AutomaticSize = Enum.AutomaticSize.X,
 		BackgroundTransparency = 1,
-		Parent = gui,
+		Parent = topGui,
 	}, {
 		UI.new("UIListLayout", {
 			FillDirection = Enum.FillDirection.Horizontal,
@@ -162,10 +166,10 @@ local function build()
 	refs.protect = UI.panel({
 		Name = "SpawnProtection",
 		AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.new(0.5, 0, 0, 64),
+		Position = UDim2.new(0.5, 0, 0, 62),
 		Size = UDim2.fromOffset(200, 26),
 		Visible = false,
-		Parent = gui,
+		Parent = topGui,
 	})
 	UI.label({
 		Name = "Caption",
@@ -211,6 +215,75 @@ local function build()
 		Text = "¥ 0",
 		Parent = yenContent,
 	})
+
+	-- In-match leaderboard (owner, 2026-09-23): every fighter's eliminations, most to least. Left side,
+	-- vertically centred, clear of Roblox's chat (top-left) and our feed (top-right).
+	local boardPanel, boardContent = UI.slab({
+		Name = "Leaderboard",
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, 10, 0.45, 0),
+		Size = UDim2.fromOffset(0, 0),
+		Visible = false,
+		Parent = gui,
+	}, "XY", {
+		UI.padding(8, 10),
+		UI.new("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 2) }),
+	})
+	UI.accentBar(boardPanel, "top", UI.Colors.Accent, 2)
+	refs.leaderboard = boardPanel
+	UI.label({
+		LayoutOrder = 0,
+		Size = UDim2.fromOffset(LEADERBOARD_WIDTH, 16),
+		Font = UI.Font,
+		TextSize = 12,
+		TextColor3 = UI.Colors.Muted,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Text = "ELIMINATIONS",
+		Parent = boardContent,
+	})
+	refs.leaderRows = {}
+	for i = 1, Constants.MAX_PLAYERS do
+		local row = UI.new("Frame", {
+			Name = "Row" .. i,
+			LayoutOrder = i,
+			Size = UDim2.fromOffset(LEADERBOARD_WIDTH, 20),
+			BackgroundColor3 = UI.Colors.Slot,
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			Visible = false,
+			Parent = boardContent,
+		})
+		local rank = UI.label({
+			Name = "Rank",
+			Size = UDim2.new(0, 22, 1, 0),
+			Font = UI.FontHeavy,
+			TextSize = 14,
+			TextColor3 = UI.Colors.Muted,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			Parent = row,
+		})
+		local name = UI.label({
+			Name = "Name",
+			Position = UDim2.fromOffset(24, 0),
+			Size = UDim2.new(1, -60, 1, 0),
+			Font = UI.Font,
+			TextSize = 14,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			Parent = row,
+		})
+		local kills = UI.label({
+			Name = "Kills",
+			AnchorPoint = Vector2.new(1, 0),
+			Position = UDim2.fromScale(1, 0),
+			Size = UDim2.new(0, 34, 1, 0),
+			Font = UI.FontHeavy,
+			TextSize = 15,
+			TextXAlignment = Enum.TextXAlignment.Right,
+			Parent = row,
+		})
+		refs.leaderRows[i] = { frame = row, rank = rank, name = name, kills = kills }
+	end
 
 	refs.feed = UI.new("Frame", {
 		Name = "Feed",
@@ -539,6 +612,35 @@ local function refresh()
 		refs.you.Text = tostring(mine)
 		refs.lead.Text = tostring(best)
 		refs.you.TextColor3 = if mine > 0 and mine >= best then UI.Colors.Gold else UI.Colors.Text
+	end
+
+	-- Leaderboard: most eliminations first; ties keep a stable order by name.
+	refs.leaderboard.Visible = showScores
+	if showScores then
+		local rows = {}
+		for _, entry in r.scores do
+			local player = Players:GetPlayerByUserId(entry.userId)
+			table.insert(rows, { userId = entry.userId, score = entry.score, name = if player then player.DisplayName else "Fighter" })
+		end
+		table.sort(rows, function(a, b)
+			if a.score ~= b.score then
+				return a.score > b.score
+			end
+			return string.lower(a.name) < string.lower(b.name)
+		end)
+		for i, ref in refs.leaderRows do
+			local row = rows[i]
+			ref.frame.Visible = row ~= nil
+			if row then
+				local mine = row.userId == localPlayer.UserId
+				ref.rank.Text = tostring(i)
+				ref.name.Text = string.upper(row.name)
+				ref.kills.Text = tostring(row.score)
+				ref.frame.BackgroundTransparency = if mine then 0.2 else 1
+				ref.name.TextColor3 = if mine then UI.Colors.Gold else UI.Colors.Text
+				ref.kills.TextColor3 = if i == 1 and row.score > 0 then UI.Colors.Gold else UI.Colors.Text
+			end
+		end
 	end
 
 	local life = ClientState.life

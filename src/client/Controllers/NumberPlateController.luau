@@ -39,12 +39,17 @@ local localPlayer = Players.LocalPlayer
 local playerGui = localPlayer:WaitForChild("PlayerGui")
 
 type Mode = "hidden" | "masked" | "revealed"
-type Plate = { gui: BillboardGui, frame: Frame, label: TextLabel, root: BasePart?, humanoid: Humanoid?, mode: Mode }
+type Plate = { gui: BillboardGui, frame: Frame, label: TextLabel, root: BasePart?, humanoid: Humanoid?, mode: Mode, scale: number }
 
 local codes: { [number]: string } = {} -- target userId -> the code THIS client was shown
 local plates: { [number]: Plate } = {} -- one per opponent in the round, whether or not we know their code
 local fighting: { [number]: boolean } = {} -- opponents alive and past spawn protection (from RoundState)
 local receivedPush = false
+
+-- Ability effects on what this client may read (the server enforces the same through its disclosure gate):
+local grants: { [string]: PlateVisibility.Grant } = {} -- reading exceptions for us (Krillin / Sasuke / Gojo)
+local hiddenUntil: { [number]: number } = {} -- Flash Step: that fighter's plate is gone until then
+local blindUntil = -math.huge -- Solar Flare: we can't read any plate until then
 
 -- World-space height of the tallest visible part of the avatar, accessories included.
 local function avatarTop(character: Model): number?
@@ -106,11 +111,26 @@ local function createPlate(userId: number): Plate
 	label.Parent = frame
 
 	gui.Parent = playerGui
-	return { gui = gui, frame = frame, label = label, root = nil, humanoid = nil, mode = "hidden" }
+	return { gui = gui, frame = frame, label = label, root = nil, humanoid = nil, mode = "hidden", scale = 1 }
 end
 
--- Every other fighter in the round we're in (teammates included: they show plates too, per DESIGN.md).
-local function opponentIds(): { [number]: boolean }
+-- Naruto's Shadow Clones (server models tagged DecoyId / Owner), except our own.
+local function decoyModels(): { [number]: Model }
+	local found = {}
+	local world = workspace:FindFirstChild("NAUWorld")
+	local folder = world and world:FindFirstChild("Decoys")
+	for _, model in if folder then folder:GetChildren() else {} do
+		local id, owner = model:GetAttribute("DecoyId"), model:GetAttribute("Owner")
+		if model:IsA("Model") and type(id) == "number" and owner ~= localPlayer.UserId then
+			found[id] = model
+		end
+	end
+	return found
+end
+
+-- Every other fighter in the round we're in (teammates included: they show plates too, per DESIGN.md),
+-- plus other fighters' clones (their own decoy ids), which carry plates exactly like fighters.
+local function opponentIds(decoys: { [number]: Model }): { [number]: boolean }
 	local ids = {}
 	local round = ClientState.round
 	if round and ClientState.isParticipant() then
@@ -119,15 +139,22 @@ local function opponentIds(): { [number]: boolean }
 				ids[userId] = true
 			end
 		end
+		for decoyId in decoys do
+			ids[decoyId] = true
+		end
 	end
 	return ids
 end
 
 -- Structural pass: create/destroy plates, re-adorn after respawns, re-measure accessory clearance.
 local function reconcile()
-	local opponents = opponentIds()
+	local decoys = decoyModels()
+	local opponents = opponentIds(decoys)
 
 	table.clear(fighting)
+	for decoyId in decoys do
+		fighting[decoyId] = true
+	end
 	local round = ClientState.round
 	for _, entry in (round and round.scores) or {} do
 		if type(entry) == "table" and entry.alive == true and entry.protected ~= true then
@@ -142,8 +169,10 @@ local function reconcile()
 		end
 	end
 	for userId in opponents do
-		local player = Players:GetPlayerByUserId(userId)
-		local character = player and player.Character
+		-- A clone or a fighter. Tell them apart by the clone list, never by the id's sign: Studio's local
+		-- test players have negative user ids.
+		local player = if decoys[userId] then nil else Players:GetPlayerByUserId(userId)
+		local character = decoys[userId] or (player and player.Character)
 		local head = character and character:FindFirstChild("Head")
 		local root = character and character:FindFirstChild("HumanoidRootPart")
 		local plate = plates[userId]
@@ -180,35 +209,87 @@ end
 
 -- Every frame: nearby opponents show a masked plate; the digits appear only while you're within
 -- range and the fighter's front faces you. Spawn-protected fighters (either side) show nothing.
+local function granted(userId: number, distance: number, t: number): boolean
+	for id, grant in grants do
+		if t >= grant.untilTime then
+			grants[id] = nil
+		elseif PlateVisibility.grantAllows(grant, userId, distance, t) then
+			return true
+		end
+	end
+	return false
+end
+
+-- Plates read from far away (reading exceptions) grow with distance so the digits stay legible.
+local function setScale(plate: Plate, scale: number)
+	if math.abs(plate.scale - scale) > 0.05 then
+		plate.scale = scale
+		plate.gui.Size = UDim2.fromScale(Constants.PLATE_SIZE.X * scale, Constants.PLATE_SIZE.Y * scale)
+	end
+end
+
 local function updateVisibility()
 	local myCharacter = localPlayer.Character
 	local myRoot = myCharacter and myCharacter:FindFirstChild("HumanoidRootPart")
-	local canSee = myRoot ~= nil and ClientState.canSubmit() -- you: in the round, alive, not protected
+	local t = workspace:GetServerTimeNow()
+	-- You: in the round, alive, not protected, and not whited out by a Solar Flare.
+	local canSee = myRoot ~= nil and ClientState.canSubmit() and t >= blindUntil
 	for userId, plate in plates do
 		local mode: Mode = "hidden"
+		local scale = 1
 		local root = plate.root
 		local humanoid = plate.humanoid
+		local hidden = hiddenUntil[userId] ~= nil and t < hiddenUntil[userId]
 		if
 			canSee
+			and not hidden
 			and root
 			and root.Parent
 			and fighting[userId]
 			and (humanoid == nil or humanoid.Health > 0)
 		then
-			mode = PlateVisibility.plateMode(
-				root.CFrame,
-				(myRoot :: BasePart).Position,
-				codes[userId] ~= nil,
-				plate.mode == "revealed",
-				RULES
-			)
+			local observer = (myRoot :: BasePart).Position
+			local distance = (root.Position - observer).Magnitude
+			if granted(userId, distance, t) then
+				-- Reading exception: any angle, up to the grant's range (cover still hides the plate).
+				mode = if codes[userId] then "revealed" else "masked"
+				scale = math.max(1, distance / Constants.PLATE_VIEW_DISTANCE)
+			else
+				mode = PlateVisibility.plateMode(root.CFrame, observer, codes[userId] ~= nil, plate.mode == "revealed", RULES)
+			end
 		end
+		setScale(plate, scale)
 		setMode(plate, userId, mode)
 		local code = codes[userId]
 		if mode == "revealed" and code and plate.label.Text ~= code then
 			plate.label.Text = code -- code was reissued while it was showing
 		end
 	end
+end
+
+-- Ability hooks (called by AbilityController) ----------------------------------------------------
+
+function NumberPlateController.addGrant(id: string, targets: { number }?, range: number, untilTime: number)
+	local set: { [number]: boolean }? = nil
+	if targets then
+		set = {}
+		for _, userId in targets do
+			(set :: any)[userId] = true
+		end
+	end
+	grants[id] = { targets = set, range = range, untilTime = untilTime }
+end
+
+function NumberPlateController.removeGrant(id: string)
+	grants[id] = nil
+end
+
+function NumberPlateController.hideTarget(userId: number, untilTime: number)
+	hiddenUntil[userId] = untilTime
+end
+
+function NumberPlateController.blind(untilTime: number)
+	blindUntil = math.max(blindUntil, untilTime)
 end
 
 function NumberPlateController.Start()

@@ -10,6 +10,7 @@ local ORDER = {
 	"PlayerLifeService",
 	"RoundManager",
 	"EliminationService",
+	"AbilityService",
 }
 
 local loaded = {}

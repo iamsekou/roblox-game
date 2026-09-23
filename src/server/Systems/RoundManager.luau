@@ -36,6 +36,12 @@ local state = {
 
 local queued: { [Player]: number } = {} -- player -> time they queued (earliest first)
 local pendingRespawn: { [Player]: number } = {} -- player -> lifeId whose respawn is already scheduled
+local lifeStartedHandlers: { (player: Player, match: any, lifeId: number) -> () } = {}
+
+-- Other systems (AbilityService) hear about every new arena life: round start, respawn, mid-round join.
+function RoundManager.onLifeStarted(handler: (player: Player, match: any, lifeId: number) -> ())
+	table.insert(lifeStartedHandlers, handler)
+end
 
 local function now(): number
 	return workspace:GetServerTimeNow()
@@ -179,6 +185,9 @@ local function spawnIntoArena(player: Player, cframe: CFrame?)
 		protectedUntil = if Constants.SPAWN_PROTECTION_SECONDS > 0 then t + Constants.SPAWN_PROTECTION_SECONDS else nil,
 	})
 	Remotes.MatchFeed:FireAllClients({ kind = "spawned", userId = player.UserId })
+	for _, handler in lifeStartedHandlers do
+		task.spawn(handler, player, match, lifeId)
+	end
 	scheduleProtectionRelease(player, match, lifeId)
 	broadcast()
 end
@@ -318,6 +327,7 @@ local function startRound()
 		staleWindow = Constants.STALE_CODE_GRACE,
 		reuseCooldown = Constants.CODE_REUSE_COOLDOWN,
 		protectionSeconds = Constants.SPAWN_PROTECTION_SECONDS,
+		maxInputLock = Constants.MAX_INPUT_LOCK,
 		codeLength = Constants.CODE_LENGTH,
 		onCodeChange = NumberAssignmentService.onCodeChange,
 	})
