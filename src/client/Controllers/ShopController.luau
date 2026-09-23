@@ -1,0 +1,963 @@
+-- The yen shop menu (Phase 3 item 5, approved 2026-09-23): an over-the-top futuristic hologram interface
+-- with anime energy, opened from the shop cottage's door in the lobby garden.
+--
+-- Opening: the door's ProximityPrompt (attribute Action = "Shop"). Movement is frozen, the camera glides to
+-- the door and through it to the cottage's high-tech room, where a hologram copy of the player's avatar
+-- stands on the projector pad playing the selected character's ability animations (AbilityAnim.preview).
+-- The menu then boots: a scan sweep, a glitch, and the panels unfold.
+--
+--   left   ROSTER: all ten characters (portrait, name, price or state)
+--   right  DETAIL: name, identity, both abilities with preview buttons, price, what a purchase includes,
+--          and the action: HOLD TO BUY (1 s charge) / EQUIP / EQUIPPED / Robux coming soon
+--   top    title and the yen balance (animated counter)
+--
+-- The client only asks: PurchaseItem and EquipCharacter are decided by the server (ShopService /
+-- AbilityService); the menu redraws from what the server sends back (balance, owned list, equipped).
+-- EXIT or [X] closes it and reverses everything; it also closes itself if the player leaves the lobby.
+local Players = game:GetService("Players")
+local ProximityPromptService = game:GetService("ProximityPromptService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Remotes = require(Shared:WaitForChild("Remotes"))
+local CharacterDefs = require(Shared:WaitForChild("Modules"):WaitForChild("CharacterDefs"))
+local AnimControllers = ReplicatedStorage:WaitForChild("Animations"):WaitForChild("Controllers")
+local AbilityAnim = require(AnimControllers:WaitForChild("AbilityAnim"))
+local CameraShake = require(AnimControllers:WaitForChild("CameraShake"))
+local Client = script.Parent.Parent
+local ClientState = require(Client:WaitForChild("ClientState"))
+local UI = require(Client:WaitForChild("UI"))
+
+local ShopController = {}
+
+local localPlayer = Players.LocalPlayer
+
+-- Look
+local HOLO = Color3.fromRGB(80, 230, 255)
+local PINK = Color3.fromRGB(255, 90, 200)
+local GOLD = Color3.fromRGB(255, 208, 110)
+local GLASS = Color3.fromRGB(8, 14, 22)
+local WHITE = Color3.new(1, 1, 1)
+local HEAVY = UI.FontHeavy
+local BODY = UI.FontBody
+local CANVAS = Vector2.new(1920, 1080) -- the menu is laid out on this canvas and scaled to the screen
+
+-- Sound slots (owner-approved: left empty until real audio exists). Paste a published sound's
+-- "rbxassetid://..." here and it plays at that moment; blank = silent. Never invent ids.
+local SOUNDS: { [string]: string } = {
+	boot = "", -- the menu powers up
+	select = "", -- a roster card is picked
+	charge = "", -- hold-to-buy starts charging
+	purchase = "", -- the "UNLOCKED" burst
+	equip = "",
+	denied = "", -- not enough yen
+}
+
+-- Timing
+local HOLD_TO_BUY = 1 -- seconds the BUY button must be held
+local PREVIEW_EVERY = 3.4 -- seconds between the hologram's ability previews
+local EXIT_KEY = Enum.KeyCode.X
+
+type Refs = { [string]: any }
+local refs: Refs = { cards = {}, gradients = {} }
+local state = {
+	open = false,
+	busy = false,
+	selected = nil :: any,
+	previewSlot = "mild",
+	nextPreview = 0,
+	yenShown = 0,
+	holdStarted = nil :: number?,
+}
+local scene: { [string]: any } = {}
+
+-- Small helpers ----------------------------------------------------------------------------------
+
+local function yen(): number
+	local stats = localPlayer:FindFirstChild("leaderstats")
+	local value = stats and stats:FindFirstChild("Yen")
+	return if value and value:IsA("IntValue") then value.Value else 0
+end
+
+local function owned(id: string): boolean
+	local list = ClientState.ability.owned
+	return type(list) == "table" and table.find(list, id) ~= nil
+end
+
+local function equipped(id: string): boolean
+	return ClientState.ability.equipped == id
+end
+
+local function tween(object: Instance, seconds: number, goal: { [string]: any }, style: Enum.EasingStyle?, direction: Enum.EasingDirection?): Tween
+	local t = TweenService:Create(object, TweenInfo.new(seconds, style or Enum.EasingStyle.Quint, direction or Enum.EasingDirection.Out), goal)
+	t:Play()
+	return t
+end
+
+-- A glowing neon edge whose colour flows round the frame (the gradient's rotation is animated while open).
+local function neonEdge(frame: GuiObject, thickness: number?, transparency: number?)
+	local stroke = UI.stroke(WHITE, thickness or 2, transparency or 0)
+	stroke.Parent = frame
+	local gradient = UI.new("UIGradient", {
+		Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, HOLO),
+			ColorSequenceKeypoint.new(0.5, PINK),
+			ColorSequenceKeypoint.new(1, HOLO),
+		}),
+		Parent = stroke,
+	})
+	table.insert(refs.gradients, gradient)
+	return stroke
+end
+
+-- Targeting-reticle brackets on the four corners of a frame.
+local function brackets(frame: GuiObject, color: Color3, length: number, thickness: number)
+	for _, corner in { Vector2.new(0, 0), Vector2.new(1, 0), Vector2.new(0, 1), Vector2.new(1, 1) } do
+		local position = UDim2.new(corner.X, (corner.X * 2 - 1) * 6, corner.Y, (corner.Y * 2 - 1) * 6)
+		for _, horizontal in { true, false } do
+			UI.new("Frame", {
+				Name = "Bracket",
+				AnchorPoint = corner,
+				Position = position,
+				Size = if horizontal then UDim2.fromOffset(length, thickness) else UDim2.fromOffset(thickness, length),
+				BackgroundColor3 = color,
+				BorderSizePixel = 0,
+				ZIndex = 5,
+				Parent = frame,
+			})
+		end
+	end
+end
+
+-- A dark glass panel with a flowing neon edge and corner brackets.
+local function glassPanel(props: { [string]: any }): Frame
+	local frame = UI.new("Frame", {
+		BackgroundColor3 = GLASS,
+		BackgroundTransparency = 0.1,
+		BorderSizePixel = 0,
+	})
+	for key, value in props do
+		frame[key] = value
+	end
+	UI.new("UIGradient", {
+		Rotation = 90,
+		Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 0.2) }),
+		Parent = frame,
+	})
+	neonEdge(frame, 2, 0.15)
+	brackets(frame, HOLO, 26, 3)
+	return frame
+end
+
+local function text(props: { [string]: any }): TextLabel
+	local label = UI.label({ Font = HEAVY, TextColor3 = WHITE, TextXAlignment = Enum.TextXAlignment.Left })
+	for key, value in props do
+		if key == "Font" then
+			label.FontFace = value
+		else
+			(label :: any)[key] = value
+		end
+	end
+	return label
+end
+
+local function sound(name: string)
+	local id = SOUNDS[name]
+	if not id or id == "" then
+		return
+	end
+	local s = Instance.new("Sound")
+	s.SoundId = id
+	s.Volume = 0.6
+	s.Parent = refs.gui or localPlayer:WaitForChild("PlayerGui")
+	s.Ended:Connect(function()
+		s:Destroy()
+	end)
+	s:Play()
+end
+
+-- Effects ------------------------------------------------------------------------------------------
+
+-- Anime speed lines bursting out from a point on the canvas.
+local function speedBurst(at: Vector2, color: Color3, count: number)
+	local layer = refs.fx
+	if not layer then
+		return
+	end
+	for i = 1, count do
+		local angle = (i / count) * math.pi * 2 + math.random() * 0.2
+		local line = UI.new("Frame", {
+			AnchorPoint = Vector2.new(0, 0.5),
+			Position = UDim2.fromOffset(at.X + math.cos(angle) * 60, at.Y + math.sin(angle) * 60),
+			Size = UDim2.fromOffset(40, if i % 3 == 0 then 3 else 2),
+			Rotation = math.deg(angle),
+			BackgroundColor3 = color,
+			BorderSizePixel = 0,
+			BackgroundTransparency = 0.1,
+			Parent = layer,
+		})
+		local reach = 260 + math.random() * 220
+		local t = tween(line, 0.32, {
+			Position = UDim2.fromOffset(at.X + math.cos(angle) * reach, at.Y + math.sin(angle) * reach),
+			Size = UDim2.fromOffset(180 + math.random() * 120, 1),
+			BackgroundTransparency = 1,
+		})
+		t.Completed:Connect(function()
+			line:Destroy()
+		end)
+	end
+end
+
+-- A short digital glitch: the frame jitters sideways and flickers for a few frames.
+local function glitch(frame: GuiObject, frames: number?)
+	local home = frame.Position
+	task.spawn(function()
+		for _ = 1, frames or 6 do
+			if not frame.Parent then
+				return
+			end
+			frame.Position = home + UDim2.fromOffset(math.random(-14, 14), math.random(-3, 3))
+			task.wait(0.03)
+		end
+		frame.Position = home
+	end)
+end
+
+-- The boot sweep: a bright scan bar racing down the screen.
+local function scanSweep()
+	local bar = UI.new("Frame", {
+		Size = UDim2.new(1, 0, 0, 6),
+		Position = UDim2.fromOffset(0, -10),
+		BackgroundColor3 = HOLO,
+		BorderSizePixel = 0,
+		ZIndex = 20,
+		Parent = refs.fx,
+	})
+	UI.new("UIGradient", {
+		Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 1),
+			NumberSequenceKeypoint.new(0.5, 0),
+			NumberSequenceKeypoint.new(1, 1),
+		}),
+		Parent = bar,
+	})
+	local t = tween(bar, 0.55, { Position = UDim2.fromOffset(0, CANVAS.Y + 10) }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+	t.Completed:Connect(function()
+		bar:Destroy()
+	end)
+end
+
+-- Canvas ----------------------------------------------------------------------------------------
+
+local function buildCard(parent: Instance, def: any, index: number)
+	local card = UI.new("TextButton", {
+		Name = "Card_" .. def.id,
+		AutoButtonColor = false,
+		Text = "",
+		Position = UDim2.fromOffset(18, 58 + (index - 1) * 72),
+		Size = UDim2.new(1, -36, 0, 64),
+		BackgroundColor3 = GLASS,
+		BackgroundTransparency = 0.35,
+		BorderSizePixel = 0,
+		Parent = parent,
+	})
+	local stroke = UI.stroke(HOLO, 1, 0.75)
+	stroke.Parent = card
+	local tint = UI.new("Frame", { -- a coloured sheen that brightens when selected
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = def.accent,
+		BackgroundTransparency = 0.85,
+		BorderSizePixel = 0,
+		Parent = card,
+	})
+	UI.new("UIGradient", {
+		Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 1) }),
+		Parent = tint,
+	})
+	local portrait = UI.new("ImageLabel", {
+		Position = UDim2.fromOffset(8, 5),
+		Size = UDim2.fromOffset(54, 54),
+		BackgroundColor3 = def.bubbleCenter,
+		Image = def.portrait or "",
+		ScaleType = Enum.ScaleType.Crop,
+		Parent = card,
+	})
+	UI.new("UICorner", { CornerRadius = UDim.new(0.5, 0), Parent = portrait })
+	UI.new("UIStroke", { Color = def.accent, Thickness = 2, Parent = portrait })
+	text({ Position = UDim2.fromOffset(76, 6), Size = UDim2.fromOffset(260, 32), Text = string.upper(def.name), TextSize = 28, Parent = card })
+	local sub = text({ Name = "Sub", Position = UDim2.fromOffset(77, 36), Size = UDim2.fromOffset(260, 20), Font = BODY, TextSize = 15, TextColor3 = UI.Colors.Muted, Parent = card })
+	local badge = text({
+		Name = "Badge",
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -14, 0.5, 0),
+		Size = UDim2.fromOffset(150, 30),
+		TextXAlignment = Enum.TextXAlignment.Right,
+		TextSize = 22,
+		Parent = card,
+	})
+	card.MouseEnter:Connect(function()
+		if state.selected ~= def then
+			tween(card, 0.15, { Position = UDim2.fromOffset(28, card.Position.Y.Offset) })
+		end
+	end)
+	card.MouseLeave:Connect(function()
+		if state.selected ~= def then
+			tween(card, 0.15, { Position = UDim2.fromOffset(18, card.Position.Y.Offset) })
+		end
+	end)
+	refs.cards[def.id] = { card = card, stroke = stroke, tint = tint, sub = sub, badge = badge, def = def }
+	return card
+end
+
+local function refreshCards()
+	for _, entry in refs.cards do
+		local def = entry.def
+		local selected = state.selected == def
+		local isOwned, isEquipped = owned(def.id), equipped(def.id)
+		entry.stroke.Thickness = if selected then 2 else 1
+		entry.stroke.Transparency = if selected then 0 else 0.75
+		entry.tint.BackgroundTransparency = if selected then 0.55 else 0.85
+		entry.card.Position = UDim2.fromOffset(if selected then 36 else 18, entry.card.Position.Y.Offset)
+		entry.sub.Text = string.format("%s  ·  %s", def.abilities.mild, def.abilities.ultimate)
+		if isEquipped then
+			entry.badge.Text = "EQUIPPED"
+			entry.badge.TextColor3 = HOLO
+		elseif isOwned then
+			entry.badge.Text = "OWNED"
+			entry.badge.TextColor3 = UI.Colors.Good
+		elseif def.tier == "Yen" then
+			entry.badge.Text = "¥" .. UI.formatNumber(def.yenPrice or 0)
+			entry.badge.TextColor3 = if yen() >= (def.yenPrice or 0) then GOLD else UI.Colors.Muted
+		else
+			entry.badge.Text = "ROBUX"
+			entry.badge.TextColor3 = Color3.fromRGB(190, 160, 255)
+		end
+	end
+end
+
+-- What buying `def` would also unlock (every cheaper yen character not owned yet).
+local function includes(def: any): { string }
+	local names = {}
+	if def.tier ~= "Yen" then
+		return names
+	end
+	for _, other in CharacterDefs.list do
+		if other ~= def and other.tier == "Yen" and (other.yenTier or 0) < (def.yenTier or 0) and not owned(other.id) then
+			table.insert(names, other.name)
+		end
+	end
+	return names
+end
+
+local function setAction(label: string, color: Color3, enabled: boolean)
+	refs.actionText.Text = label
+	refs.action.BackgroundColor3 = color
+	refs.action.BackgroundTransparency = if enabled then 0.1 else 0.6
+	refs.actionText.TextTransparency = if enabled then 0 else 0.35
+	refs.action.Active = enabled
+	refs.actionFill.Size = UDim2.fromScale(0, 1)
+end
+
+local function refreshDetail()
+	local def = state.selected
+	if not def then
+		return
+	end
+	refs.name.Text = string.upper(def.name)
+	refs.nameShadow.Text = refs.name.Text
+	refs.identity.Text = def.identity
+	refs.mild.Text = def.abilities.mild
+	refs.ultimate.Text = def.abilities.ultimate
+	refs.tier.Text = if def.tier == "Free" then "STARTER" elseif def.tier == "Yen" then string.format("TIER %d  ·  YEN", def.yenTier or 0) else "PREMIUM  ·  ROBUX"
+	refs.accentBar.BackgroundColor3 = def.accent
+	local extra = includes(def)
+	refs.includes.Text = if #extra > 0 and not owned(def.id) then "ALSO UNLOCKS  " .. string.upper(table.concat(extra, " · ")) else ""
+	if equipped(def.id) then
+		setAction("EQUIPPED", Color3.fromRGB(30, 60, 70), false)
+		refs.price.Text = "READY TO FIGHT"
+		refs.price.TextColor3 = HOLO
+	elseif owned(def.id) then
+		setAction("EQUIP", Color3.fromRGB(20, 120, 140), true)
+		refs.price.Text = "OWNED"
+		refs.price.TextColor3 = UI.Colors.Good
+	elseif def.tier == "Yen" then
+		local price = def.yenPrice or 0
+		local affordable = yen() >= price
+		refs.price.Text = "¥" .. UI.formatNumber(price)
+		refs.price.TextColor3 = if affordable then GOLD else UI.Colors.Muted
+		if affordable then
+			setAction("HOLD TO BUY", Color3.fromRGB(150, 30, 110), true)
+		else
+			setAction(string.format("NEED ¥%s MORE", UI.formatNumber(price - yen())), Color3.fromRGB(50, 40, 50), false)
+		end
+	else
+		refs.price.Text = "ROBUX"
+		refs.price.TextColor3 = Color3.fromRGB(190, 160, 255)
+		setAction("ROBUX · COMING SOON", Color3.fromRGB(50, 40, 70), false)
+	end
+end
+
+local function buildGui()
+	local gui = UI.screen("NAU_Shop", 30, true)
+	gui.Enabled = false
+	refs.gui = gui
+
+	local canvas = UI.new("Frame", {
+		Name = "Canvas",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(CANVAS.X, CANVAS.Y),
+		BackgroundTransparency = 1,
+		Parent = gui,
+	})
+	refs.scale = UI.new("UIScale", { Parent = canvas })
+	refs.canvas = canvas
+
+	-- Scanlines and a slow scan band over everything, very faint.
+	local lines = UI.new("Frame", { Name = "Scanlines", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, ZIndex = 15, Parent = canvas })
+	for y = 0, CANVAS.Y, 18 do
+		UI.new("Frame", { Position = UDim2.fromOffset(0, y), Size = UDim2.new(1, 0, 0, 1), BackgroundColor3 = HOLO, BackgroundTransparency = 0.95, BorderSizePixel = 0, ZIndex = 15, Parent = lines })
+	end
+	refs.band = UI.new("Frame", { Name = "ScanBand", Size = UDim2.new(1, 0, 0, 140), BackgroundColor3 = HOLO, BackgroundTransparency = 0.94, BorderSizePixel = 0, ZIndex = 15, Parent = canvas })
+	UI.new("UIGradient", {
+		Rotation = 90,
+		Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.5, 0), NumberSequenceKeypoint.new(1, 1) }),
+		Parent = refs.band,
+	})
+
+	-- Header: title on the left, balance and exit on the right.
+	local header = UI.new("Frame", { Name = "Header", Position = UDim2.fromOffset(70, 36), Size = UDim2.fromOffset(CANVAS.X - 140, 110), BackgroundTransparency = 1, Parent = canvas })
+	refs.header = header
+	text({ Text = "ショップ  //  YEN EXCHANGE  //  販売中", TextSize = 20, TextColor3 = PINK, Size = UDim2.fromOffset(700, 24), Parent = header })
+	local title = text({ Text = "FIGHTER EXCHANGE", TextSize = 72, Position = UDim2.fromOffset(0, 22), Size = UDim2.fromOffset(900, 80), Parent = header })
+	UI.new("UIGradient", {
+		Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, WHITE), ColorSequenceKeypoint.new(1, HOLO) }),
+		Parent = title,
+	})
+	refs.title = title
+	local wallet = glassPanel({ Name = "Wallet", AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 6), Size = UDim2.fromOffset(360, 96), Parent = header })
+	text({ Text = "BALANCE  ·  残高", TextSize = 16, TextColor3 = UI.Colors.Muted, Position = UDim2.fromOffset(22, 10), Size = UDim2.fromOffset(300, 20), Parent = wallet })
+	refs.balance = text({ Text = "¥0", TextSize = 50, TextColor3 = GOLD, Position = UDim2.fromOffset(20, 30), Size = UDim2.fromOffset(320, 58), Parent = wallet })
+	refs.exit = UI.new("TextButton", {
+		Name = "Exit",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -380, 0, 30),
+		Size = UDim2.fromOffset(170, 52),
+		BackgroundColor3 = GLASS,
+		BackgroundTransparency = 0.2,
+		AutoButtonColor = true,
+		FontFace = HEAVY,
+		TextSize = 22,
+		TextColor3 = WHITE,
+		Text = "EXIT  [X]",
+		Parent = header,
+	})
+	neonEdge(refs.exit, 2, 0.2)
+
+	-- Left: the roster.
+	local roster = glassPanel({ Name = "Roster", Position = UDim2.fromOffset(70, 172), Size = UDim2.fromOffset(540, 790), Parent = canvas })
+	refs.roster = roster
+	text({ Text = "ROSTER  ·  ロスター", TextSize = 24, TextColor3 = HOLO, Position = UDim2.fromOffset(22, 14), Size = UDim2.fromOffset(400, 30), Parent = roster })
+	for i, def in CharacterDefs.list do
+		local card = buildCard(roster, def, i)
+		card.Activated:Connect(function()
+			ShopController.select(def)
+		end)
+	end
+
+	-- Right: the selected character.
+	local detail = glassPanel({ Name = "Detail", AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -70, 0, 172), Size = UDim2.fromOffset(580, 790), Parent = canvas })
+	refs.detail = detail
+	refs.accentBar = UI.new("Frame", { Position = UDim2.fromOffset(0, 0), Size = UDim2.new(1, 0, 0, 6), BorderSizePixel = 0, BackgroundColor3 = HOLO, Parent = detail })
+	text({ Text = "キャラクター  //  FIGHTER FILE", TextSize = 18, TextColor3 = PINK, Position = UDim2.fromOffset(28, 24), Size = UDim2.fromOffset(500, 22), Parent = detail })
+	refs.nameShadow = text({ Text = "", TextSize = 84, TextColor3 = PINK, TextTransparency = 0.45, Position = UDim2.fromOffset(32, 50), Size = UDim2.fromOffset(530, 90), Parent = detail })
+	refs.name = text({ Text = "", TextSize = 84, Position = UDim2.fromOffset(28, 46), Size = UDim2.fromOffset(530, 90), Parent = detail })
+	refs.tier = text({ Text = "", TextSize = 20, TextColor3 = HOLO, Position = UDim2.fromOffset(30, 136), Size = UDim2.fromOffset(520, 24), Parent = detail })
+	refs.identity = text({
+		Text = "",
+		Font = BODY,
+		TextSize = 20,
+		TextWrapped = true,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		TextColor3 = Color3.fromRGB(200, 214, 226),
+		Position = UDim2.fromOffset(30, 176),
+		Size = UDim2.fromOffset(520, 80),
+		Parent = detail,
+	})
+	-- Abilities, each with a preview button that plays it on the hologram.
+	local function abilityRow(y: number, key: string, slot: string): TextLabel
+		local row = UI.new("Frame", { Position = UDim2.fromOffset(28, y), Size = UDim2.fromOffset(524, 64), BackgroundColor3 = GLASS, BackgroundTransparency = 0.3, BorderSizePixel = 0, Parent = detail })
+		UI.stroke(HOLO, 1, 0.7).Parent = row
+		local keycap = text({ Text = key, TextSize = 30, TextColor3 = GLASS, TextXAlignment = Enum.TextXAlignment.Center, BackgroundTransparency = 0, BackgroundColor3 = HOLO, Position = UDim2.fromOffset(10, 10), Size = UDim2.fromOffset(44, 44), Parent = row })
+		UI.new("UICorner", { CornerRadius = UDim.new(0, 4), Parent = keycap })
+		text({ Text = if slot == "mild" then "MILD  ·  8 s" else "ULTIMATE  ·  20 s", TextSize = 14, TextColor3 = UI.Colors.Muted, Position = UDim2.fromOffset(70, 8), Size = UDim2.fromOffset(300, 16), Parent = row })
+		local name = text({ Text = "", TextSize = 26, Position = UDim2.fromOffset(70, 24), Size = UDim2.fromOffset(320, 32), Parent = row })
+		local preview = UI.new("TextButton", {
+			AnchorPoint = Vector2.new(1, 0.5),
+			Position = UDim2.new(1, -10, 0.5, 0),
+			Size = UDim2.fromOffset(110, 40),
+			BackgroundColor3 = GLASS,
+			AutoButtonColor = true,
+			FontFace = HEAVY,
+			TextSize = 18,
+			TextColor3 = HOLO,
+			Text = "▶ PREVIEW",
+			Parent = row,
+		})
+		UI.stroke(HOLO, 1, 0.3).Parent = preview
+		preview.Activated:Connect(function()
+			ShopController.preview(slot)
+		end)
+		return name
+	end
+	refs.mild = abilityRow(276, "Q", "mild")
+	refs.ultimate = abilityRow(352, "E", "ultimate")
+	text({ Text = "PRICE  ·  価格", TextSize = 16, TextColor3 = UI.Colors.Muted, Position = UDim2.fromOffset(30, 456), Size = UDim2.fromOffset(300, 20), Parent = detail })
+	refs.price = text({ Text = "", TextSize = 60, TextColor3 = GOLD, Position = UDim2.fromOffset(28, 474), Size = UDim2.fromOffset(520, 70), Parent = detail })
+	refs.includes = text({ Text = "", Font = BODY, TextSize = 16, TextWrapped = true, TextColor3 = HOLO, Position = UDim2.fromOffset(30, 548), Size = UDim2.fromOffset(520, 44), Parent = detail })
+
+	-- The action button: a charge bar fills while BUY is held.
+	local action = UI.new("TextButton", {
+		Name = "Action",
+		Text = "",
+		AutoButtonColor = false,
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -34),
+		Size = UDim2.new(1, -56, 0, 92),
+		BackgroundColor3 = Color3.fromRGB(150, 30, 110),
+		BorderSizePixel = 0,
+		ClipsDescendants = true,
+		Parent = detail,
+	})
+	neonEdge(action, 3, 0)
+	refs.actionFill = UI.new("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = HOLO, BackgroundTransparency = 0.25, BorderSizePixel = 0, Parent = action })
+	refs.actionText = text({ Text = "", TextSize = 36, TextXAlignment = Enum.TextXAlignment.Center, Size = UDim2.fromScale(1, 1), ZIndex = 3, Parent = action })
+	refs.action = action
+
+	-- Centre: a targeting frame round the hologram, with a caption.
+	local focus = UI.new("Frame", { Name = "Focus", Position = UDim2.fromOffset(700, 190), Size = UDim2.fromOffset(520, 720), BackgroundTransparency = 1, Parent = canvas })
+	brackets(focus, HOLO, 40, 2)
+	refs.focusCaption = text({ Text = "", TextSize = 22, TextColor3 = HOLO, TextXAlignment = Enum.TextXAlignment.Center, AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 1, 12), Size = UDim2.fromOffset(520, 26), Parent = focus })
+	refs.focus = focus
+
+	-- Effects layer on top of everything, and a full-screen flash for purchases.
+	refs.fx = UI.new("Frame", { Name = "FX", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, ZIndex = 18, Parent = canvas })
+	refs.flash = UI.new("Frame", { Name = "Flash", Size = UDim2.new(1, 400, 1, 400), Position = UDim2.fromOffset(-200, -200), BackgroundColor3 = WHITE, BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 19, Parent = canvas })
+	refs.stamp = text({ Text = "UNLOCKED  解放", TextSize = 120, TextXAlignment = Enum.TextXAlignment.Center, TextColor3 = HOLO, TextStrokeColor3 = PINK, TextStrokeTransparency = 0, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromOffset(CANVAS.X / 2, CANVAS.Y / 2), Size = UDim2.fromOffset(1200, 140), Visible = false, ZIndex = 20, Parent = canvas })
+
+	-- Hold-to-buy / equip input.
+	action.InputBegan:Connect(function(input)
+		if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then
+			return
+		end
+		ShopController.pressAction()
+	end)
+	action.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			ShopController.releaseAction()
+		end
+	end)
+	action.MouseLeave:Connect(function()
+		ShopController.releaseAction()
+	end)
+	refs.exit.Activated:Connect(function()
+		ShopController.close()
+	end)
+end
+
+local function fitCanvas()
+	local camera = workspace.CurrentCamera
+	if refs.scale and camera then
+		local size = camera.ViewportSize
+		refs.scale.Scale = math.min(size.X / CANVAS.X, size.Y / CANVAS.Y)
+	end
+end
+
+-- The hologram and the camera -------------------------------------------------------------------
+
+local function findShop(): Model?
+	local world = workspace:FindFirstChild("NAUWorld")
+	local lobby = world and world:FindFirstChild("Lobby")
+	local shop = lobby and lobby:FindFirstChild("ShopHouse", true)
+	return if shop and shop:IsA("Model") then shop else nil
+end
+
+-- A hologram copy of the player's avatar on the projector pad.
+local function makeHologram(stage: BasePart): Model?
+	local character = localPlayer.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if not character or not humanoid or not root or not root:IsA("BasePart") then
+		return nil
+	end
+	local archivable = character.Archivable
+	character.Archivable = true
+	local copy = character:Clone()
+	character.Archivable = archivable
+	if not copy then
+		return nil
+	end
+	for _, d in copy:GetDescendants() do
+		-- Scripts, and anything the game hung on the real character (run trails, dust, name tags).
+		if d:IsA("LuaSourceContainer") or d:IsA("ForceField") or d:IsA("Trail") or d:IsA("ParticleEmitter") or d:IsA("BillboardGui") then
+			d:Destroy()
+		elseif d:IsA("BasePart") then
+			d.CanCollide = false
+			d.CanQuery = false
+			d.CanTouch = false
+		end
+	end
+	copy.Name = "NAU_ShopHologram"
+	local copyHumanoid = copy:FindFirstChildOfClass("Humanoid")
+	if copyHumanoid then
+		copyHumanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+		copyHumanoid.EvaluateStateMachine = false
+	end
+	local copyRoot = copy:FindFirstChild("HumanoidRootPart") :: BasePart
+	copyRoot.Anchored = true
+	local lift = humanoid.HipHeight + root.Size.Y / 2
+	copy:PivotTo(stage.CFrame * CFrame.new(0, lift, 0))
+	local glow = UI.new("Highlight", {
+		FillColor = HOLO,
+		FillTransparency = 0.72,
+		OutlineColor = HOLO,
+		OutlineTransparency = 0,
+		DepthMode = Enum.HighlightDepthMode.Occluded,
+		Parent = copy,
+	})
+	scene.glow = glow
+	copy.Parent = workspace
+	scene.stageCFrame = stage.CFrame * CFrame.new(0, lift, 0)
+	return copy
+end
+
+local function cameraTween(cframe: CFrame, seconds: number, style: Enum.EasingStyle?): Tween
+	local camera = workspace.CurrentCamera
+	return tween(camera, seconds, { CFrame = cframe }, style or Enum.EasingStyle.Quad, Enum.EasingDirection.InOut)
+end
+
+-- Freeze the character while shopping (this place has no standard PlayerModule to disable controls
+-- through, so the humanoid is held still directly and restored exactly as it was).
+local function setControls(enabled: boolean)
+	local character = localPlayer.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then
+		return
+	end
+	if not enabled then
+		scene.movement = {
+			humanoid = humanoid,
+			walkSpeed = humanoid.WalkSpeed,
+			jumpPower = humanoid.JumpPower,
+			jumpHeight = humanoid.JumpHeight,
+			autoRotate = humanoid.AutoRotate,
+		}
+		humanoid.WalkSpeed = 0
+		humanoid.JumpPower = 0
+		humanoid.JumpHeight = 0
+		humanoid.AutoRotate = false
+	elseif scene.movement then
+		local saved = scene.movement
+		scene.movement = nil
+		if saved.humanoid.Parent then
+			saved.humanoid.WalkSpeed = saved.walkSpeed
+			saved.humanoid.JumpPower = saved.jumpPower
+			saved.humanoid.JumpHeight = saved.jumpHeight
+			saved.humanoid.AutoRotate = saved.autoRotate
+		end
+	end
+end
+
+-- Public -----------------------------------------------------------------------------------------
+
+function ShopController.select(def: any)
+	if state.selected == def then
+		return
+	end
+	local first = state.selected == nil
+	state.selected = def
+	refreshCards()
+	refreshDetail()
+	refs.focusCaption.Text = string.format("%s  ·  HOLOGRAM PREVIEW", string.upper(def.name))
+	if not first then
+		sound("select")
+		speedBurst(Vector2.new(CANVAS.X / 2, CANVAS.Y / 2), HOLO, 16)
+		glitch(refs.name, 5)
+		refs.detail.Position = UDim2.new(1, -40, 0, 172)
+		tween(refs.detail, 0.25, { Position = UDim2.new(1, -70, 0, 172) })
+	end
+	state.previewSlot = "mild"
+	state.nextPreview = 0 -- play the new character's mild straight away
+end
+
+function ShopController.preview(slot: string)
+	state.previewSlot = slot
+	state.nextPreview = 0
+end
+
+function ShopController.pressAction()
+	local def = state.selected
+	if not def or state.busy or not refs.action.Active then
+		return
+	end
+	if owned(def.id) then
+		if equipped(def.id) then
+			return
+		end
+		state.busy = true
+		local ok, result = pcall(function()
+			return Remotes.EquipCharacter:InvokeServer(def.id)
+		end)
+		state.busy = false
+		if ok and type(result) == "table" and result.status == "equipped" then
+			ClientState.ability.equipped = def.id -- the server's AbilityState follows; redraw now
+			sound("equip")
+			speedBurst(Vector2.new(CANVAS.X - 360, 870), HOLO, 12)
+			refreshCards()
+			refreshDetail()
+		end
+		return
+	end
+	-- BUY: charge up for HOLD_TO_BUY seconds; letting go early cancels.
+	state.holdStarted = os.clock()
+	sound("charge")
+	refs.actionFill.Size = UDim2.fromScale(0, 1)
+	tween(refs.actionFill, HOLD_TO_BUY, { Size = UDim2.fromScale(1, 1) }, Enum.EasingStyle.Linear)
+	refs.actionText.Text = "CHARGING..."
+end
+
+function ShopController.releaseAction()
+	if state.holdStarted and not state.busy then
+		state.holdStarted = nil
+		refreshDetail() -- cancelled: empty the bar, restore the label
+	end
+end
+
+local function completePurchase(def: any)
+	state.holdStarted = nil
+	state.busy = true
+	refs.actionText.Text = "PROCESSING..."
+	local ok, result = pcall(function()
+		return Remotes.PurchaseItem:InvokeServer(def.id)
+	end)
+	state.busy = false
+	if not ok or type(result) ~= "table" then
+		refreshDetail()
+		refs.includes.Text = "CONNECTION HICCUP. TRY AGAIN."
+		return
+	end
+	if result.status == "bought" then
+		-- The server already sent the new owned list (AbilityState); fold the grant in now so the menu
+		-- updates this frame.
+		local list = table.clone(ClientState.ability.owned or {})
+		for _, id in result.granted or {} do
+			if not table.find(list, id) then
+				table.insert(list, id)
+			end
+		end
+		ClientState.ability.owned = list
+		sound("purchase")
+		refs.flash.BackgroundTransparency = 0.15
+		tween(refs.flash, 0.6, { BackgroundTransparency = 1 })
+		speedBurst(Vector2.new(CANVAS.X / 2, CANVAS.Y / 2), WHITE, 28)
+		speedBurst(Vector2.new(CANVAS.X / 2, CANVAS.Y / 2), PINK, 14)
+		refs.stamp.Visible = true
+		refs.stamp.TextTransparency = 0
+		refs.stamp.TextStrokeTransparency = 0
+		refs.stamp.Size = UDim2.fromOffset(1800, 200)
+		tween(refs.stamp, 0.35, { Size = UDim2.fromOffset(1200, 140) }, Enum.EasingStyle.Back)
+		task.delay(1.1, function()
+			local fade = tween(refs.stamp, 0.35, { TextTransparency = 1, TextStrokeTransparency = 1 })
+			fade.Completed:Connect(function()
+				refs.stamp.Visible = false
+			end)
+		end)
+		CameraShake.shake(0.35, 0.3)
+		state.previewSlot = "ultimate"
+		state.nextPreview = 0 -- celebrate with the ultimate
+	elseif result.status == "insufficient" then
+		sound("denied")
+		glitch(refs.price, 8)
+	end
+	refreshCards()
+	refreshDetail()
+end
+
+local function animate(dt: number)
+	if not state.open then
+		return
+	end
+	local now = os.clock()
+	-- Flowing neon edges and the drifting scan band.
+	local spin = (now * 60) % 360
+	for _, gradient in refs.gradients do
+		gradient.Rotation = spin
+	end
+	refs.band.Position = UDim2.fromOffset(0, ((now * 140) % (CANVAS.Y + 280)) - 140)
+	-- The yen counter rolls toward the real balance.
+	local target = yen()
+	if math.abs(state.yenShown - target) >= 1 then
+		state.yenShown += (target - state.yenShown) * math.min(1, dt * 8)
+		if math.abs(state.yenShown - target) < 1 then
+			state.yenShown = target
+		end
+	end
+	refs.balance.Text = "¥" .. UI.formatNumber(state.yenShown)
+	-- Hold-to-buy completes.
+	if state.holdStarted and now - state.holdStarted >= HOLD_TO_BUY and not state.busy and state.selected then
+		task.spawn(completePurchase, state.selected)
+	end
+	-- The hologram: a slow turntable sway, a flicker, and an ability preview every few seconds.
+	local hologram = scene.hologram
+	if hologram and hologram.Parent and scene.stageCFrame then
+		hologram:PivotTo(scene.stageCFrame * CFrame.Angles(0, math.rad(math.sin(now * 0.6) * 25), 0))
+		if scene.glow then
+			scene.glow.FillTransparency = 0.7 + math.sin(now * 23) * 0.04 + (if math.random() < 0.03 then 0.2 else 0)
+		end
+		if state.selected and now >= state.nextPreview then
+			local slot = state.previewSlot
+			AbilityAnim.preview(hologram, state.selected.id, slot, if slot == "mild" then 0.7 else 1.1)
+			state.previewSlot = if slot == "mild" then "ultimate" else "mild"
+			state.nextPreview = now + PREVIEW_EVERY
+		end
+	end
+end
+
+function ShopController.open()
+	if state.open or state.busy then
+		return
+	end
+	local shop = findShop()
+	local door = shop and shop:FindFirstChild("ShopDoor")
+	local cameraPart = shop and shop:FindFirstChild("ShopCamera")
+	local stage = shop and shop:FindFirstChild("ShopStage")
+	if not door or not cameraPart or not stage then
+		return
+	end
+	state.open = true
+	state.holdStarted = nil
+	state.yenShown = yen()
+	setControls(false)
+
+	-- Hide the rest of the HUD while shopping.
+	scene.hidden = {}
+	for _, g in localPlayer.PlayerGui:GetChildren() do
+		if g:IsA("ScreenGui") and g ~= refs.gui and g.Enabled then
+			g.Enabled = false
+			table.insert(scene.hidden, g)
+		end
+	end
+
+	-- Camera: to the door, then through it to the shop camera.
+	local camera = workspace.CurrentCamera
+	scene.returnCFrame = camera.CFrame
+	scene.returnFov = camera.FieldOfView
+	camera.CameraType = Enum.CameraType.Scriptable
+	local doorway = door.CFrame * CFrame.new(0, 1.2, -7)
+	scene.doorway = CFrame.lookAt(doorway.Position, door.Position + Vector3.new(0, 1.2, 0))
+	scene.hologram = makeHologram(stage)
+	tween(camera, 1.1, { FieldOfView = 52 }, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut)
+	cameraTween(scene.doorway, 0.5).Completed:Wait()
+	if not state.open then
+		return
+	end
+	cameraTween(cameraPart.CFrame, 0.6, Enum.EasingStyle.Quint).Completed:Wait()
+	if not state.open then
+		return
+	end
+
+	-- Boot the menu: sweep, unfold, glitch.
+	fitCanvas()
+	refs.gui.Enabled = true
+	sound("boot")
+	scanSweep()
+	for _, panel in { refs.roster, refs.detail } do
+		local size = panel.Size
+		panel.Size = UDim2.new(size.X.Scale, size.X.Offset, 0, 0)
+		tween(panel, 0.45, { Size = size }, Enum.EasingStyle.Quint)
+	end
+	glitch(refs.header, 8)
+	local pick = state.selected or CharacterDefs.byId[ClientState.ability.equipped or ""] or CharacterDefs.list[1]
+	state.selected = nil
+	ShopController.select(pick)
+end
+
+function ShopController.close()
+	if not state.open then
+		return
+	end
+	state.open = false
+	state.holdStarted = nil
+	refs.gui.Enabled = false
+	local camera = workspace.CurrentCamera
+	local function finish()
+		if scene.hologram then
+			scene.hologram:Destroy()
+			scene.hologram = nil
+		end
+		camera.CameraType = Enum.CameraType.Custom
+		camera.FieldOfView = scene.returnFov or 70
+		for _, g in scene.hidden or {} do
+			if g.Parent then
+				g.Enabled = true
+			end
+		end
+		scene.hidden = nil
+		setControls(true)
+	end
+	if scene.doorway and camera.CameraType == Enum.CameraType.Scriptable then
+		task.spawn(function()
+			cameraTween(scene.doorway, 0.45, Enum.EasingStyle.Quint).Completed:Wait()
+			if scene.returnCFrame then
+				cameraTween(scene.returnCFrame, 0.4).Completed:Wait()
+			end
+			if not state.open then
+				finish()
+			end
+		end)
+	else
+		finish()
+	end
+end
+
+function ShopController.isOpen(): boolean
+	return state.open
+end
+
+function ShopController.Start()
+	buildGui()
+	local camera = workspace.CurrentCamera
+	if camera then
+		camera:GetPropertyChangedSignal("ViewportSize"):Connect(fitCanvas)
+	end
+	RunService.RenderStepped:Connect(animate)
+	ProximityPromptService.PromptTriggered:Connect(function(prompt, player)
+		if player == localPlayer and prompt:GetAttribute("Action") == "Shop" then
+			task.spawn(ShopController.open)
+		end
+	end)
+	UserInputService.InputBegan:Connect(function(input, gameProcessed)
+		if not gameProcessed and state.open and input.KeyCode == EXIT_KEY then
+			ShopController.close()
+		end
+	end)
+	-- Redraw when the server's view changes (a purchase, an equip); close if we leave the lobby.
+	ClientState.Changed:Connect(function(kind)
+		if state.open and kind == "ability" then
+			refreshCards()
+			refreshDetail()
+		elseif state.open and kind == "life" and ClientState.life.inMatch then
+			ShopController.close()
+		end
+	end)
+	localPlayer.CharacterAdded:Connect(function()
+		if state.open then
+			ShopController.close()
+		end
+	end)
+end
+
+return ShopController

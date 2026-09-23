@@ -9,6 +9,10 @@
 --     layered onto the joints' Transform right after the normal animation (Stepped) and cleared just
 --     before the animator runs (PreAnimation), the same way the ninja-run pose works, so nothing piles
 --     up and nothing is left behind when a cast ends.
+-- Placeholder motion is kept fluid (owner request 2026-09-23): the poses only set *targets*. Each joint
+-- follows its target on a damped spring (Modules/Spring, tuned per joint in Constants.ANIM_SPRINGS), the
+-- torso slower than the arms, so strikes ease in, overshoot a touch and settle; the hands trail fast arm
+-- swings; and a small breathing sway keeps held poses alive.
 -- Casts end early when the fighter dies or respawns. Visual only: the server never waits on these.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -18,6 +22,7 @@ local Modules = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Modules")
 local Constants = require(Modules:WaitForChild("Constants"))
 local AnimationIds = require(Modules:WaitForChild("AnimationIds"))
 local AnimTimeline = require(Modules:WaitForChild("AnimTimeline"))
+local Spring = require(Modules:WaitForChild("Spring"))
 local AbilityPoses = require(script.Parent:WaitForChild("AbilityPoses"))
 local Swords = require(script.Parent:WaitForChild("Swords"))
 
@@ -51,6 +56,11 @@ type Cast = {
 	trails: boolean, -- run the blade trails from the release until the fade
 	trailsOn: boolean,
 	poseOffset: number, -- seconds added to the pose clock (a clash's second fighter runs half a beat off)
+	stiffness: number, -- multiplies the spring frequencies (fast repeating moves need snappier joints)
+	names: { string }, -- the joints this cast drives, wrists last (they read the arms' swing)
+	joints: { [string]: { angle: Vector3, velocity: Vector3 } }, -- spring state per joint, in degrees
+	lastTime: number,
+	seed: number, -- phase for the breathing sway, so two fighters never sway in lockstep
 }
 
 local localPlayer = Players.LocalPlayer
@@ -58,15 +68,39 @@ local casts: { [Model]: Cast } = {}
 local dirty: { [Instance]: boolean } = {}
 local nextToken = 0
 local trackCache: { [Animator]: { [string]: AnimationTrack } } = setmetatable({}, { __mode = "k" }) :: any
-local cframeCache: { [{ number }]: CFrame } = setmetatable({}, { __mode = "k" }) :: any
+local rng = Random.new()
 
-local function toCFrame(angles: { number }): CFrame
-	local cached = cframeCache[angles]
-	if not cached then
-		cached = CFrame.Angles(math.rad(angles[1] or 0), math.rad(angles[2] or 0), math.rad(angles[3] or 0))
-		cframeCache[angles] = cached
-	end
-	return cached
+-- Sway amount per joint, as a share of Constants.ANIM_LIFE_DEGREES.
+local LIFE_SHARE: { [string]: number } = {
+	Waist = 0.7,
+	Neck = 0.5,
+	RightShoulder = 1,
+	LeftShoulder = 1,
+	RightElbow = 1.2,
+	LeftElbow = 1.2,
+}
+
+local function springFor(name: string): (number, number)
+	local springs = Constants.ANIM_SPRINGS
+	local spec = springs[name]
+		or (string.find(name, "Shoulder") and springs.Shoulder)
+		or (string.find(name, "Elbow") and springs.Elbow)
+		or (string.find(name, "Wrist") and springs.Wrist)
+		or springs.Shoulder
+	return spec[1], spec[2]
+end
+
+local function toDegrees(cframe: CFrame): Vector3
+	local x, y, z = cframe:ToEulerAnglesXYZ()
+	return Vector3.new(math.deg(x), math.deg(y), math.deg(z))
+end
+
+local function fromDegrees(angles: Vector3): CFrame
+	return CFrame.Angles(math.rad(angles.X), math.rad(angles.Y), math.rad(angles.Z))
+end
+
+local function vectorOf(angles: { number }): Vector3
+	return Vector3.new(angles[1] or 0, angles[2] or 0, angles[3] or 0)
 end
 
 local function evaluate(pose: Pose?, t: number): PoseTable?
@@ -194,6 +228,29 @@ local function endCast(character: Model, fade: number)
 	end
 end
 
+-- Every joint either pose touches (function poses sampled at a few moments), then the wrists of any posed
+-- arm: the wrists come last because their drag reads the arm joints' spring velocity from the same frame.
+local function jointNames(windup: Pose?, release: Pose?): { string }
+	local seen: { [string]: boolean } = {}
+	local names: { string } = {}
+	for _, pose in { windup, release } do
+		for _, t in { 0, 0.05, 0.1, 0.2 } do
+			for name in evaluate(pose, t) or {} do
+				if not seen[name] and JOINT_PARTS[name] and not string.find(name, "Wrist") then
+					seen[name] = true
+					table.insert(names, name)
+				end
+			end
+		end
+	end
+	for _, side in { "Right", "Left" } do
+		if seen[side .. "Shoulder"] or seen[side .. "Elbow"] then
+			table.insert(names, side .. "Wrist")
+		end
+	end
+	return names
+end
+
 -- A fighter from a user id (what the server sends) or a character model (solo visual tests against a
 -- dummy, since a real clash needs two players).
 local function fighterOf(who: any): (Player?, Model?)
@@ -217,10 +274,13 @@ local function startCast(who: any, characterId: string, slot: string, move: any,
 	local releaseId = if authored then AnimationIds.get(characterId, slot, "release") else nil
 	endCast(character, Constants.ANIM_RELEASE_SNAP)
 	nextToken += 1
+	local started = os.clock()
+	local windupPose = if windupId then nil else move.windup
+	local releasePose = if releaseId then nil else move.release
 	local cast: Cast = {
 		character = character,
 		humanoid = humanoid,
-		started = os.clock(),
+		started = started,
 		timing = {
 			windup = math.clamp(windupSeconds, 0, Constants.ANIM_MAX_WINDUP),
 			hold = tonumber(move.hold) or Constants.ANIM_DEFAULT_HOLD,
@@ -228,14 +288,19 @@ local function startCast(who: any, characterId: string, slot: string, move: any,
 			snap = Constants.ANIM_RELEASE_SNAP,
 			blendOut = Constants.ANIM_BLEND_OUT,
 		},
-		windup = if windupId then nil else move.windup,
-		release = if releaseId then nil else move.release,
+		windup = windupPose,
+		release = releasePose,
 		tracks = {},
 		token = nextToken,
 		swords = move.swords ~= nil,
 		trails = move.trails == true,
 		trailsOn = false,
 		poseOffset = poseOffset or 0,
+		stiffness = tonumber(move.stiffness) or 1,
+		names = jointNames(windupPose, releasePose),
+		joints = {},
+		lastTime = started,
+		seed = rng:NextNumber(0, math.pi * 2),
 	}
 	casts[character] = cast
 	if move.swords then
@@ -285,29 +350,81 @@ local function applyCast(cast: Cast, now: number): boolean
 			Swords.setTrails(cast.character, want)
 		end
 	end
+	local dt = math.clamp(now - cast.lastTime, 0, 0.1)
+	cast.lastTime = now
+	-- While an authored clip plays this phase, leave the joints to it (and start the springs afresh from
+	-- whatever it left behind if a placeholder phase follows).
+	local posing = if s.mix >= 1 then cast.release ~= nil else cast.windup ~= nil
+	if not posing then
+		table.clear(cast.joints)
+		return true
+	end
 	local from = evaluate(cast.windup, s.windupT + cast.poseOffset)
 	local to = if s.mix > 0 then evaluate(cast.release, s.releaseT + cast.poseOffset) else nil
-	local names: { [string]: boolean } = {}
-	for name in from or {} do
-		names[name] = true
+	local fading = s.phase == "fade"
+	local elapsed = now - cast.started
+	local life = Constants.ANIM_LIFE_DEGREES
+	-- Strikes: stiffer springs right as the ability releases, easing back to the soft default.
+	-- A move's own stiffness (fast repeating blows, spins) applies from the release on, so its wind-up
+	-- still eases in softly.
+	local boost = 1
+	if s.phase == "release" then
+		local left = 1 - AnimTimeline.smooth(s.releaseT / Constants.ANIM_STRIKE_SECONDS)
+		boost = math.max(1 + (Constants.ANIM_STRIKE_BOOST - 1) * left, cast.stiffness)
 	end
-	for name in to or {} do
-		names[name] = true
-	end
-	for name in names do
+	for _, name in cast.names do
 		local joint = jointOf(cast.character, name)
 		if joint then
-			-- A joint missing from one pose keeps the normal animation in that pose (weight 0 there).
+			-- What the normal animation wants this frame: the target for any joint the current pose leaves
+			-- out. While fading, the springs keep holding the pose and only the eased blend weight carries
+			-- the body home (spring and blend together measured as a jerk).
+			local animated = joint.Transform
+			local animatedAngles = toDegrees(animated)
+			local target = animatedAngles
 			local a = from and from[name]
 			local b = to and to[name]
-			local cfA = if a then toCFrame(a) else nil
-			local cfB = if b then toCFrame(b) else nil
-			local target: CFrame = if cfA and cfB then cfA:Lerp(cfB, s.mix) else (cfA or cfB) :: CFrame
-			local weightA = if a then 1 else 0
-			local weightB = if b then 1 else 0
-			local weight = (weightA + (weightB - weightA) * s.mix) * s.weight
-			if weight > 0.001 then
-				joint.Transform = joint.Transform:Lerp(target, math.min(weight, 1))
+			if a or b then
+				local va = if a then vectorOf(a) else animatedAngles
+				local vb = if b then vectorOf(b) else animatedAngles
+				target = if s.mix > 0 then va:Lerp(vb, s.mix) else va
+				local share = if fading then nil else LIFE_SHARE[name]
+				if share then -- breathing sway, a different rhythm on every joint
+					local p = cast.seed + #name * 0.9
+					target += Vector3.new(
+						math.sin(elapsed * 2.1 + p),
+						math.sin(elapsed * 1.7 + p * 1.3) * 0.6,
+						math.sin(elapsed * 2.6 + p * 0.7) * 0.5
+					) * (life * share)
+				end
+			end
+			local state = cast.joints[name]
+			if not state then
+				state = { angle = animatedAngles, velocity = Vector3.zero } -- start from where the body is
+				cast.joints[name] = state
+			end
+			local side = string.match(name, "^(%a-)Wrist$")
+			if side then
+				-- The hand trails the arm: bent back against a forward swing, forward against a back swing.
+				local swing = 0
+				local elbow, shoulder = cast.joints[side .. "Elbow"], cast.joints[side .. "Shoulder"]
+				if elbow then
+					swing += elbow.velocity.X
+				end
+				if shoulder then
+					swing += shoulder.velocity.X * 0.6
+				end
+				local maxDrag = Constants.ANIM_WRIST_DRAG_MAX
+				target += Vector3.new(math.clamp(-swing * Constants.ANIM_WRIST_DRAG, -maxDrag, maxDrag), 0, 0)
+			end
+			target = Vector3.new(
+				Spring.nearestAngle(state.angle.X, target.X),
+				Spring.nearestAngle(state.angle.Y, target.Y),
+				Spring.nearestAngle(state.angle.Z, target.Z)
+			)
+			local frequency, damping = springFor(name)
+			state.angle, state.velocity = Spring.step(state.angle, state.velocity, target, frequency * boost, damping, dt)
+			if s.weight > 0.001 then
+				joint.Transform = animated:Lerp(fromDegrees(state.angle), math.min(s.weight, 1))
 				dirty[joint] = true
 			end
 		end
@@ -352,6 +469,13 @@ function AbilityAnim.handle(event: any)
 	elseif event.kind == "clash" then
 		onClash(event)
 	end
+end
+
+-- The yen shop's hologram: plays a character's ability animation (placeholder pose and swords) on a
+-- stand-in model that isn't a player.
+function AbilityAnim.preview(model: Model, characterId: string, slot: string, castSeconds: number)
+	local byCharacter = AbilityPoses[characterId]
+	startCast(model, characterId, slot, type(byCharacter) == "table" and byCharacter[slot] or nil, castSeconds, false)
 end
 
 -- For tests and tooling: is this character mid-cast?

@@ -298,7 +298,9 @@ local function onEffect(effect: any)
 	elseif effect.kind == "grapple" and typeof(effect.target) == "Vector3" and type(effect.speed) == "number" then
 		grapple(effect.target, effect.speed)
 	elseif effect.kind == "clearCode" then
-		SubmissionController.clearTyped()
+		if SubmissionController.clearTyped() then
+			HUDController.toast("GATLING BARRAGE: your code was knocked away", "bad")
+		end
 	elseif effect.kind == "lock" and type(effect.untilTime) == "number" then
 		SubmissionController.lockUntil(effect.untilTime)
 	end

@@ -14,10 +14,12 @@
 --   Lobby/SpawnPoints/*   invisible marker parts on the arrival plaza
 --   Lobby/Podiums/*       one Model per roster slot; its "Dais" part holds a ProximityPrompt (attribute CharacterId)
 --   Lobby/FightPortal     part "PortalGlow" holds a ProximityPrompt (attribute Action = "Fight")
+--   Lobby/ShopGarden/ShopHouse   the yen shop (see ShopHouse.luau for its ShopDoor / ShopCamera / ShopStage)
 -- Everything is anchored static scenery. Purely decorative pieces don't collide or take raycasts.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CharacterDefs =
 	require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Modules"):WaitForChild("CharacterDefs"))
+local ShopHouse = require(script.Parent:WaitForChild("ShopHouse"))
 
 local Lobby = {}
 
@@ -28,7 +30,11 @@ local COLUMN_X = 30 -- colonnade column line (both sides)
 local WALL_X = 38 -- inner face of the long side walls
 local WALL_THICKNESS = 4
 local WALL_HEIGHT = 32
-local Z_NORTH, Z_SOUTH = -118, 114 -- inner faces of the end walls
+local Z_NORTH, Z_SOUTH = -118, 146 -- inner faces of the end walls
+-- The colonnaded courtyard ends here; south of it is the shop garden (yen shop, 2026-09-23: the south wall
+-- moved back 32 studs to make room for the shop cottage behind the arrival plaza).
+local COURT_SOUTH = 114
+local SHOP_Z = 130 -- the shop cottage's centre
 local BAY = 12 -- column / pilaster spacing
 local FIRST_COLUMN_Z, LAST_COLUMN_Z = -106, 98
 local WALK_STEP = 0.6 -- the covered walkway is one low step up
@@ -259,13 +265,20 @@ end
 local function buildColonnade(parent: Instance, sx: number)
 	local side = Instance.new("Model")
 	side.Name = if sx < 0 then "ColonnadeWest" else "ColonnadeEast"
-	local length = Z_SOUTH - Z_NORTH
-	local midZ = (Z_NORTH + Z_SOUTH) / 2
+	-- The outer wall runs the full length (courtyard + shop garden); the colonnade stops at COURT_SOUTH.
+	local fullLength = Z_SOUTH - Z_NORTH
+	local fullMidZ = (Z_NORTH + Z_SOUTH) / 2
+	local length = COURT_SOUTH - Z_NORTH
+	local midZ = (Z_NORTH + COURT_SOUTH) / 2
 
-	block(side, "Wall", Vector3.new(WALL_THICKNESS, WALL_HEIGHT, length + WALL_THICKNESS * 2), CFrame.new(sx * (WALL_X + WALL_THICKNESS / 2), WALL_HEIGHT / 2, midZ), PALETTE.Wall, Enum.Material.Limestone)
-	block(side, "WallCornice", Vector3.new(WALL_THICKNESS + 2, 1.2, length + WALL_THICKNESS * 2), CFrame.new(sx * (WALL_X + WALL_THICKNESS / 2 - 1), WALL_HEIGHT + 0.6, midZ), PALETTE.WallLight, Enum.Material.Limestone)
-	block(side, "WallPlinth", Vector3.new(0.8, 2.4, length), CFrame.new(sx * (WALL_X - 0.4), WALK_STEP + 1.2, midZ), PALETTE.Trim, Enum.Material.Basalt)
-	block(side, "StringCourse", Vector3.new(0.8, 0.8, length), CFrame.new(sx * (WALL_X - 0.4), 22, midZ), PALETTE.WallLight, Enum.Material.Limestone)
+	block(side, "Wall", Vector3.new(WALL_THICKNESS, WALL_HEIGHT, fullLength + WALL_THICKNESS * 2), CFrame.new(sx * (WALL_X + WALL_THICKNESS / 2), WALL_HEIGHT / 2, fullMidZ), PALETTE.Wall, Enum.Material.Limestone)
+	block(side, "WallCornice", Vector3.new(WALL_THICKNESS + 2, 1.2, fullLength + WALL_THICKNESS * 2), CFrame.new(sx * (WALL_X + WALL_THICKNESS / 2 - 1), WALL_HEIGHT + 0.6, fullMidZ), PALETTE.WallLight, Enum.Material.Limestone)
+	block(side, "WallPlinth", Vector3.new(0.8, 2.4, fullLength), CFrame.new(sx * (WALL_X - 0.4), 1.2, fullMidZ), PALETTE.Trim, Enum.Material.Basalt)
+	block(side, "StringCourse", Vector3.new(0.8, 0.8, fullLength), CFrame.new(sx * (WALL_X - 0.4), 22, fullMidZ), PALETTE.WallLight, Enum.Material.Limestone)
+	-- The colonnade's south end: a solid limestone pier closing the walkway and carrying the entablature.
+	local capTop = COLUMN_TOP + ARCHITRAVE_H + FRIEZE_H + CORNICE_H
+	block(side, "ColonnadeEnd", Vector3.new(WALL_X - (COLUMN_X - 2), capTop, 3), CFrame.new(sx * ((COLUMN_X - 2) + WALL_X) / 2, capTop / 2, COURT_SOUTH + 1.5), PALETTE.WallLight, Enum.Material.Limestone)
+	decor(block(side, "ColonnadeEndBand", Vector3.new(WALL_X - (COLUMN_X - 2) + 0.1, 0.8, 3.1), CFrame.new(sx * ((COLUMN_X - 2) + WALL_X) / 2, 22, COURT_SOUTH + 1.5), PALETTE.Trim, Enum.Material.Basalt))
 
 	-- Covered walkway: one low step up, roofed at entablature height.
 	local walkInner = COLUMN_X - 2
@@ -288,7 +301,7 @@ local function buildColonnade(parent: Instance, sx: number)
 		column(side, sx * COLUMN_X, z)
 		block(side, "Pilaster", Vector3.new(0.8, pilasterTop - pilasterBottom, 2.4), CFrame.new(sx * (WALL_X - 0.4), (pilasterBottom + pilasterTop) / 2, z), PALETTE.WallLight, Enum.Material.Limestone)
 		local bayZ = z + BAY / 2
-		if i % 2 == 0 and bayZ < Z_SOUTH - 2 then
+		if i % 2 == 0 and bayZ < COURT_SOUTH - 2 then
 			banner(side, sx * WALL_X, bayZ, sx)
 		elseif i % 2 == 1 then
 			sconce(side, Vector3.new(sx * (WALL_X - 0.8), 9, z), Vector3.new(-sx, 0, 0))
@@ -315,24 +328,89 @@ local function buildEndWall(parent: Instance, name: string, innerZ: number, inwa
 	return wall
 end
 
--- The sealed harbour gate in the south wall (decorative).
-local function buildSouthGate(parent: Instance)
-	local gate = Instance.new("Model")
-	gate.Name = "HarborGate"
-	local inward = -1
-	local faceZ = Z_SOUTH
-	for _, sx in { -1, 1 } do
-		block(gate, "Jamb", Vector3.new(2.4, 18, 1.6), CFrame.new(sx * 7.2, 9, faceZ + inward * 0.8), PALETTE.WallLight, Enum.Material.Limestone)
-		sconce(gate, Vector3.new(sx * 9.6, 10, faceZ + inward * 0.2), Vector3.new(0, 0, inward)) -- between jamb and pilaster
+-- Kill leaderboards (owner-approved 2026-09-23): two floating holo boards flanking the arrival plaza, angled
+-- toward the spawns. The server fills them (LeaderboardService) and each client draws the screens and makes
+-- them float (LeaderboardController). Contract:
+--   Leaderboards/Board_<AllTime|Weekly>/Floating/Screen          the glass slab the board is drawn on (-Z face)
+--   Leaderboards/Board_<AllTime|Weekly>/Floating/ChampionAnchor  where the #1 player's hologram stands
+local BOARD_SPOTS = {
+	{ id = "AllTime", x = -21, accent = Color3.fromRGB(255, 208, 110) },
+	{ id = "Weekly", x = 21, accent = Color3.fromRGB(80, 230, 255) },
+}
+local BOARD_Z = 84
+local SCREEN_SIZE = Vector3.new(13, 17, 0.4)
+local SCREEN_BOTTOM = 4.5
+
+local function buildLeaderboards(model: Model)
+	local holder = folder(model, "Leaderboards")
+	for _, spot in BOARD_SPOTS do
+		local board = Instance.new("Model")
+		board.Name = "Board_" .. spot.id
+		board:SetAttribute("Board", spot.id)
+		local ground = Vector3.new(spot.x, 0, BOARD_Z)
+		local facing = CFrame.lookAt(ground, Vector3.new(0, 0, ARRIVAL_Z + 4)) -- -Z looks at the spawns
+		-- Projector pad and a faint column of light up to the screen.
+		disc(board, "PadBase", 0.6, 7.5, ground + Vector3.new(0, 0.3, 0), PALETTE.Trim, Enum.Material.Basalt)
+		decor(disc(board, "PadRing", 0.16, 7.8, ground + Vector3.new(0, 0.62, 0), spot.accent, Enum.Material.Neon))
+		decor(disc(board, "PadLens", 0.1, 6, ground + Vector3.new(0, 0.66, 0), spot.accent, Enum.Material.Glass)).Transparency = 0.5
+		local beam = decor(disc(board, "Beam", SCREEN_BOTTOM - 0.6, 5.5, ground + Vector3.new(0, 0.6 + (SCREEN_BOTTOM - 0.6) / 2, 0), spot.accent, Enum.Material.Neon))
+		beam.Transparency = 0.9
+		beam.CastShadow = false
+		glow(beam, spot.accent, 14, 1)
+
+		-- The floating part (the client bobs it): the screen, its neon frame, and the champion's spot.
+		local floating = Instance.new("Model")
+		floating.Name = "Floating"
+		local center = facing * CFrame.new(0, SCREEN_BOTTOM + SCREEN_SIZE.Y / 2, 0)
+		local screen = block(floating, "Screen", SCREEN_SIZE, center, Color3.fromRGB(6, 10, 16), Enum.Material.Glass)
+		screen.Transparency = 0.12
+		screen.CastShadow = false
+		screen.CanCollide = false
+		screen:SetAttribute("Board", spot.id)
+		local w, h = SCREEN_SIZE.X, SCREEN_SIZE.Y
+		for _, edge in {
+			{ Vector3.new(w + 0.5, 0.25, 0.5), Vector3.new(0, h / 2 + 0.12, 0) },
+			{ Vector3.new(w + 0.5, 0.25, 0.5), Vector3.new(0, -h / 2 - 0.12, 0) },
+			{ Vector3.new(0.25, h + 0.5, 0.5), Vector3.new(w / 2 + 0.12, 0, 0) },
+			{ Vector3.new(0.25, h + 0.5, 0.5), Vector3.new(-w / 2 - 0.12, 0, 0) },
+		} do
+			decor(block(floating, "Edge", edge[1], center * CFrame.new(edge[2]), spot.accent, Enum.Material.Neon)).CastShadow = false
+		end
+		-- A small crest on top and the champion's spot above it.
+		decor(block(floating, "Crest", Vector3.new(3, 0.5, 0.6), center * CFrame.new(0, h / 2 + 0.6, 0), spot.accent, Enum.Material.Neon))
+		-- Faces the same way as the screen (toward the spawns); the client spins the hologram anyway.
+		local anchor = hide(decor(block(floating, "ChampionAnchor", Vector3.new(1, 0.2, 1), center * CFrame.new(0, h / 2 + 1.2, 0), spot.accent, Enum.Material.SmoothPlastic)))
+		glow(anchor, spot.accent, 12, 1.2)
+		floating.PrimaryPart = screen
+		floating.Parent = board
+		board.PrimaryPart = screen
+		board.Parent = holder
 	end
-	block(gate, "Lintel", Vector3.new(17, 2.4, 1.8), CFrame.new(0, 19.2, faceZ + inward * 0.9), PALETTE.WallLight, Enum.Material.Limestone)
-	block(gate, "LintelBand", Vector3.new(17.1, 0.3, 1.9), CFrame.new(0, 18.1, faceZ + inward * 0.9), PALETTE.Brass, Enum.Material.Metal)
-	block(gate, "Door", Vector3.new(12, 18, 0.5), CFrame.new(0, 9, faceZ + inward * 0.25), PALETTE.Wood, Enum.Material.WoodPlanks)
-	for _, y in { 3.5, 9, 14.5 } do
-		decor(block(gate, "DoorBand", Vector3.new(12.06, 0.4, 0.6), CFrame.new(0, y, faceZ + inward * 0.3), PALETTE.Iron, Enum.Material.Metal))
+end
+
+-- The shop garden south of the colonnades (yen shop, 2026-09-23; this replaced the sealed harbour gate):
+-- a lawn, a flagstone path from the end of the avenue to the cottage stairs, and the shop cottage itself.
+local function buildShopGarden(model: Model)
+	local garden = folder(model, "ShopGarden")
+	local lawnNorth = PATH_SOUTH + 2
+	local lawnLength = Z_SOUTH - lawnNorth
+	local lawnZ = (lawnNorth + Z_SOUTH) / 2
+	-- The lawn sits just above the floor slab and its joints (never coplanar, so no z-fighting).
+	block(garden, "Lawn", Vector3.new(WALL_X * 2 - 1.6, 0.24, lawnLength), CFrame.new(0, 0.12, lawnZ), PALETTE.Leaf2, Enum.Material.Grass)
+	-- Flagstone path, avenue to stairs: offset stones in two columns.
+	local stairsZ = SHOP_Z - 10 - 7 * 1.1 -- the cottage's bottom step (see ShopHouse)
+	local z = PATH_SOUTH - 1
+	local i = 0
+	while z < stairsZ - 0.5 do
+		i += 1
+		for _, sx in { -1, 1 } do
+			local offset = if i % 2 == 0 then 0.4 else -0.4
+			decor(block(garden, "PathStone", Vector3.new(2.6, 0.3, 1.8), CFrame.new(sx * 1.5 + offset, 0.16, z), PALETTE.Avenue, Enum.Material.Slate))
+		end
+		z += 2.2
 	end
-	decor(block(gate, "DoorSeam", Vector3.new(0.2, 18, 0.6), CFrame.new(0, 9, faceZ + inward * 0.3), PALETTE.Iron, Enum.Material.Metal))
-	gate.Parent = parent
+	local shop = ShopHouse.build(garden)
+	shop:PivotTo(CFrame.new(0, 0, SHOP_Z))
 end
 
 -- Segmental stone arch spanning the avenue from colonnade to colonnade.
@@ -626,8 +704,9 @@ function Lobby.build(parent: Instance): Model
 	buildColonnade(walls, -1)
 	buildColonnade(walls, 1)
 	buildEndWall(walls, "NorthWall", Z_NORTH, 1, 12)
-	buildEndWall(walls, "SouthWall", Z_SOUTH, -1, 9)
-	buildSouthGate(walls)
+	buildEndWall(walls, "SouthWall", Z_SOUTH, -1, 0)
+	buildShopGarden(model)
+	buildLeaderboards(model)
 
 	local arches = folder(model, "Arches")
 	for i, z in ARCH_ZS do

@@ -423,13 +423,16 @@ local function refreshAvailability()
 	render()
 end
 
--- Luffy's Gatling Barrage: wipes a half-typed code (the box stays open).
-function SubmissionController.clearTyped()
+-- Luffy's Gatling Barrage: wipes a half-typed code (the box stays open). Returns whether anything was
+-- wiped, so the caller can say why the digits vanished.
+function SubmissionController.clearTyped(): boolean
 	if #digits > 0 then
 		table.clear(digits)
 		render()
 		UIMotion.shake(refs.slotsInner)
+		return true
 	end
+	return false
 end
 
 -- An input-lock ability landed (the server already rejects codes until then): close the box and say why.

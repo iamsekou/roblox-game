@@ -77,10 +77,11 @@ Ichigo.ultimate = {
 				local seconds = Constants.ICHIGO_TRAIL_SECONDS
 				ctx.fx("ichigo_wave", { origin = origin, direction = direction, length = length, width = Constants.ICHIGO_WAVE_WIDTH, trail = seconds })
 				local stop = os.clock() + seconds
+				local key = "moon_fang_trail_" .. ctx.userId -- re-applied every tick: extend, don't stack
 				while os.clock() < stop and ctx.matchLive() do
 					for _, target in ctx.opponents() do
 						if AbilityRules.inStrip(origin, direction, length, halfWidth, target.root.Position) then
-							ctx.speed(target.player, Constants.ICHIGO_TRAIL_SLOW, TRAIL_TICK + 0.1)
+							ctx.speed(target.player, Constants.ICHIGO_TRAIL_SLOW, TRAIL_TICK + 0.1, key)
 						end
 					end
 					task.wait(TRAIL_TICK)

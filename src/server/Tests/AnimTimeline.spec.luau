@@ -57,6 +57,16 @@ test("[ANIM] no wind-up goes straight to the release, still blending in", functi
 	near(s.weight, 0.5)
 end)
 
+test("[ANIM] blends ease in and out: gentle at both ends, half-way at the middle", function()
+	local early = AnimTimeline.sample(TIMING, 0.025).weight -- a quarter of the way through the blend-in
+	T.truthy(early < 0.2, "a linear blend would be 0.25 here, got " .. early)
+	local late = AnimTimeline.sample(TIMING, 0.075).weight -- three quarters through
+	T.truthy(late > 0.8, "a linear blend would be 0.75 here, got " .. late)
+	near(AnimTimeline.smooth(0.5), 0.5)
+	near(AnimTimeline.smooth(-1), 0)
+	near(AnimTimeline.smooth(2), 1)
+end)
+
 test("[ANIM] negative time is treated as the start", function()
 	local s = AnimTimeline.sample(TIMING, -3)
 	T.eq(s.phase, "windup")

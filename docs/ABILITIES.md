@@ -106,5 +106,8 @@ Placeholder numbers are marked in `Constants.luau`; these are the interpretation
   a new camera replaces the old one.
 - **Shadow Clone** runs 4 s at 18 studs/s using Naruto's own run animation; it disappears if Naruto dies. Clones show
   a plate to everyone but Naruto, readable under the normal 11-stud facing rule.
+- **Surveillance Camera** goes down when Eli does (ability audit, 2026-09-23: it used to outlive Eli's life).
+- **Moon Fang Wave's trail** slow is a steady 40 % (audit: overlapping re-applications stacked it to 64 %).
+- **Gatling Barrage** tells its target "your code was knocked away" when it wipes a half-typed code.
 - **Studio only:** every character is unlocked for testing (`Constants.DEV_UNLOCK_ALL_IN_STUDIO`); live servers
   keep "free starters only" until the shop and Game Passes exist.

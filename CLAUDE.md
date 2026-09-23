@@ -38,7 +38,12 @@ you eliminate someone by typing the number *you* see on them. Studio place: "InD
   `print(require(game.ServerScriptService.Server.Tests.TestRunner).run())`. The Edit-mode command bar
   caches modules and returns stale results.
 - Solo testing: set attribute `NAU_DevMinPlayers = 1` on ServerScriptService *inside a Play session*
-  (Studio-only, ignored live). Anything involving two players needs **Test → Clients and Servers**, which
+  (Studio-only, ignored live). Add `NAU_DevSelfTarget = true` to make every ability also hit its caster, which
+  exercises the full on-target path (server → effect → client UI) with one player. For the shop:
+  `NAU_DevUnlockAll = false` (ServerScriptService) shows real ownership, `NAU_DevGrantYen = <n>` (on a Player) grants yen.
+  Leaderboards: `NAU_DevFakeKills = "userId:count,..."` (ServerScriptService) injects kills. Without Studio API
+  access the DataStores run offline (the boards show this server's session). Studio command-bar
+  `require`s get their own module copies, so test through remotes and the GUI, not by reading module state. Anything involving two players needs **Test → Clients and Servers**, which
   only the owner can launch.
 
 ## Project layout (Rojo)

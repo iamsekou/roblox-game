@@ -15,6 +15,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local ServerScriptService = game:GetService("ServerScriptService")
 
 local Constants = require(ReplicatedStorage.Shared.Modules.Constants)
 local CharacterDefs = require(ReplicatedStorage.Shared.Modules.CharacterDefs)
@@ -25,6 +26,7 @@ local MapService = require(script.Parent.MapService)
 local RoundManager = require(script.Parent.RoundManager)
 local NumberAssignmentService = require(script.Parent.NumberAssignmentService)
 local EliminationService = require(script.Parent.EliminationService)
+local EconomyService = require(script.Parent.EconomyService)
 
 local AbilityService = {}
 
@@ -49,7 +51,7 @@ type Entry = {
 
 local equipped: { [Player]: string } = {}
 local entries: { [Player]: Entry } = {}
-local speedMods: { [Player]: { { mult: number, untilTime: number } } } = {}
+local speedMods: { [Player]: { { mult: number, untilTime: number, key: string? } } } = {}
 local guardUntil: { [number]: number } = {}
 local mildBlockedUntil: { [number]: number } = {}
 local lastGuardSpark: { [number]: number } = {} -- Iron Guard block sparks, rate-limited per fighter
@@ -96,13 +98,18 @@ local function isGuarded(userId: number): boolean
 	return g ~= nil and now() < g
 end
 
--- Owned = the free starters; yen and Robux ownership arrive with the shop and Game Passes.
--- In Studio everything is unlocked for testing (owner request; live servers ignore this).
-local function owns(_player: Player, def: any): boolean
-	if Constants.DEV_UNLOCK_ALL_IN_STUDIO and RunService:IsStudio() then
+-- Owned = the free starters plus anything bought in the yen shop (Robux arrives with Game Passes, item 6).
+-- In Studio everything is unlocked for testing (owner request; live servers ignore this) unless
+-- ServerScriptService's NAU_DevUnlockAll attribute is set false, which shows the real inventory.
+local function owns(player: Player, def: any): boolean
+	if
+		Constants.DEV_UNLOCK_ALL_IN_STUDIO
+		and RunService:IsStudio()
+		and ServerScriptService:GetAttribute(Constants.DEV_UNLOCK_ATTRIBUTE) ~= false
+	then
 		return true
 	end
-	return def.tier == "Free"
+	return def.tier == "Free" or EconomyService.hasBought(player, def.id)
 end
 
 local function ownedList(player: Player): { string }
@@ -156,10 +163,27 @@ local function applySpeed(player: Player)
 end
 
 -- Returns a function that ends this modifier early (clashes that finish before their time).
-local function addSpeed(player: Player, mult: number, seconds: number): () -> ()
+-- `key` marks an effect that re-applies itself while it lasts (Moon Fang's trail ticks every 0.25 s): a
+-- modifier with the same key is extended instead of stacked, so a 40 % slow stays 40 % (stacked overlaps
+-- measured 64 %).
+local function addSpeed(player: Player, mult: number, seconds: number, key: string?): () -> ()
 	speedMods[player] = speedMods[player] or {}
-	local mod = { mult = mult, untilTime = now() + seconds }
-	table.insert(speedMods[player], mod)
+	local mod = nil
+	if key then
+		for _, existing in speedMods[player] do
+			if existing.key == key and now() < existing.untilTime then
+				mod = existing
+				break
+			end
+		end
+	end
+	if mod then
+		mod.mult = mult
+		mod.untilTime = math.max(mod.untilTime, now() + seconds)
+	else
+		mod = { mult = mult, untilTime = now() + seconds, key = key }
+		table.insert(speedMods[player], mod)
+	end
 	applySpeed(player)
 	task.delay(seconds + 0.02, applySpeed, player)
 	return function()
@@ -241,10 +265,13 @@ local function makeContext(player: Player, entry: Entry, aim: any, eye: any)
 	end
 
 	-- Opponents an ability may affect: active (alive, not spawn-protected), not the caster, not teammates.
+	-- Studio-only test switch (Constants.DEV_SELF_TARGET_ATTRIBUTE): the caster counts too.
 	function ctx.opponents(): { { player: Player, root: BasePart } }
 		local list = {}
+		local selfTarget = RunService:IsStudio() and ServerScriptService:GetAttribute(Constants.DEV_SELF_TARGET_ATTRIBUTE) == true
 		for id in match.participants do
-			if id ~= player.UserId and match:isActive(id) and not match:isTeammate(id, player.UserId) then
+			local isSelf = id == player.UserId
+			if (not isSelf or selfTarget) and match:isActive(id) and (isSelf or not match:isTeammate(id, player.UserId)) then
 				local other = Players:GetPlayerByUserId(id)
 				local root = other and rootOf(other)
 				if other and root then
@@ -352,8 +379,9 @@ local function makeContext(player: Player, entry: Entry, aim: any, eye: any)
 		Remotes.AbilityEffect:FireClient(target, { kind = "clearCode" })
 	end
 
-	function ctx.speed(target: Player, mult: number, seconds: number)
-		addSpeed(target, mult, seconds)
+	-- `key`: for an effect that re-applies itself every tick (see addSpeed); it extends instead of stacking.
+	function ctx.speed(target: Player, mult: number, seconds: number, key: string?)
+		addSpeed(target, mult, seconds, key)
 	end
 
 	function ctx.guard(seconds: number)
@@ -792,10 +820,17 @@ local function onLifeStarted(player: Player, match: any, lifeId: number)
 	pushState(player)
 end
 
+-- Does the player own this character (free, bought, or unlocked for Studio testing)? Used by ShopService.
+function AbilityService.owns(player: Player, id: string): boolean
+	local def = CharacterDefs.byId[id]
+	return def ~= nil and owns(player, def)
+end
+
 function AbilityService.Init()
 	Remotes.UseAbility.OnServerInvoke = handleUse
 	Remotes.EquipCharacter.OnServerInvoke = handleEquip
 	RoundManager.onLifeStarted(onLifeStarted)
+	EconomyService.onInventoryChanged(pushState) -- a purchase: re-send the owned list
 	EliminationService.onClonePopped(function(_popper: Player, decoyId: number)
 		removeDecoy(decoyId) -- the popper's code box already says "It was a clone!"
 	end)

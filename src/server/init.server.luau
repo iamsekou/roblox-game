@@ -11,6 +11,8 @@ local ORDER = {
 	"RoundManager",
 	"EliminationService",
 	"AbilityService",
+	"ShopService",
+	"LeaderboardService",
 }
 
 local loaded = {}

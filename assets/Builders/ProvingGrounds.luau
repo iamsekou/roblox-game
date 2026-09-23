@@ -27,6 +27,9 @@ local WALL_SEGMENTS = 48
 local BARRIER_HEIGHT = 70
 local GATE_ANGLES = { 0, 180 } -- degrees; 0 = east, 90 = south, 270 = north
 local BALCONY_ANGLE = 270
+local STAND_ROWS = 6 -- spectator rows in the bowl (owner, 2026-09-23: filled colosseum)
+local STAND_ROW_DEPTH = 2.4
+local STAND_ROW_RISE = 1.5
 local PLATFORM_RADIUS = 12
 local PLATFORM_HEIGHT = 1.2
 local SEED = 20260923
@@ -149,22 +152,64 @@ local function buildStadium(model: Model)
 		barrier.CanQuery = false
 	end
 
-	-- Tiered spectator stands rising behind the wall.
-	for tier = 1, 3 do
-		local radius = wallRadius + WALL_THICKNESS / 2 + 2 + (tier - 1) * 4
-		local height = WALL_HEIGHT + 3 * tier
+	-- Spectator stands (owner-approved 2026-09-23: a filled colosseum): a bowl of stepped rows rising behind
+	-- the wall, each row one line of spectators. The crowd itself is built by each client
+	-- (CrowdController) from the Crowd/Row* configurations below, so the server never replicates it.
+	local rowInner = wallRadius + WALL_THICKNESS / 2
+	local function rowRadius(row: number): number
+		return rowInner + (row + 0.5) * STAND_ROW_DEPTH
+	end
+	local function rowTop(row: number): number
+		return WALL_HEIGHT + 1.2 + (row + 1) * STAND_ROW_RISE
+	end
+	for row = 0, STAND_ROWS - 1 do
+		local radius, top = rowRadius(row), rowTop(row)
 		local length = 2 * math.pi * radius / WALL_SEGMENTS + 0.6
 		for i = 0, WALL_SEGMENTS - 1 do
 			local degrees = (i + 0.5) * 360 / WALL_SEGMENTS
-			ringBlock(stadium, "Stand" .. tier, radius, degrees, height / 2, Vector3.new(length, height, 4), if tier % 2 == 0 then PALETTE.StandB else PALETTE.StandA, Enum.Material.Concrete)
+			ringBlock(stadium, "Stand" .. (row + 1), radius, degrees, top / 2, Vector3.new(length, top, STAND_ROW_DEPTH), if row % 2 == 0 then PALETTE.StandA else PALETTE.StandB, Enum.Material.Concrete)
 		end
 	end
+	-- A parapet closing the back of the bowl.
+	local backRadius = rowInner + STAND_ROWS * STAND_ROW_DEPTH + 0.6
+	local backTop = rowTop(STAND_ROWS - 1) + 4
+	for i = 0, WALL_SEGMENTS - 1 do
+		local degrees = (i + 0.5) * 360 / WALL_SEGMENTS
+		ringBlock(stadium, "StandBack", backRadius, degrees, backTop / 2, Vector3.new(2 * math.pi * backRadius / WALL_SEGMENTS + 0.6, backTop, 1.2), PALETTE.Wall, Enum.Material.Cobblestone)
+		ringBlock(stadium, "StandBackCap", backRadius, degrees, backTop + 0.4, Vector3.new(2 * math.pi * backRadius / WALL_SEGMENTS + 0.8, 0.8, 1.8), PALETTE.Trim, Enum.Material.Limestone)
+	end
 
-	-- Roofed north stand: posts and a terracotta awning tilted toward the field.
+	-- Roofed north stand: posts on the second-highest row and a terracotta awning tilted toward the field.
 	local roofRadius = wallRadius + 9
+	local postRow = STAND_ROWS - 2
+	local postAngles = {}
 	for degrees = 215, 325, 22 do
-		-- Stands on the top tier (which spans wallRadius + 9.5 .. + 13.5 and tops out at WALL_HEIGHT + 9).
-		column(stadium, "RoofPost", 16, 1.6, polar(wallRadius + 12, degrees, WALL_HEIGHT + 9), PALETTE.Wood, Enum.Material.Wood)
+		column(stadium, "RoofPost", 16, 1.6, polar(rowRadius(postRow), degrees, rowTop(postRow)), PALETTE.Wood, Enum.Material.Wood)
+		table.insert(postAngles, degrees)
+	end
+
+	-- Where the crowd sits (read by CrowdController on each client). Seats to leave empty: the gates (whose
+	-- lintels hide the lowest rows), the proctor's balcony canopy, and the roof posts.
+	local crowd = folder(model, "Crowd")
+	for row = 0, STAND_ROWS - 1 do
+		local config = Instance.new("Configuration")
+		config.Name = "Row" .. (row + 1)
+		config:SetAttribute("Radius", rowRadius(row))
+		config:SetAttribute("Y", rowTop(row))
+		local avoid = {}
+		if row <= 1 then
+			for _, a in GATE_ANGLES do
+				table.insert(avoid, string.format("%d:9", a))
+			end
+			table.insert(avoid, string.format("%d:12", BALCONY_ANGLE))
+		end
+		if row == postRow then
+			for _, a in postAngles do
+				table.insert(avoid, string.format("%d:1.6", a))
+			end
+		end
+		config:SetAttribute("Avoid", table.concat(avoid, ",")) -- "degrees:half-width" pairs
+		config.Parent = crowd
 	end
 	for degrees = 212, 328, 8 do
 		local position = polar(roofRadius, degrees, WALL_HEIGHT + 26)

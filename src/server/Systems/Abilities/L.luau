@@ -1,7 +1,7 @@
 -- L (approved sheet, docs/ABILITIES.md).
 --   Mild  — Surveillance Camera: place a small camera where you stand; for 20 s, opponents within 25
 --           studs of it show as direction arrows on your HUD (positions only, never numbers). A new
---           camera replaces the old one.
+--           camera replaces the old one; the camera goes down when Eli does.
 --   Ult   — Deduction: after a tell, for 3 s every opponent's outline is visible to you through walls;
 --           every one of them is warned. Outlines only: characters already replicate to every client,
 --           so this reveals nothing the server keeps secret.
@@ -36,7 +36,9 @@ L.mild = {
 				local seconds = Constants.L_CAMERA_SECONDS
 				ctx.fx("l_camera", { position = position, duration = seconds, token = token })
 				local stop = os.clock() + seconds
-				while os.clock() < stop and cameraTokens[ctx.userId] == token and ctx.matchLive() do
+				-- Ends with Eli's life, like Nariko's clone (found in the ability audit, 2026-09-23: it used to
+				-- keep feeding radar arrows into the next life, even as another character).
+				while os.clock() < stop and cameraTokens[ctx.userId] == token and ctx.stillValid() do
 					local points = {}
 					for _, target in ctx.opponents() do
 						if (target.root.Position - position).Magnitude <= Constants.L_CAMERA_RANGE then

@@ -54,6 +54,25 @@ local Constants = {
 	ABILITY_CHARGE_SLOW = 0.45, -- walk-speed multiplier while charging an ultimate (placeholder)
 	DEFAULT_CHARACTER = "Goku",
 
+	-- Colosseum crowd (owner-approved 2026-09-23): built and animated by each client (animations/Controllers/Crowd).
+	CROWD_SEAT_SPACING = 2.6, -- studs between spectators along a row (2.3 made neighbours' arms overlap)
+	CROWD_BUILD_PER_FRAME = 80, -- spectators built per frame when the arena appears (no hitch)
+	CROWD_UPDATES_PER_FRAME = 260, -- spectators re-posed per frame (the rest keep their last pose)
+	CROWD_EXCITE_DECAY = 0.25, -- how fast a cheer dies down (per second, from 1)
+	CROWD_FAR_CHEER = 0.7, -- how hard the far side of the bowl cheers, relative to the section nearest a kill
+	CROWD_WAVE_EVERY = 28, -- seconds between stadium waves
+	CROWD_WAVE_SECONDS = 8, -- one lap of the wave
+	CROWD_DENSITY_LOW = 0.45, -- share of seats filled at low graphics quality (1-3)
+	CROWD_DENSITY_MID = 0.7, -- at medium quality (4-6)
+	CROWD_DENSITY_TOUCH_MAX = 0.55, -- phones and tablets never go above this
+
+	-- Kill leaderboards (owner-approved 2026-09-23): all-time + weekly (Monday 00:00 UTC), global via DataStores.
+	LEADERBOARD_FLUSH_SECONDS = 30, -- unsaved kills are added to the stores this often (and on shutdown)
+	LEADERBOARD_REFRESH_SECONDS = 60, -- the global top list is re-read this often (per-minute DataStore limits)
+	LEADERBOARD_ROWS = 10, -- rows shown on each board
+	LEADERBOARD_DEPTH = 100, -- how deep the fetched list goes ("YOU · #37"; deeper = unranked)
+	LEADERBOARD_STORE_VERSION = "v1", -- bump to start both boards from zero
+
 	-- Clashes (owner-approved 2026-09-23, rules in Lib/ClashRules): the same attack ability started at each
 	-- other by two fighters cancels both and locks them face to face; first correct code wins as usual.
 	CLASH_WINDOW = 0.6, -- max seconds between the two casts (and the first must still be winding up)
@@ -66,9 +85,26 @@ local Constants = {
 
 	-- Ability cast animations (Phase 3 item 8). Poses: animations/Controllers/AbilityPoses; hand-keyframed clip
 	-- ids: Modules/AnimationIds. The wind-up lasts the server's cast time; these shape the blends around it.
-	ANIM_BLEND_IN = 0.12, -- seconds to blend from the normal animation into a wind-up
-	ANIM_RELEASE_SNAP = 0.07, -- wind-up pose -> release pose (short, so strikes read as sharp)
-	ANIM_BLEND_OUT = 0.25, -- release -> back to the normal animation
+	ANIM_BLEND_IN = 0.15, -- seconds to blend from the normal animation into a wind-up (eased)
+	ANIM_RELEASE_SNAP = 0.07, -- wind-up target -> release target (the springs below smooth the actual motion)
+	ANIM_BLEND_OUT = 0.45, -- release -> back to the normal animation (eased)
+	-- Fluid placeholder motion (owner request 2026-09-23: "more fluid hand movement, less blocky"). Every posed
+	-- joint follows its target on a damped spring { frequency Hz, damping ratio }. Heavier joints respond
+	-- slower, so the body leads and the arms whip after it; damping below 1 adds a little overshoot and settle.
+	-- At these rates a wind-up or a return takes about 0.2 s (measured: 6.5 Hz shoulders dropped 130 degrees in
+	-- 4 frames, which read as a jerk).
+	ANIM_SPRINGS = {
+		Waist = { 2.2, 0.85 },
+		Neck = { 2.6, 0.85 },
+		Shoulder = { 3, 0.7 },
+		Elbow = { 3.6, 0.65 },
+		Wrist = { 4.5, 0.55 },
+	},
+	ANIM_STRIKE_BOOST = 2.2, -- springs this much stiffer the instant an ability releases, so strikes stay sharp...
+	ANIM_STRIKE_SECONDS = 0.18, -- ...easing back to normal over this long
+	ANIM_WRIST_DRAG = 0.06, -- degrees the hand trails per degree/second of arm swing
+	ANIM_WRIST_DRAG_MAX = 28, -- degrees
+	ANIM_LIFE_DEGREES = 2.2, -- gentle breathing sway on posed joints, so no wind-up or hold is frozen
 	ANIM_DEFAULT_HOLD = 0.4, -- seconds a release pose is held when the move doesn't say
 	ANIM_MAX_WINDUP = 3, -- ignore cast times above this (sanity cap on the server's number)
 
@@ -209,6 +245,15 @@ local Constants = {
 	-- Studio-only: set this attribute (a number) on ServerScriptService to lower the minimum
 	-- player count for solo testing. Ignored in live servers.
 	DEV_MIN_PLAYERS_ATTRIBUTE = "NAU_DevMinPlayers",
+	-- Studio-only: set this attribute (true) on ServerScriptService and every ability also treats its caster as
+	-- an opponent, so a single player can test every on-target effect end to end. Ignored in live servers.
+	DEV_SELF_TARGET_ATTRIBUTE = "NAU_DevSelfTarget",
+	-- Studio-only: set false on ServerScriptService to see real ownership (the shop) instead of every character
+	-- unlocked; set a number on a Player to grant them that much yen. Both ignored in live servers.
+	DEV_UNLOCK_ATTRIBUTE = "NAU_DevUnlockAll",
+	DEV_GRANT_YEN_ATTRIBUTE = "NAU_DevGrantYen",
+	-- Studio-only: "userId:count,..." on ServerScriptService adds test kills to both leaderboards. Ignored live.
+	DEV_FAKE_KILLS_ATTRIBUTE = "NAU_DevFakeKills",
 }
 
 return Constants

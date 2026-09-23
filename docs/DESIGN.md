@@ -72,7 +72,9 @@ Waiting ──(≥MIN queued)──▶ Intermission ──(15 s)──▶ InRoun
 | LifeState | Event | S→one player | `{alive, inMatch, respawnAt?, cause?, byName?, protectedUntil?}` |
 | MatchFeed | Event | S→all | `{kind="eliminated", victim, attacker?, cause}` / `{kind="spawned", userId}` |
 | UpdateCurrency | Event | S→one player | `{yen}` |
-| PurchaseItem | Function | C→S | reserved for Phase 3 (answers `coming_soon`) |
+| Leaderboards | Event | S→all | `{serverTime, offline, boards = {AllTime, Weekly = {rows, you, syncedAt, resetAt?}}}`; rows = top 10 `{userId, name, kills, live, rank, delta}` (`Systems/LeaderboardService`) |
+| GetLeaderboards | Function | C→S | `()` → the latest Leaderboards payload (for players who just joined) |
+| PurchaseItem | Function | C→S | `(characterId)` → `{status, granted?, price?, yen}`; status ∈ bought, insufficient, owned, not_for_yen, unknown. Rules in `Lib/ShopRules` (yen tier N also grants every lower yen tier); check, spend and grant happen without yielding (`Systems/ShopService`) |
 | UseAbility | Function | C→S | `(slot: "mild" or "ultimate", aim: Vector3, eye: Vector3)` → `{status, readyAt?}` (aim = camera direction, eye = camera position, trusted only within 40 studs of the character); status ∈ ok, cooldown, casting, protected, not_alive, not_in_match, not_available, no_target, no_room, clashing, malformed. The aim is only a direction hint; every range/cone/line-of-sight check is server-side |
 | EquipCharacter | Function | C→S | `(characterId)` → `{status, equipped?}`; status ∈ equipped, not_owned, in_fight, unknown. Allowed in the lobby or while waiting to respawn |
 | AbilityState | Event | S→one player | `{equipped, character?, implemented?, mild = {name, readyAt}?, ultimate = {name, readyAt}?}` |
@@ -175,9 +177,16 @@ Environments: the lobby ("The Still Harbor") keeps the owner's layout reference 
 pedestals, portal at the end) but was rebuilt 2026-09-23 as a walled limestone courtyard (owner: "cleaner
 3D models"; water on the sides "covered off"; stone colonnade walls chosen over cliffs/trees): covered
 colonnades with marble columns on both long sides, end walls with the FIGHT gate (ember energy field
-between limestone pylons, braziers) and a sealed harbour gate, three segmental stone arches over the
-avenue, cypress planters, iron lamp posts, crimson banners and sconces. Built from parts only (no uploads,
-no third-party assets). A client-side lighting grade (`animations/Controllers/LightingFX`) gives the
+between limestone pylons, braziers), three segmental stone arches over the avenue, cypress planters, iron
+lamp posts, crimson banners and sconces. Built from parts only (no uploads, no third-party assets). Yen
+shop (2026-09-23): the south wall moved back 32 studs (z 114 → 146), replacing the sealed harbour gate with
+a garden that holds the shop cottage (`assets/Builders/ShopHouse`). It's a storybook cottage on stilts
+*inspired by* an owner-supplied Dragon Ball frame (cream walls, red trim, diamond windows, blue arched door,
+vines, framing trees), not a copy, same approach as the IP decision above. Its interior is a high-tech
+hologram room used by the shop menu, whose style is futuristic holographic glass with neon edges, scanlines
+and decorative katakana (no franchise text). Two floating kill leaderboards (all-time and weekly, global via
+DataStores) flank the arrival plaza in the same holo style. The arena's stands are a 6-row bowl filled with a
+client-built colosseum crowd of ~1,060 stylised spectators, all generic types with no franchise characters. A client-side lighting grade (`animations/Controllers/LightingFX`) gives the
 lobby a warm late-afternoon look and restores the place's own lighting exactly inside a match. The
 place's `Lighting.Technology` is unchanged (owner's choice). The arena ("The Proving Grounds") is an
 original open examination ground.

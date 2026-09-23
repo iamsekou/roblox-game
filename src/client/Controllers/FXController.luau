@@ -12,6 +12,7 @@ local PortalFX = require(AnimControllers:WaitForChild("PortalFX"))
 local RunFOV = require(AnimControllers:WaitForChild("RunFOV"))
 local SprintFX = require(AnimControllers:WaitForChild("SprintFX"))
 local LightingFX = require(AnimControllers:WaitForChild("LightingFX"))
+local Crowd = require(AnimControllers:WaitForChild("Crowd"))
 local ClientState = require(script.Parent.Parent:WaitForChild("ClientState"))
 
 local FXController = {}
@@ -55,6 +56,7 @@ function FXController.Start()
 		return if ClientState.life.inMatch then "Arena" else "Lobby"
 	end
 	LightingFX.start(lightingPreset())
+	Crowd.start() -- builds the colosseum crowd whenever an arena with Crowd rows appears
 	ClientState.Changed:Connect(function(kind)
 		if kind == "life" then
 			LightingFX.apply(lightingPreset())
@@ -68,6 +70,10 @@ function FXController.Start()
 		if event.kind == "eliminated" then
 			local character = characterOf(event.victim, 0)
 			if character then
+				local root = character:FindFirstChild("HumanoidRootPart")
+				if root and root:IsA("BasePart") then
+					Crowd.react(root.Position) -- the stands erupt, loudest nearest the kill
+				end
 				EliminationFX.play(character)
 			end
 		elseif event.kind == "spawned" then

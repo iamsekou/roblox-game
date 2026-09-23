@@ -85,7 +85,10 @@ refreshCardAction = function()
 	refs.cardAction.AutoButtonColor = owned and not equipped
 	refs.cardAction.BackgroundColor3 = if owned and not equipped then UI.Colors.Accent else UI.Colors.Slot
 	refs.cardAction.TextColor3 = if owned then UI.Colors.Text else UI.Colors.Muted
-	refs.cardAction.Text = if equipped then "EQUIPPED" elseif owned then "EQUIP" else "UNLOCK · SHOP COMING SOON"
+	refs.cardAction.Text = if equipped then "EQUIPPED"
+		elseif owned then "EQUIP"
+		elseif def.tier == "Robux" then "ROBUX · COMING SOON"
+		else "UNLOCK AT THE SHOP (SOUTH GARDEN)"
 end
 
 local function equipShown()

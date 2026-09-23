@@ -95,6 +95,7 @@ AbilityPoses.Luffy = {
 	-- punches for the whole flurry, the torso rocking with each one.
 	ultimate = {
 		windupSeconds = Constants.LUFFY_GATLING_WINDUP,
+		stiffness = 3.5, -- 7 punches a second: the joints must keep up or the flurry turns to mush
 		windup = {
 			Waist = { 10, 0, 0 },
 			Neck = { 10, 0, 0 },
@@ -232,6 +233,7 @@ AbilityPoses.Zoro = {
 	ultimate = {
 		swords = { right = "KatanaRed", left = "KatanaDark", mouth = "Katana" },
 		trails = true,
+		stiffness = 2.5, -- the spin is a full turn in 0.35 s
 		windup = {
 			Waist = { 0, 50, 0 },
 			Neck = { 0, -40, 0 },
@@ -567,6 +569,18 @@ local COUNTER_OFFSET: { [string]: number } = {
 	["Naruto.ultimate"] = 0.05,
 }
 
+-- Spring stiffness for the exchanges: fast repeating blows need snappier joints (see AbilityAnim).
+local CLASH_STIFFNESS: { [string]: number } = {
+	["Zoro.ultimate"] = 2.2,
+	["Ichigo.mild"] = 2.2,
+	["Ichigo.ultimate"] = 2.2,
+	["Sasuke.mild"] = 2.2,
+	["Luffy.ultimate"] = 3.5,
+	["Goku.ultimate"] = 2.5, -- enough to let the straining tremble through
+	["Vegeta.ultimate"] = 2.5,
+	["Naruto.ultimate"] = 2.5,
+}
+
 -- The move a fighter plays for a clash over `character`.`slot` lasting `seconds`, or nil if that
 -- ability never clashes. `counterOffset` is the second fighter's pose delay (see COUNTER_OFFSET).
 function AbilityPoses.clashMove(character: string, slot: string, seconds: number): { [string]: any }?
@@ -584,6 +598,7 @@ function AbilityPoses.clashMove(character: string, slot: string, seconds: number
 		swords = base and base.swords,
 		trails = base ~= nil and base.swords ~= nil,
 		counterOffset = COUNTER_OFFSET[key] or 0,
+		stiffness = CLASH_STIFFNESS[key] or 1,
 	}
 end
 

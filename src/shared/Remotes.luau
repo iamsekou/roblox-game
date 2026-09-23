@@ -30,9 +30,13 @@ local DEFINITIONS: { [string]: string } = {
 	AbilityFX = "RemoteEvent", -- S->all { kind, caster, ... } visuals only; every client draws the tell ("cast" drives animations)
 	AbilityEffect = "RemoteEvent", -- S->one { kind = "knockback" | "grapple" | "clearCode" | "lock", ... }
 
+	-- Kill leaderboards (all-time + weekly)
+	Leaderboards = "RemoteEvent", -- S->all { serverTime, offline, boards = { AllTime|Weekly = { rows, you, syncedAt, resetAt? } } }
+	GetLeaderboards = "RemoteFunction", -- C->S () -> the latest Leaderboards payload (for players who just joined)
+
 	-- Economy (names kept from the original scaffold)
 	UpdateCurrency = "RemoteEvent", -- S->one player { yen }
-	PurchaseItem = "RemoteFunction", -- C->S (characterId) -> { status } (Phase 3; answers "coming_soon" for now)
+	PurchaseItem = "RemoteFunction", -- C->S (characterId) -> { status = bought|insufficient|owned|not_for_yen|unknown, granted?, price?, yen }
 }
 
 local isServer = RunService:IsServer()
