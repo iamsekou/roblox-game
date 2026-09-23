@@ -1,5 +1,57 @@
-local Remotes = {
-	PurchaseItem = "PurchaseItem",
-	UpdateCurrency = "UpdateCurrency",
+-- Single source of truth for every RemoteEvent / RemoteFunction in NAU.
+-- The server creates the instances; clients wait for them (a remote created on a client would
+-- never reach the server). Payload shapes are documented in docs/DESIGN.md.
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+
+-- Not "Remotes": a stale ModuleScript with that name may still exist in older copies of the place.
+local FOLDER_NAME = "NAURemotes"
+
+local DEFINITIONS: { [string]: string } = {
+	-- Lobby / round flow
+	RequestFight = "RemoteFunction", -- C->S ()                 -> { status }
+	LeaveQueue = "RemoteFunction", -- C->S ()                   -> { status }
+	GetRoundState = "RemoteFunction", -- C->S ()                -> RoundState
+	RoundState = "RemoteEvent", -- S->all RoundState
+
+	-- Number system
+	SubmitCode = "RemoteFunction", -- C->S (code: string)       -> { status, strikesLeft?, targetName?, yen? }
+	GetMyCodes = "RemoteFunction", -- C->S ()                   -> { { target, code } } (the caller's own view only)
+	CodesChanged = "RemoteEvent", -- S->one observer { reset?, changes = { { target, code | false } } }
+
+	-- Life / feed
+	LifeState = "RemoteEvent", -- S->one player { alive, inMatch, respawnAt?, cause?, byName? }
+	MatchFeed = "RemoteEvent", -- S->all { kind = "eliminated" | "spawned", ... }
+
+	-- Economy (names kept from the original scaffold)
+	UpdateCurrency = "RemoteEvent", -- S->one player { yen }
+	PurchaseItem = "RemoteFunction", -- C->S (characterId) -> { status } (Phase 3; answers "coming_soon" for now)
 }
+
+local isServer = RunService:IsServer()
+
+local folder: Instance
+if isServer then
+	folder = ReplicatedStorage:FindFirstChild(FOLDER_NAME) or Instance.new("Folder")
+	folder.Name = FOLDER_NAME
+	folder.Parent = ReplicatedStorage
+else
+	folder = ReplicatedStorage:WaitForChild(FOLDER_NAME)
+end
+
+local Remotes: { [string]: any } = {}
+for name, className in DEFINITIONS do
+	local remote = folder:FindFirstChild(name)
+	if isServer then
+		if not remote then
+			remote = Instance.new(className)
+			remote.Name = name
+			remote.Parent = folder
+		end
+	else
+		remote = folder:WaitForChild(name)
+	end
+	Remotes[name] = remote
+end
+
 return Remotes

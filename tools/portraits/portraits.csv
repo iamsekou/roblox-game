@@ -1,0 +1,11 @@
+id,source,cropX,cropY,side,centerRGB,edgeRGB,tolerance,closeRadius,dropChair,seedX,seedY,cleanRadius
+Goku,goku.png,-25,-25,425,255 170 80,215 70 20,12,30,,,,3
+Luffy,luffy.jpg,55,0,760,255 95 95,180 20 40,18,4,,,,
+Krillin,krillin.jpg,80,10,800,140 230 200,20 140 120,18,4,,,,
+Vegeta,vegeta.jpg,120,20,950,255 230 120,205 145 20,18,4,,,,
+Zoro,zoro.png,425,0,460,150 235 150,30 125 60,18,4,,,,
+L,l.jpg,170,20,700,225 225 235,135 135 155,18,4,1,540,330,
+Naruto,naruto.webp,240,0,560,255 215 110,235 120 30,18,4,,,,
+Ichigo,ichigo.png,220,0,560,220 235 255,110 140 195,18,4,,,,
+Sasuke,sasuke.webp,105,10,200,175 125 255,60 20 140,18,4,,,,
+Gojo,gojo.png,95,5,200,130 225 255,30 85 205,18,4,,,,

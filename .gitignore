@@ -2,3 +2,7 @@
 *.rbxl
 sourcemap.json
 .DS_Store
+
+# Third-party reference artwork and portraits derived from it (see docs/DESIGN.md "IP decision").
+# Regenerate portraits with tools/portraits/make-portraits.ps1.
+art/
