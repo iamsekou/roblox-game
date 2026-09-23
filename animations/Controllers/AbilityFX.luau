@@ -1,4 +1,6 @@
 -- Placeholder visuals for abilities (approved sheet, docs/ABILITIES.md; Phase 3 slice: Goku, Luffy).
+-- Sword fighters (Zorin, Ichiro, Sazuki) also get slash crescents, sparks, glints, blade glow and
+-- crackle on the swords that Swords draws into their hands for each sword move.
 -- Every client draws every cast from the server's AbilityFX event, so each tell is visible to all.
 -- Built from tweened neon parts: flashes and rings for teleports, a charging orb and a fading beam for
 -- the wave, a stretching arm for the grapple, fist blurs for the barrage. Character-specific poses come
@@ -8,6 +10,8 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
+
+local Swords = require(script.Parent:WaitForChild("Swords"))
 
 local AbilityFX = {}
 
@@ -293,20 +297,142 @@ local function headMarker(userId: number?, color: Color3, duration: number)
 	end)
 end
 
--- A small object travelling along a straight path (discs, tornadoes, waves).
-local function travel(p: BasePart, origin: Vector3, direction: Vector3, length: number, speed: number, spin: number, lift: number)
-	local started = os.clock()
-	local connection
-	connection = RunService.RenderStepped:Connect(function()
-		local along = (os.clock() - started) * speed
-		if along >= length or not p.Parent then
-			connection:Disconnect()
-			if p.Parent then
-				fadeOut(p, 0.2)
-			end
-			return
+-- Sword effects (owner-approved 2026-09-23): slash crescents, sparks, glints, blade glow, crackle ------
+
+-- A crescent of neon segments: its middle sits at the model's pivot, the convex side faces the pivot's
+-- -Z and the arc curves back toward +Z across the pivot's X axis (a circle of `radius` centred at +Z).
+-- Segments taper toward the tips.
+local function crescent(radius: number, spanDeg: number, segments: number, height: number, depth: number, color: Color3, transparency: number): Model
+	local model = Instance.new("Model")
+	model.Name = "Crescent"
+	local pivot = part(Enum.PartType.Block, Vector3.one * 0.1, CFrame.identity, color, 1)
+	pivot.Parent = model
+	model.PrimaryPart = pivot
+	local span = math.rad(spanDeg)
+	local function at(theta: number): Vector3
+		return Vector3.new(radius * math.sin(theta), 0, radius * (1 - math.cos(theta)))
+	end
+	for i = 1, segments do
+		local a0 = -span / 2 + span * (i - 1) / segments
+		local a1 = a0 + span / segments
+		local p0, p1 = at(a0), at(a1)
+		local middle = (p0 + p1) / 2
+		local along = (a0 + a1) / (2 * (span / 2)) -- -1..1 from tip to tip
+		local h = height * (1 - 0.85 * math.abs(along) ^ 1.5)
+		local seg = part(Enum.PartType.Block, Vector3.new(depth, h, (p1 - p0).Magnitude + 0.05), CFrame.lookAt(middle, middle + (p1 - p0)), color, transparency)
+		seg.Parent = model
+	end
+	model.Parent = fxFolder()
+	return model
+end
+
+local function fadeModel(model: Model, seconds: number)
+	for _, p in model:GetChildren() do
+		if p:IsA("BasePart") and p ~= model.PrimaryPart then
+			TweenService:Create(p, TweenInfo.new(seconds, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Transparency = 1 }):Play()
 		end
-		p.CFrame = CFrame.lookAt(origin + direction * along, origin + direction * (along + 1)) * CFrame.new(0, lift, 0) * CFrame.Angles(0, os.clock() * spin, 0)
+	end
+	task.delay(seconds, function()
+		model:Destroy()
+	end)
+end
+
+-- A quick four-point glint that faces the camera.
+local function glint(position: Vector3, color: Color3, size: number)
+	local camera = workspace.CurrentCamera
+	local facing = if camera then CFrame.lookAt(position, camera.CFrame.Position) else CFrame.new(position)
+	local core = part(Enum.PartType.Ball, Vector3.one * size * 0.3, CFrame.new(position), color, 0)
+	fadeOut(core, 0.35, { Size = Vector3.one * size * 0.05 })
+	for _, roll in { 0, 90 } do
+		local ray = part(Enum.PartType.Block, Vector3.new(size * 0.06, size, size * 0.06), facing * CFrame.Angles(0, 0, math.rad(roll + 45)), color, 0)
+		fadeOut(ray, 0.35, { Size = Vector3.new(size * 0.02, size * 0.2, size * 0.02) })
+	end
+end
+
+-- Sparks flying off a blocked hit: shards thrown back toward where the blow came from.
+local function sparks(position: Vector3, toward: Vector3)
+	local color = Color3.fromRGB(255, 214, 150)
+	glint(position, Color3.fromRGB(255, 245, 225), 2.4)
+	for _ = 1, 9 do
+		local spread = CFrame.lookAt(Vector3.zero, toward) * CFrame.Angles(math.rad(math.random(-55, 55)), math.rad(math.random(-55, 55)), 0)
+		local direction = spread.LookVector
+		local shard = part(Enum.PartType.Block, Vector3.new(0.07, 0.07, 0.6 + math.random() * 0.5), CFrame.lookAt(position, position + direction), color, 0)
+		fadeOut(shard, 0.22, { CFrame = CFrame.lookAt(position + direction * (2.5 + math.random() * 2), position + direction * 6), Size = Vector3.new(0.03, 0.03, 0.2) })
+	end
+end
+
+-- A pulsing glow shell over every blade part of a held sword, for `seconds`.
+local function bladeGlow(sword: Model?, color: Color3, seconds: number)
+	if not sword then
+		return
+	end
+	for _, blade in Swords.bladeParts(sword) do
+		local shell = Instance.new("Part")
+		shell.Name = "NAU_BladeGlow"
+		shell.Shape = blade.Shape
+		shell.Size = blade.Size + Vector3.new(0.1, 0.14, 0.1)
+		shell.CFrame = blade.CFrame
+		shell.Material = Enum.Material.Neon
+		shell.Color = color
+		shell.Transparency = 0.6
+		shell.CanCollide = false
+		shell.CanQuery = false
+		shell.CanTouch = false
+		shell.CastShadow = false
+		shell.Massless = true
+		local weld = Instance.new("Weld")
+		weld.Part0 = blade
+		weld.Part1 = shell
+		weld.Parent = shell
+		shell.Parent = fxFolder()
+		TweenService:Create(shell, TweenInfo.new(0.12, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), { Transparency = 0.25 }):Play()
+		task.delay(seconds, function()
+			shell:Destroy()
+		end)
+	end
+	local grip = sword.PrimaryPart
+	if grip then
+		local light = Instance.new("PointLight")
+		light.Color = color
+		light.Range = 9
+		light.Brightness = 2.5
+		light.Parent = grip
+		task.delay(seconds, function()
+			light:Destroy()
+		end)
+	end
+end
+
+-- Lightning crawling along a held blade, redrawn every few frames, for `seconds`.
+local function bladeCrackle(sword: Model?, color: Color3, seconds: number)
+	if not sword then
+		return
+	end
+	local stop = os.clock() + seconds
+	local bolts: { BasePart } = {}
+	task.spawn(function()
+		while os.clock() < stop and sword.Parent do
+			for _, b in bolts do
+				b:Destroy()
+			end
+			table.clear(bolts)
+			local base, tip = Swords.bladeLine(sword)
+			if base and tip then
+				local previous = base
+				for i = 1, 5 do
+					local point = base:Lerp(tip, i / 5) + if i < 5 then Vector3.new(math.random() - 0.5, math.random() - 0.5, math.random() - 0.5) * 0.7 else Vector3.zero
+					local span = point - previous
+					if span.Magnitude > 0.05 then
+						table.insert(bolts, part(Enum.PartType.Block, Vector3.new(0.07, 0.07, span.Magnitude), CFrame.lookAt(previous + span / 2, point), color, 0))
+					end
+					previous = point
+				end
+			end
+			task.wait(0.05)
+		end
+		for _, b in bolts do
+			b:Destroy()
+		end
 	end)
 end
 
@@ -405,7 +531,31 @@ local STEEL = Color3.fromRGB(170, 200, 190)
 local WIND = Color3.fromRGB(190, 225, 200)
 
 handlers.zoro_guard = function(event)
-	followShell(characterOf(event.caster), STEEL, tonumber(event.duration) or 2.3, 6.5)
+	local character = characterOf(event.caster)
+	followShell(character, STEEL, tonumber(event.duration) or 2.3, 6.5)
+	-- A glint where the crossed blades meet as the stance locks in (after the 0.3 s tell).
+	task.delay(tonumber(event.tell) or 0.3, function()
+		local right, left = Swords.get(character, "right"), Swords.get(character, "left")
+		if not right or not left then
+			return
+		end
+		local rBase, rTip = Swords.bladeLine(right)
+		local lBase, lTip = Swords.bladeLine(left)
+		if rBase and rTip and lBase and lTip then
+			glint((rBase:Lerp(rTip, 0.45) + lBase:Lerp(lTip, 0.45)) / 2, Color3.fromRGB(240, 250, 255), 3)
+		end
+	end)
+end
+
+-- Iron Guard turned a knockback or drag away: sparks off the blades, thrown back at the attacker.
+handlers.guard_block = function(event)
+	local character = characterOf(tonumber(event.target))
+	local torso = character and (character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso"))
+	if not torso or not torso:IsA("BasePart") then
+		return
+	end
+	local push = if typeof(event.direction) == "Vector3" and event.direction.Magnitude > 0.01 then event.direction.Unit else -torso.CFrame.LookVector
+	sparks(torso.Position - push * 1.3 + Vector3.new(0, 0.4, 0), -push)
 end
 
 handlers.zoro_windup = function(event)
@@ -416,9 +566,21 @@ handlers.zoro_tornado = function(event)
 	if typeof(event.origin) ~= "Vector3" or typeof(event.direction) ~= "Vector3" then
 		return
 	end
-	-- A tall spinning funnel: a column with a wider band near the top.
+	-- A tall spinning funnel: a column with a wider band near the top, with sword slashes spiralling
+	-- round inside it as it travels.
 	local funnel = part(Enum.PartType.Cylinder, Vector3.new(12, 6, 6), CFrame.new(event.origin), WIND, 0.55)
 	funnel.Material = Enum.Material.ForceField
+	local slashes: { { model: Model, height: number, phase: number, tilt: number, radius: number } } = {}
+	for i = 1, 4 do
+		local radius = 2.6 + i * 0.25
+		table.insert(slashes, {
+			model = crescent(radius, 120, 7, 0.4, 0.12, Color3.fromRGB(235, 250, 240), 0.15),
+			height = -1.5 + i * 1.8,
+			phase = i * math.pi / 2,
+			tilt = math.rad(if i % 2 == 0 then 18 else -18),
+			radius = radius,
+		})
+	end
 	local speed, length = tonumber(event.speed) or 20, tonumber(event.length) or 40
 	local started = os.clock()
 	local connection
@@ -429,11 +591,19 @@ handlers.zoro_tornado = function(event)
 			if funnel.Parent then
 				fadeOut(funnel, 0.3)
 			end
+			for _, slash in slashes do
+				fadeModel(slash.model, 0.3)
+			end
 			return
 		end
 		local base = event.origin + event.direction * along
 		funnel.CFrame = CFrame.new(base + Vector3.new(0, 3, 0)) * CFrame.Angles(0, os.clock() * 12, math.rad(90))
 		funnel.Size = Vector3.new(12, 5 + math.sin(os.clock() * 10) * 1, 5 + math.sin(os.clock() * 10) * 1)
+		for _, slash in slashes do
+			-- The crescent's circle is centred on the funnel's axis, so the arc hugs it as it spins.
+			local angle = os.clock() * 16 + slash.phase
+			slash.model:PivotTo(CFrame.new(base + Vector3.new(0, 3 + slash.height, 0)) * CFrame.Angles(0, angle, 0) * CFrame.Angles(slash.tilt, 0, 0) * CFrame.new(0, 0, -slash.radius))
+		end
 	end)
 end
 
@@ -541,14 +711,34 @@ local GETSU = Color3.fromRGB(60, 30, 40) -- a dark, bruised red-black
 local GETSU_EDGE = Color3.fromRGB(220, 60, 70)
 
 handlers.ichigo_flash = function(event)
-	if typeof(event.from) == "Vector3" and typeof(event.to) == "Vector3" then
-		streak(event.from, event.to, Color3.fromRGB(30, 30, 34), 1.2, 0.25)
-		burst(event.from, Color3.fromRGB(60, 60, 66))
+	if typeof(event.from) ~= "Vector3" or typeof(event.to) ~= "Vector3" then
+		return
 	end
+	streak(event.from, event.to, Color3.fromRGB(30, 30, 34), 1.2, 0.25)
+	burst(event.from, Color3.fromRGB(60, 60, 66))
+	-- On arrival, the cut he made on the way through: a wide horizontal slash arc that flashes and fades.
+	local span = event.to - event.from
+	local flat = Vector3.new(span.X, 0, span.Z)
+	if flat.Magnitude < 0.5 then
+		return
+	end
+	task.delay(span.Magnitude / (tonumber(event.speed) or 160), function()
+		local center = event.to + Vector3.new(0, 0.6, 0) - flat.Unit * 1.5
+		local frame = CFrame.lookAt(center, center + flat.Unit) * CFrame.Angles(0, 0, math.rad(-12))
+		local outer = crescent(3.8, 150, 11, 0.9, 0.15, Color3.fromRGB(245, 245, 250), 0.05)
+		outer:PivotTo(frame)
+		local inner = crescent(3.5, 140, 11, 0.55, 0.16, Color3.fromRGB(25, 25, 30), 0.1)
+		inner:PivotTo(frame * CFrame.new(0, 0, 0.3))
+		fadeModel(outer, 0.35)
+		fadeModel(inner, 0.3)
+	end)
 end
 
 handlers.ichigo_wave_charge = function(event)
-	followShell(characterOf(event.caster), GETSU_EDGE, tonumber(event.duration) or 1, 6, Enum.Material.Neon, 0.8)
+	local character = characterOf(event.caster)
+	local duration = tonumber(event.duration) or 1
+	followShell(character, GETSU_EDGE, duration, 6, Enum.Material.Neon, 0.8)
+	bladeGlow(Swords.get(character, "right"), GETSU_EDGE, duration + 0.15)
 end
 
 handlers.ichigo_wave = function(event)
@@ -557,9 +747,29 @@ handlers.ichigo_wave = function(event)
 	end
 	local length = tonumber(event.length) or 40
 	local width = tonumber(event.width) or 14
-	-- The crescent: a thin wide band sweeping forward.
-	local crescent = part(Enum.PartType.Block, Vector3.new(width, 5, 0.6), CFrame.new(event.origin), GETSU_EDGE, 0.1)
-	travel(crescent, event.origin + Vector3.new(0, 2.5, 0), event.direction, length, 60, 0, 0)
+	-- The wave: a red-edged crescent with a dark core, tilted along the diagonal of the slash, flying
+	-- forward convex side first.
+	local origin = event.origin + Vector3.new(0, 2.5, 0)
+	local direction = Vector3.new(event.direction.X, 0, event.direction.Z)
+	direction = if direction.Magnitude > 0.01 then direction.Unit else Vector3.new(0, 0, -1)
+	local tilt = CFrame.Angles(0, 0, math.rad(30))
+	local edge = crescent(width / 2, 115, 21, 4.2, 0.5, GETSU_EDGE, 0.05)
+	local core = crescent(width / 2 - 0.3, 105, 21, 2.8, 0.55, GETSU, 0)
+	local started = os.clock()
+	local speed = 60
+	local connection
+	connection = RunService.RenderStepped:Connect(function()
+		local along = (os.clock() - started) * speed
+		if along >= length or not edge.Parent then
+			connection:Disconnect()
+			fadeModel(edge, 0.2)
+			fadeModel(core, 0.2)
+			return
+		end
+		local frame = CFrame.lookAt(origin + direction * along, origin + direction * (along + 1)) * tilt
+		edge:PivotTo(frame)
+		core:PivotTo(frame * CFrame.new(0, 0, 0.45))
+	end)
 	-- The trail it leaves: a dark strip on the ground for the trail's duration.
 	local center = event.origin + event.direction * (length / 2) + Vector3.new(0, 0.1, 0)
 	local strip = part(Enum.PartType.Block, Vector3.new(width, 0.12, length), CFrame.lookAt(center, center + event.direction), GETSU, 0.35)
@@ -574,13 +784,18 @@ local LIGHTNING = Color3.fromRGB(170, 190, 255)
 local SHARINGAN = Color3.fromRGB(210, 30, 40)
 
 handlers.sasuke_dash_tell = function(event)
-	followShell(characterOf(event.caster), LIGHTNING, tonumber(event.duration) or 0.3, 4.5, Enum.Material.Neon, 0.7)
+	local character = characterOf(event.caster)
+	local duration = tonumber(event.duration) or 0.3
+	followShell(character, LIGHTNING, duration, 4.5, Enum.Material.Neon, 0.7)
+	bladeCrackle(Swords.get(character, "right"), LIGHTNING, duration)
 end
 
 handlers.sasuke_dash = function(event)
 	if typeof(event.from) ~= "Vector3" or typeof(event.to) ~= "Vector3" then
 		return
 	end
+	-- The blade keeps crackling through the dash and a moment after.
+	bladeCrackle(Swords.get(characterOf(event.caster), "right"), LIGHTNING, (event.to - event.from).Magnitude / (tonumber(event.speed) or 170) + 0.25)
 	-- A jagged crackle: a few short offset segments along the dash.
 	local segments = 6
 	local previous = event.from
@@ -620,6 +835,195 @@ end
 handlers.gojo_infinity = function(event)
 	local radius = tonumber(event.radius) or 10
 	followShell(characterOf(event.caster), INFINITY, tonumber(event.duration) or 4, radius * 2, Enum.Material.ForceField, 0.5)
+end
+
+-- Clashes (owner-approved 2026-09-23) -------------------------------------------------------------
+-- Two fighters locked in the same attack. Everyone sees the exchange between them: parry sparks for
+-- swords, a beam struggle for the energy attacks, grinding spheres, fists meeting fists. Everything
+-- follows the two fighters live and stops the moment the clash ends (or either one is gone).
+
+local CLASH_WHITE = Color3.fromRGB(245, 248, 255)
+local SWORD_CLASHES = { ["Zoro.ultimate"] = true, ["Ichigo.mild"] = true, ["Ichigo.ultimate"] = true, ["Sasuke.mild"] = true }
+local BEAM_CLASHES = { ["Goku.ultimate"] = KI, ["Vegeta.ultimate"] = BLAST }
+
+-- A fighter's chest, from a user id (what the server sends) or a character model (solo visual tests
+-- against a dummy, since a real clash needs two players).
+local function chestOf(who: any): Vector3?
+	local character = if typeof(who) == "Instance" and who:IsA("Model") then who else characterOf(tonumber(who))
+	local root = rootOf(character)
+	return if root then root.Position + Vector3.new(0, 0.8, 0) else nil
+end
+
+local function randomUnit(): Vector3
+	local v = Vector3.new(math.random() - 0.5, math.random() - 0.5, math.random() - 0.5)
+	return if v.Magnitude > 0.01 then v.Unit else Vector3.yAxis
+end
+
+-- A cylinder stretched between two points.
+local function span(p: BasePart, from: Vector3, to: Vector3, thickness: number)
+	local d = to - from
+	if d.Magnitude < 0.05 then
+		return
+	end
+	p.Size = Vector3.new(d.Magnitude, thickness, thickness)
+	p.CFrame = alongCFrame(from + d / 2, d.Unit)
+end
+
+-- Runs `step(a, b, now)` every frame while the clash lasts and both fighters exist; then `finish()`.
+local function whileClashing(event: any, seconds: number, step: (Vector3, Vector3, number) -> (), finish: () -> ())
+	local stop = os.clock() + seconds
+	local connection
+	connection = RunService.RenderStepped:Connect(function()
+		local a, b = chestOf(event.a), chestOf(event.b)
+		local now = os.clock()
+		if now >= stop or not a or not b then
+			connection:Disconnect()
+			finish()
+			return
+		end
+		step(a, b, now)
+	end)
+end
+
+local function swordClash(event: any, seconds: number)
+	local nextBlow, nextRing = 0, 0
+	whileClashing(event, seconds, function(a, b, now)
+		if now >= nextBlow then
+			nextBlow = now + 0.2 -- one blow or parry every 0.2 s, matching the exchange pose
+			local meet = (a + b) / 2 + Vector3.new((math.random() - 0.5) * 1.2, 0.3 + math.random() * 1.5, (math.random() - 0.5) * 1.2)
+			local toward = if math.random() < 0.5 then a - b else b - a
+			sparks(meet, if toward.Magnitude > 0.01 then toward.Unit else Vector3.yAxis)
+		end
+		if now >= nextRing then
+			nextRing = now + 0.6
+			groundRing((a + b) / 2 - Vector3.new(0, 3.8, 0), 3, CLASH_WHITE, 0.5, true)
+		end
+	end, function() end)
+end
+
+-- Beam struggle: each fighter's beam pushes on a collision point that sways between them.
+local function beamClash(event: any, seconds: number, color: Color3)
+	local beams = {
+		part(Enum.PartType.Cylinder, Vector3.one, CFrame.new(), color, 0.15),
+		part(Enum.PartType.Cylinder, Vector3.one, CFrame.new(), color, 0.15),
+	}
+	local cores = {
+		part(Enum.PartType.Cylinder, Vector3.one, CFrame.new(), KI_CORE, 0),
+		part(Enum.PartType.Cylinder, Vector3.one, CFrame.new(), KI_CORE, 0),
+	}
+	local orb = part(Enum.PartType.Ball, Vector3.one * 1.7, CFrame.new(), KI_CORE, 0.05)
+	local light = Instance.new("PointLight")
+	light.Color = color
+	light.Range = 12
+	light.Brightness = 3
+	light.Parent = orb
+	local nextSpark = 0
+	whileClashing(event, seconds, function(a, b, now)
+		local d = b - a
+		if d.Magnitude < 1 then
+			return
+		end
+		local dir = d.Unit
+		-- Sized for the 7-stud clash gap: the beams must stay visible either side of the collision.
+		local handA, handB = a + dir * 1.4, b - dir * 1.4
+		local sway = math.sin(now * 3.1) * 0.5 + math.sin(now * 7.3) * 0.15
+		local meet = (handA + handB) / 2 + dir * sway
+		local pulse = math.sin(now * 30) * 0.15
+		span(beams[1], handA, meet, 1.3 + pulse)
+		span(beams[2], meet, handB, 1.3 - pulse)
+		span(cores[1], handA, meet, 0.45)
+		span(cores[2], meet, handB, 0.45)
+		orb.Size = Vector3.one * (1.7 + math.sin(now * 25) * 0.3)
+		orb.CFrame = CFrame.new(meet)
+		if now >= nextSpark then
+			nextSpark = now + 0.15
+			sparks(meet, randomUnit())
+		end
+	end, function()
+		for _, p in { beams[1], beams[2], cores[1], cores[2] } do
+			fadeOut(p, 0.2)
+		end
+		fadeOut(orb, 0.3, { Size = Vector3.one * 5 })
+	end)
+end
+
+-- Spiral spheres grinding against each other, a ring of force spinning round the contact.
+local function sphereClash(event: any, seconds: number)
+	local left = part(Enum.PartType.Ball, Vector3.one * 2.2, CFrame.new(), CHAKRA, 0.1)
+	local right = part(Enum.PartType.Ball, Vector3.one * 2.2, CFrame.new(), CHAKRA, 0.1)
+	local ring = part(Enum.PartType.Cylinder, Vector3.new(0.15, 4.5, 4.5), CFrame.new(), Color3.fromRGB(200, 225, 255), 0.35)
+	local nextSpark = 0
+	whileClashing(event, seconds, function(a, b, now)
+		local d = b - a
+		if d.Magnitude < 1 then
+			return
+		end
+		local dir = d.Unit
+		local meet = (a + b) / 2 + dir * math.sin(now * 4) * 0.4
+		local size = 2.2 + math.sin(now * 28) * 0.2
+		left.Size, right.Size = Vector3.one * size, Vector3.one * size
+		left.CFrame = CFrame.new(meet - dir * size * 0.45)
+		right.CFrame = CFrame.new(meet + dir * size * 0.45)
+		ring.CFrame = alongCFrame(meet, dir) * CFrame.Angles(now * 20, 0, 0)
+		if now >= nextSpark then
+			nextSpark = now + 0.12
+			sparks(meet, randomUnit())
+		end
+	end, function()
+		fadeOut(left, 0.25, { Size = Vector3.one * 5 })
+		fadeOut(right, 0.25, { Size = Vector3.one * 5 })
+		fadeOut(ring, 0.25, { Size = Vector3.new(0.15, 9, 9) })
+	end)
+end
+
+-- Fists meeting fists: a blur of impacts filling the gap between the two.
+local function fistClash(event: any, seconds: number)
+	local nextFist, nextImpact = 0, 0
+	whileClashing(event, seconds, function(a, b, now)
+		if now >= nextFist then
+			nextFist = now + 0.04
+			for _ = 1, 2 do
+				local at = a:Lerp(b, 0.3 + math.random() * 0.4) + Vector3.new((math.random() - 0.5) * 2, (math.random() - 0.5) * 1.6, (math.random() - 0.5) * 2)
+				local fist = part(Enum.PartType.Ball, Vector3.one * (0.9 + math.random() * 0.6), CFrame.new(at), BLUR, 0.25)
+				fadeOut(fist, 0.14, { Size = Vector3.one * 0.3 })
+			end
+		end
+		if now >= nextImpact then
+			nextImpact = now + 0.25
+			glint((a + b) / 2 + Vector3.new(0, math.random() - 0.3, 0), Color3.fromRGB(255, 236, 205), 2.2)
+		end
+	end, function() end)
+end
+
+handlers.clash = function(event)
+	if typeof(event.midpoint) ~= "Vector3" then
+		return
+	end
+	local key = tostring(event.character) .. "." .. tostring(event.slot)
+	local seconds = math.clamp(tonumber(event.duration) or 2.5, 0, 10)
+	-- The moment of impact: a white flash where they meet.
+	glint(event.midpoint + Vector3.new(0, 1, 0), CLASH_WHITE, 4.5)
+	burst(event.midpoint, CLASH_WHITE)
+	if SWORD_CLASHES[key] then
+		swordClash(event, seconds)
+	elseif BEAM_CLASHES[key] then
+		beamClash(event, seconds, BEAM_CLASHES[key])
+	elseif key == "Naruto.ultimate" then
+		sphereClash(event, seconds)
+	elseif key == "Luffy.ultimate" then
+		fistClash(event, seconds)
+	end
+end
+
+-- The clash breaks: a shockwave throws the two apart.
+handlers.clash_end = function(event)
+	if typeof(event.midpoint) ~= "Vector3" then
+		return
+	end
+	local flash = part(Enum.PartType.Ball, Vector3.one * 2, CFrame.new(event.midpoint + Vector3.new(0, 0.8, 0)), CLASH_WHITE, 0.05)
+	fadeOut(flash, 0.45, { Size = Vector3.one * 14 })
+	groundRing(event.midpoint - Vector3.new(0, 3, 0), 6, CLASH_WHITE, 0.6, true)
+	glint(event.midpoint + Vector3.new(0, 1, 0), CLASH_WHITE, 5)
 end
 
 local HANDLERS: { [string]: (any) -> () } = {

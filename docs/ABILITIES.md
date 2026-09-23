@@ -71,6 +71,21 @@ changes for anyone else.
   ray), capped at 22 / 30 studs. Looking at ground = land there; at a wall = stop just short; up = go up that way.
   Blink also needs Gozen to see the landing spot. Dashes now home in and stop on their point (was ±4 studs).
 - **Shadow Clone** steers round cover so it keeps running its whole life (the arena is dense with cover).
+- **Clashes** (owner-approved 2026-09-23; `Lib/ClashRules`, numbers in `Constants.CLASH_*`). Two fighters start the
+  **same attack ability** at each other: Energy Wave, Gatling, Big Bang, Tornado Slash, Spiral Sphere, Flash Step,
+  Moon Fang Wave or Lightning Dash. It's a clash when:
+  - they start within 0.6 s of each other, and the first is still winding up;
+  - they are within 30 studs and aim at each other within 35°;
+  - there's clear line of sight between them.
+
+  Both abilities are cancelled (cooldowns stay spent), and the pair is locked face to face 7 studs apart for 2.5 s,
+  inside reading range. Both numbers are readable, and the first correct code wins through the normal elimination
+  rules; there's no extra win rule. Third parties can still eliminate either fighter. The clash ends early if either
+  goes down, and then both are thrown apart. A fighter can't use abilities while clashing. The exchange effect
+  depends on the ability: parries (swords), a beam struggle (Energy Wave / Big Bang), grinding spheres, or fists
+  meeting.
+- **Swords** (owner-approved 2026-09-23): Zorin (three swords, one in the mouth), Ichiro (cleaver) and Sazuki (straight
+  blade) hold a sword during their sword moves, with slash effects.
 - **In-game character names** changed (see DESIGN.md "IP decision"): Gokai, Luffo, Krillo, Vejaro, Zorin, Eli,
   Nariko, Ichiro, Sazuki, Gozen. The table above keeps the original names as internal ids.
 

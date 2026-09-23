@@ -17,6 +17,8 @@ local CharacterDefs = require(Shared:WaitForChild("Modules"):WaitForChild("Chara
 local AnimControllers = ReplicatedStorage:WaitForChild("Animations"):WaitForChild("Controllers")
 local UIMotion = require(AnimControllers:WaitForChild("UIMotion"))
 local AbilityFX = require(AnimControllers:WaitForChild("AbilityFX"))
+local AbilityAnim = require(AnimControllers:WaitForChild("AbilityAnim"))
+local CameraShake = require(AnimControllers:WaitForChild("CameraShake"))
 local Client = script.Parent.Parent
 local ClientState = require(Client:WaitForChild("ClientState"))
 local UI = require(Client:WaitForChild("UI"))
@@ -38,6 +40,7 @@ local MESSAGES: { [string]: { string } } = {
 	not_available = { "This fighter's abilities are still being built", "info" },
 	not_alive = { "You're down", "info" },
 	blocked = { "HUNTER'S EYE: your mild is sealed", "bad" },
+	clashing = { "You're locked in a clash!", "info" },
 }
 
 type Slot = {
@@ -215,8 +218,59 @@ local function deduce(targets: { number }, untilTime: number)
 	end
 end
 
+-- A clash (owner-approved 2026-09-23): the server has already put us face to face with the opponent and
+-- set our walk speed to 0. Here we stop turning and jumping so we stay squared up (and both plates stay
+-- readable) until it ends. The server's clash_end (after its throw-apart knockback) releases us; a
+-- timer is the safety net if that message is lost.
+local clashRelease: (() -> ())? = nil
+
+local function endClash()
+	local release = clashRelease
+	clashRelease = nil
+	if release then
+		release()
+	end
+end
+
+local function beginClash(untilTime: number, face: any)
+	endClash()
+	local root, humanoid = myRootAndHumanoid()
+	if not root or not humanoid or humanoid.Health <= 0 then
+		return
+	end
+	local autoRotate = humanoid.AutoRotate
+	humanoid.AutoRotate = false
+	humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, false)
+	root.AssemblyLinearVelocity = Vector3.zero
+	if typeof(face) == "Vector3" then
+		root.CFrame = CFrame.lookAt(root.Position, Vector3.new(face.X, root.Position.Y, face.Z))
+	end
+	HUDController.toast("CLASH! Press F and type their number!", "good")
+	CameraShake.shake(0.5, 0.35)
+	clashRelease = function()
+		if humanoid.Parent then
+			humanoid.AutoRotate = autoRotate
+			humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
+		end
+		CameraShake.shake(0.8, 0.4)
+	end
+	local release = clashRelease
+	task.delay(math.max(0, untilTime - now()) + 1, function()
+		if clashRelease == release then
+			endClash()
+		end
+	end)
+end
+
 local function onEffect(effect: any)
 	if type(effect) ~= "table" then
+		return
+	end
+	if effect.kind == "clash" and type(effect.untilTime) == "number" then
+		beginClash(effect.untilTime, effect.face)
+		return
+	elseif effect.kind == "clash_end" then
+		endClash()
 		return
 	end
 	if effect.kind == "blind" and type(effect.untilTime) == "number" then
@@ -502,11 +556,13 @@ end
 
 function AbilityController.Start()
 	build()
+	AbilityAnim.start()
 	Remotes.AbilityEffect.OnClientEvent:Connect(onEffect)
 	Remotes.AbilityFX.OnClientEvent:Connect(function(event)
 		if type(event) == "table" and event.kind == "plate_hide" and type(event.target) == "number" and type(event.untilTime) == "number" then
 			NumberPlateController.hideTarget(event.target, event.untilTime)
 		end
+		AbilityAnim.handle(event)
 		AbilityFX.play(event)
 	end)
 	ClientState.Changed:Connect(function()

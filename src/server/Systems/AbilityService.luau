@@ -20,6 +20,7 @@ local Constants = require(ReplicatedStorage.Shared.Modules.Constants)
 local CharacterDefs = require(ReplicatedStorage.Shared.Modules.CharacterDefs)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local AbilityRules = require(script.Parent.Parent.Lib.AbilityRules)
+local ClashRules = require(script.Parent.Parent.Lib.ClashRules)
 local MapService = require(script.Parent.MapService)
 local RoundManager = require(script.Parent.RoundManager)
 local NumberAssignmentService = require(script.Parent.NumberAssignmentService)
@@ -51,6 +52,14 @@ local entries: { [Player]: Entry } = {}
 local speedMods: { [Player]: { { mult: number, untilTime: number } } } = {}
 local guardUntil: { [number]: number } = {}
 local mildBlockedUntil: { [number]: number } = {}
+local lastGuardSpark: { [number]: number } = {} -- Iron Guard block sparks, rate-limited per fighter
+local clashState = ClashRules.new()
+local clashCasts: { [number]: any } = {} -- user id -> the context of their latest clashable cast (to cancel it)
+local CLASH_PARAMS = {
+	window = Constants.CLASH_WINDOW,
+	range = Constants.CLASH_RANGE,
+	facingDegrees = Constants.CLASH_FACING_DEGREES,
+}
 local barriers: { { owner: number, root: BasePart, radius: number, untilTime: number } } = {}
 local eliminationListeners: { [any]: (attacker: Player, victimId: number) -> () } = {}
 local decoyModels: { [number]: Model } = {}
@@ -146,11 +155,17 @@ local function applySpeed(player: Player)
 	humanoid.WalkSpeed = Constants.MOVE_SPEED * mult
 end
 
-local function addSpeed(player: Player, mult: number, seconds: number)
+-- Returns a function that ends this modifier early (clashes that finish before their time).
+local function addSpeed(player: Player, mult: number, seconds: number): () -> ()
 	speedMods[player] = speedMods[player] or {}
-	table.insert(speedMods[player], { mult = mult, untilTime = now() + seconds })
+	local mod = { mult = mult, untilTime = now() + seconds }
+	table.insert(speedMods[player], mod)
 	applySpeed(player)
 	task.delay(seconds + 0.02, applySpeed, player)
+	return function()
+		mod.untilTime = now()
+		applySpeed(player)
+	end
 end
 
 -- Is `point` inside someone else's active Infinity barrier?
@@ -207,10 +222,13 @@ local function makeContext(player: Player, entry: Entry, aim: any, eye: any)
 		return AbilityRules.flatAim(aim, if look.Magnitude > 0.1 then look.Unit else Vector3.zAxis)
 	end
 
-	-- Still the same life in the same, unfinished match (abilities with a wind-up re-check this).
+	-- Still the same life in the same, unfinished match, and not cancelled by a clash (abilities with a
+	-- wind-up re-check this).
+	ctx.cancelled = false
 	function ctx.stillValid(): boolean
 		local p = match.participants[player.UserId]
-		return RoundManager.getMatch() == match
+		return not ctx.cancelled
+			and RoundManager.getMatch() == match
 			and not match.ended
 			and p ~= nil
 			and p.alive
@@ -307,6 +325,14 @@ local function makeContext(player: Player, entry: Entry, aim: any, eye: any)
 	function ctx.knockback(target: Player, velocity: Vector3)
 		if not isGuarded(target.UserId) then
 			Remotes.AbilityEffect:FireClient(target, { kind = "knockback", velocity = velocity })
+			return
+		end
+		-- Iron Guard turned it away: everyone sees sparks off the blades. Drags repeat every tick, so this
+		-- is rate-limited per guarded fighter.
+		local t = now()
+		if t - (lastGuardSpark[target.UserId] or -math.huge) >= Constants.GUARD_SPARK_INTERVAL then
+			lastGuardSpark[target.UserId] = t
+			Remotes.AbilityFX:FireAllClients({ kind = "guard_block", target = target.UserId, direction = velocity })
 		end
 	end
 
@@ -574,6 +600,84 @@ local function makeContext(player: Player, entry: Entry, aim: any, eye: any)
 	return ctx
 end
 
+-- Clashes (owner-approved 2026-09-23; rules in Lib/ClashRules) --------------------------------------
+
+-- The fighter's current life id while alive in the current match, else nil.
+local function lifeOf(player: Player): number?
+	local match = RoundManager.getMatch()
+	local p = match and not match.ended and match.participants[player.UserId]
+	return if p and p.alive then p.lifeId else nil
+end
+
+-- Lock `a` and `b` into a clash over `key` (the ability `character`.`slot`). `ctxB` is b's context, used for
+-- the line-of-sight check. Returns false (nothing changed) if the pair can't clash right now.
+local function startClash(a: Player, b: Player, character: string, slot: string, ctxB: any): boolean
+	local rootA, rootB = rootOf(a), rootOf(b)
+	local lifeA, lifeB = lifeOf(a), lifeOf(b)
+	if not rootA or not rootB or not lifeA or not lifeB or not a.Character or not b.Character then
+		return false
+	end
+	if not ctxB.lineOfSight(rootB.Position + CHEST, rootA.Position + CHEST) then
+		return false -- facing each other through a wall isn't a clash
+	end
+	ClashRules.begin(clashState, a.UserId, b.UserId)
+	for _, id in { a.UserId, b.UserId } do
+		local pending = clashCasts[id]
+		if pending then
+			pending.cancelled = true -- its wind-up re-check stops it from firing
+		end
+		clashCasts[id] = nil
+	end
+
+	-- Face to face, inside reading range, rooted in place.
+	local standA, standB, axis = ClashRules.stances(rootA.Position, rootB.Position, Constants.CLASH_DISTANCE)
+	a.Character:PivotTo(CFrame.lookAt(standA, Vector3.new(standB.X, standA.Y, standB.Z)))
+	b.Character:PivotTo(CFrame.lookAt(standB, Vector3.new(standA.X, standB.Y, standA.Z)))
+	local seconds = Constants.CLASH_SECONDS
+	local freeA = addSpeed(a, 0, seconds)
+	local freeB = addSpeed(b, 0, seconds)
+	local untilTime = now() + seconds
+	Remotes.AbilityEffect:FireClient(a, { kind = "clash", untilTime = untilTime, face = standB, partner = b.UserId })
+	Remotes.AbilityEffect:FireClient(b, { kind = "clash", untilTime = untilTime, face = standA, partner = a.UserId })
+	local midpoint = (standA + standB) / 2
+	Remotes.AbilityFX:FireAllClients({
+		kind = "clash",
+		a = a.UserId,
+		b = b.UserId,
+		character = character,
+		slot = slot,
+		duration = seconds,
+		midpoint = midpoint,
+	})
+	if RunService:IsStudio() then
+		print(string.format("[NAU] clash %s vs %s (%s.%s)", a.Name, b.Name, character, slot))
+	end
+
+	-- The exchange runs its time, or ends as soon as either fighter goes down; then both are thrown apart.
+	task.spawn(function()
+		while now() < untilTime and lifeOf(a) == lifeA and lifeOf(b) == lifeB do
+			task.wait(0.1)
+		end
+		ClashRules.finish(clashState, a.UserId, b.UserId)
+		freeA()
+		freeB()
+		local up = Vector3.new(0, Constants.CLASH_LAUNCH, 0)
+		if lifeOf(a) == lifeA then
+			Remotes.AbilityEffect:FireClient(a, { kind = "knockback", velocity = -axis * Constants.CLASH_KNOCKBACK + up })
+		end
+		if lifeOf(b) == lifeB then
+			Remotes.AbilityEffect:FireClient(b, { kind = "knockback", velocity = axis * Constants.CLASH_KNOCKBACK + up })
+		end
+		for _, p in { a, b } do
+			if p.Parent then
+				Remotes.AbilityEffect:FireClient(p, { kind = "clash_end" })
+			end
+		end
+		Remotes.AbilityFX:FireAllClients({ kind = "clash_end", a = a.UserId, b = b.UserId, midpoint = midpoint })
+	end)
+	return true
+end
+
 local function handleUse(player: Player, slot: any, aim: any, eye: any)
 	if not AbilityRules.isSlot(slot) then
 		return { status = "malformed" }
@@ -582,6 +686,9 @@ local function handleUse(player: Player, slot: any, aim: any, eye: any)
 	local entry = entries[player]
 	if not match or match.ended or not entry or entry.match ~= match then
 		return { status = "not_in_match" }
+	end
+	if ClashRules.isClashing(clashState, player.UserId) then
+		return { status = "clashing" }
 	end
 	local p = match.participants[player.UserId]
 	local t = now()
@@ -612,6 +719,33 @@ local function handleUse(player: Player, slot: any, aim: any, eye: any)
 	pushState(player)
 	if RunService:IsStudio() then
 		print(string.format("[NAU] ability %s %s.%s", player.Name, entry.character, slot))
+	end
+	-- Every client starts the caster's cast animation from this (visual only; fired before the ability's
+	-- own effects so the wind-up always leads them).
+	Remotes.AbilityFX:FireAllClients({
+		kind = "cast",
+		caster = player.UserId,
+		character = entry.character,
+		slot = slot,
+		castSeconds = plan.castSeconds or 0,
+	})
+	-- The same attack started at each other a moment apart clashes: both are cancelled, the pair locks in.
+	local clashKey = ClashRules.key(entry.character, slot)
+	local root = rootOf(player)
+	if ClashRules.isClashable(clashKey) and root then
+		local partner = ClashRules.offer(clashState, {
+			id = player.UserId,
+			key = clashKey,
+			t = t,
+			windup = plan.castSeconds or 0,
+			position = root.Position,
+			aim = ctx.flatAim(),
+		}, CLASH_PARAMS)
+		local other = partner and Players:GetPlayerByUserId(partner.id)
+		if other and startClash(other, player, entry.character, slot, ctx) then
+			return { status = "ok", readyAt = entry.rules.readyAt[slot] } -- this cast never runs
+		end
+		clashCasts[player.UserId] = ctx
 	end
 	task.spawn(function()
 		local success, err = pcall(plan.run)
@@ -682,6 +816,8 @@ function AbilityService.Init()
 		speedMods[player] = nil
 		guardUntil[player.UserId] = nil
 		mildBlockedUntil[player.UserId] = nil
+		lastGuardSpark[player.UserId] = nil
+		clashCasts[player.UserId] = nil
 	end)
 end
 

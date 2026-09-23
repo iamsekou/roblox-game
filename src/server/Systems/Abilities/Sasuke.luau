@@ -28,7 +28,7 @@ Sasuke.mild = {
 				end
 				local start, finish = ctx.dashForward(Constants.SASUKE_DASH_DISTANCE, Constants.SASUKE_DASH_SPEED)
 				if start and finish then
-					ctx.fx("sasuke_dash", { from = start, to = finish })
+					ctx.fx("sasuke_dash", { from = start, to = finish, speed = Constants.SASUKE_DASH_SPEED })
 				end
 			end,
 		}

@@ -27,6 +27,8 @@ you eliminate someone by typing the number *you* see on them. Studio place: "InD
 - **The repo is the source of truth.** Rojo 7.4.4 (pinned in `aftman.toml`, installed via Rokit at
   `%USERPROFILE%\.rokit\bin\rojo.exe`) syncs it into Studio: run `rojo serve` in the repo root, then press
   Connect in Studio's Rojo plugin. The plugin needs **Script Injection** permission (Plugins → Manage Plugins).
+- A long-running `rojo serve` can stop noticing *new* files in one folder while edits elsewhere still sync (seen in
+  `animations/`, 2026-09-23). After adding files, confirm they exist in Studio; if not, restart serve and reconnect.
 - Rojo writes to the Edit datamodel only. A running Play session must be stopped and restarted to pick up changes.
 - If Rojo isn't connected, mirror files into Studio through the Studio tools and **prove parity** with the
   length + rolling-hash comparison (repo files hashed with CR stripped vs Studio `Source`). Never leave Studio

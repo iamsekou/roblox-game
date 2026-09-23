@@ -20,7 +20,7 @@ Zoro.mild = {
 		return {
 			castSeconds = tell,
 			run = function()
-				ctx.fx("zoro_guard", { duration = tell + Constants.ZORO_GUARD_SECONDS })
+				ctx.fx("zoro_guard", { duration = tell + Constants.ZORO_GUARD_SECONDS, tell = tell })
 				task.wait(tell)
 				if ctx.stillValid() then
 					ctx.guard(Constants.ZORO_GUARD_SECONDS)

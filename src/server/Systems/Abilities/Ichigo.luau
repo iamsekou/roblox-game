@@ -48,7 +48,7 @@ Ichigo.mild = {
 				end
 				ctx.hidePlate(Constants.ICHIGO_FLASH_HIDE)
 				ctx.dashTo(finish, Constants.ICHIGO_FLASH_SPEED)
-				ctx.fx("ichigo_flash", { from = start, to = finish })
+				ctx.fx("ichigo_flash", { from = start, to = finish, speed = Constants.ICHIGO_FLASH_SPEED })
 			end,
 		}
 	end,

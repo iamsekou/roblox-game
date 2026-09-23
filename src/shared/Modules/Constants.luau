@@ -54,6 +54,24 @@ local Constants = {
 	ABILITY_CHARGE_SLOW = 0.45, -- walk-speed multiplier while charging an ultimate (placeholder)
 	DEFAULT_CHARACTER = "Goku",
 
+	-- Clashes (owner-approved 2026-09-23, rules in Lib/ClashRules): the same attack ability started at each
+	-- other by two fighters cancels both and locks them face to face; first correct code wins as usual.
+	CLASH_WINDOW = 0.6, -- max seconds between the two casts (and the first must still be winding up)
+	CLASH_RANGE = 30, -- max studs between the two fighters
+	CLASH_FACING_DEGREES = 35, -- each must aim at the other within this cone
+	CLASH_SECONDS = 2.5, -- how long the exchange lasts (ends early if either goes down)
+	CLASH_DISTANCE = 7, -- studs apart during the exchange: inside plate reading range, so both numbers show
+	CLASH_KNOCKBACK = 45, -- studs/second each is thrown back when it ends (placeholder)
+	CLASH_LAUNCH = 18, -- upward studs/second on that throw (placeholder)
+
+	-- Ability cast animations (Phase 3 item 8). Poses: animations/Controllers/AbilityPoses; hand-keyframed clip
+	-- ids: Modules/AnimationIds. The wind-up lasts the server's cast time; these shape the blends around it.
+	ANIM_BLEND_IN = 0.12, -- seconds to blend from the normal animation into a wind-up
+	ANIM_RELEASE_SNAP = 0.07, -- wind-up pose -> release pose (short, so strikes read as sharp)
+	ANIM_BLEND_OUT = 0.25, -- release -> back to the normal animation
+	ANIM_DEFAULT_HOLD = 0.4, -- seconds a release pose is held when the move doesn't say
+	ANIM_MAX_WINDUP = 3, -- ignore cast times above this (sanity cap on the server's number)
+
 	-- Goku (approved 2026-09-23)
 	GOKU_TRANSMISSION_DISTANCE = 18, -- Phase Shift lands on a random open spot this far away
 	GOKU_TRANSMISSION_TELL = 0.3,
@@ -100,6 +118,7 @@ local Constants = {
 	ZORO_GUARD_TELL = 0.3,
 	ZORO_GUARD_SECONDS = 2 * EFFECT_TIME,
 	ZORO_GUARD_SLOW = 0.5,
+	GUARD_SPARK_INTERVAL = 0.25, -- seconds between "blocked" spark effects on one guarding fighter (drags tick every 0.1 s)
 	ZORO_TORNADO_WINDUP = 1,
 	ZORO_TORNADO_LENGTH = 40,
 	ZORO_TORNADO_SPEED = 20,

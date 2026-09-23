@@ -73,11 +73,11 @@ Waiting ──(≥MIN queued)──▶ Intermission ──(15 s)──▶ InRoun
 | MatchFeed | Event | S→all | `{kind="eliminated", victim, attacker?, cause}` / `{kind="spawned", userId}` |
 | UpdateCurrency | Event | S→one player | `{yen}` |
 | PurchaseItem | Function | C→S | reserved for Phase 3 (answers `coming_soon`) |
-| UseAbility | Function | C→S | `(slot: "mild" or "ultimate", aim: Vector3, eye: Vector3)` → `{status, readyAt?}` (aim = camera direction, eye = camera position, trusted only within 40 studs of the character); status ∈ ok, cooldown, casting, protected, not_alive, not_in_match, not_available, no_target, no_room, malformed. The aim is only a direction hint; every range/cone/line-of-sight check is server-side |
+| UseAbility | Function | C→S | `(slot: "mild" or "ultimate", aim: Vector3, eye: Vector3)` → `{status, readyAt?}` (aim = camera direction, eye = camera position, trusted only within 40 studs of the character); status ∈ ok, cooldown, casting, protected, not_alive, not_in_match, not_available, no_target, no_room, clashing, malformed. The aim is only a direction hint; every range/cone/line-of-sight check is server-side |
 | EquipCharacter | Function | C→S | `(characterId)` → `{status, equipped?}`; status ∈ equipped, not_owned, in_fight, unknown. Allowed in the lobby or while waiting to respawn |
 | AbilityState | Event | S→one player | `{equipped, character?, implemented?, mild = {name, readyAt}?, ultimate = {name, readyAt}?}` |
-| AbilityFX | Event | S→all | `{kind, caster, ...}` visuals only, so every tell is visible to everyone |
-| AbilityEffect | Event | S→one player | `{kind = "knockback", velocity}` / `{kind = "grapple", target, speed}` / `{kind = "clearCode"}` / `{kind = "lock", untilTime}` |
+| AbilityFX | Event | S→all | `{kind, caster, ...}` visuals only, so every tell is visible to everyone. `kind = "cast"` (`character`, `slot`, `castSeconds`) is fired first for every accepted ability and drives the cast animation (`animations/Controllers/AbilityAnim`, guide in `docs/ANIMATING.md`). Also `guard_block` (`target`, `direction`), `clash` (`a`, `b`, `character`, `slot`, `duration`, `midpoint`) and `clash_end` (`a`, `b`, `midpoint`) |
+| AbilityEffect | Event | S→one player | `{kind = "knockback", velocity}` / `{kind = "grapple", target, speed}` / `{kind = "clearCode"}` / `{kind = "lock", untilTime}` / `{kind = "clash", untilTime, face, partner}` / `{kind = "clash_end"}` |
 
 Changes from the Phase 1 proposal: `SubmitCode` takes **only the typed code** (the server resolves the
 target from the observer's own table, so a client can't probe specific players), and the separate

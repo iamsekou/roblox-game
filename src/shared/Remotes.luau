@@ -27,7 +27,7 @@ local DEFINITIONS: { [string]: string } = {
 	UseAbility = "RemoteFunction", -- C->S (slot: "mild" | "ultimate", aim: Vector3, eye: Vector3) -> { status }
 	EquipCharacter = "RemoteFunction", -- C->S (characterId) -> { status, equipped? }
 	AbilityState = "RemoteEvent", -- S->one { equipped, character?, mild = { name, readyAt }?, ultimate = {...}? }
-	AbilityFX = "RemoteEvent", -- S->all { kind, caster, ... } visuals only; every client draws the tell
+	AbilityFX = "RemoteEvent", -- S->all { kind, caster, ... } visuals only; every client draws the tell ("cast" drives animations)
 	AbilityEffect = "RemoteEvent", -- S->one { kind = "knockback" | "grapple" | "clearCode" | "lock", ... }
 
 	-- Economy (names kept from the original scaffold)
