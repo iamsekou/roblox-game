@@ -33,7 +33,9 @@ Luffy.mild = {
 		return {
 			castSeconds = tell,
 			run = function()
-				ctx.fx("luffy_grapple", { target = hit.Position, delay = tell })
+				-- The arm (animations/Controllers/AbilityFX) plants the hand flat on the surface (normal) and
+				-- holds on for the pull (speed tells every client how long that takes).
+				ctx.fx("luffy_grapple", { target = hit.Position, normal = hit.Normal, delay = tell, speed = Constants.LUFFY_GRAPPLE_SPEED })
 				task.wait(tell)
 				if ctx.stillValid() then
 					ctx.effect({ kind = "grapple", target = target, speed = Constants.LUFFY_GRAPPLE_SPEED })

@@ -83,7 +83,18 @@ local Constants = {
 	PROFILE_LOAD_ATTEMPTS = 8, -- ...this many times (the other server's save-on-leave), then taken over
 	PROFILE_SHUTDOWN_WAIT_SECONDS = 25, -- a closing server waits this long for saves (Roblox allows 30)
 	STUDIO_STORE_SUFFIX = "_Studio", -- Studio's DataStores are kept apart from the live game's
-	SETTINGS_MIN_INTERVAL = 0.2, -- seconds between accepted settings changes from one player (schema: Modules/Settings)
+	SETTINGS_MIN_INTERVAL = 0.2,
+
+	-- Movement sanity check (owner-approved 2026-09-24; rules in Lib/MovementRules, applied by Systems/MovementGuard).
+	MOVEMENT_CHECK_INTERVAL = 0.1, -- seconds between position samples
+	MOVEMENT_SPEED_MARGIN = 1.35, -- allowed horizontal speed = the server's WalkSpeed x this (slopes, collisions)
+	MOVEMENT_RISE_SPEED = 60, -- upward studs/second allowed without a game-granted launch (a jump is ~53)
+	MOVEMENT_BURST_SECONDS = 1, -- seconds of travel the budget holds (absorbs positions arriving in a clump)
+	MOVEMENT_SLACK = 6, -- studs always allowed on top
+	MOVEMENT_GRANT_TAIL = 0.6, -- a game-granted burst stays allowed this long after it should have ended
+	MOVEMENT_KNOCKBACK_SECONDS = 1.2, -- how long a knockback's speed stays allowed
+	MOVEMENT_PENALTY_SECONDS = 1.5, -- after being pulled back, the fighter learns no numbers for this long
+	MOVEMENT_TELEPORT_GRACE = 0.5, -- after a server teleport, stale positions from the client re-anchor, no penalty -- seconds between accepted settings changes from one player (schema: Modules/Settings)
 
 	-- Kill leaderboards (owner-approved 2026-09-23): all-time + weekly (Monday 00:00 UTC), global via DataStores.
 	LEADERBOARD_FLUSH_SECONDS = 30, -- unsaved kills are added to the stores this often (and on shutdown)

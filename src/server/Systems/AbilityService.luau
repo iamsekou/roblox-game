@@ -27,8 +27,16 @@ local RoundManager = require(script.Parent.RoundManager)
 local NumberAssignmentService = require(script.Parent.NumberAssignmentService)
 local EliminationService = require(script.Parent.EliminationService)
 local EconomyService = require(script.Parent.EconomyService)
+local MovementGuard = require(script.Parent.MovementGuard)
 
 local AbilityService = {}
+
+-- Every effect sent to one player goes through here, so the movement check (Systems/MovementGuard) hears
+-- about each knockback, dash and grapple before the player's client acts on it.
+local function sendEffect(target: Player, payload: { [string]: any })
+	MovementGuard.expect(target, payload)
+	Remotes.AbilityEffect:FireClient(target, payload)
+end
 
 local Abilities = script.Parent.Abilities
 local IMPLEMENTED: { [string]: any } = {}
@@ -352,7 +360,7 @@ local function makeContext(player: Player, entry: Entry, aim: any, eye: any)
 
 	function ctx.knockback(target: Player, velocity: Vector3)
 		if not isGuarded(target.UserId) then
-			Remotes.AbilityEffect:FireClient(target, { kind = "knockback", velocity = velocity })
+			sendEffect(target, { kind = "knockback", velocity = velocity })
 			return
 		end
 		-- Iron Guard turned it away: everyone sees sparks off the blades. Drags repeat every tick, so this
@@ -372,12 +380,12 @@ local function makeContext(player: Player, entry: Entry, aim: any, eye: any)
 		local t = now()
 		if match:lockInput(target.UserId, t, seconds) then
 			local p = match.participants[target.UserId]
-			Remotes.AbilityEffect:FireClient(target, { kind = "lock", untilTime = p.inputLockedUntil })
+			sendEffect(target, { kind = "lock", untilTime = p.inputLockedUntil })
 		end
 	end
 
 	function ctx.clearCode(target: Player)
-		Remotes.AbilityEffect:FireClient(target, { kind = "clearCode" })
+		sendEffect(target, { kind = "clearCode" })
 	end
 
 	-- `key`: for an effect that re-applies itself every tick (see addSpeed); it extends instead of stacking.
@@ -398,7 +406,7 @@ local function makeContext(player: Player, entry: Entry, aim: any, eye: any)
 	function ctx.blind(target: Player, seconds: number)
 		local untilTime = now() + seconds
 		NumberAssignmentService.blind(target.UserId, untilTime)
-		Remotes.AbilityEffect:FireClient(target, { kind = "blind", untilTime = untilTime })
+		sendEffect(target, { kind = "blind", untilTime = untilTime })
 	end
 
 	-- An approved reading exception for the caster. `targets` nil = every opponent. Returns an end().
@@ -415,10 +423,10 @@ local function makeContext(player: Player, entry: Entry, aim: any, eye: any)
 		end
 		local grant = NumberAssignmentService.grantRead(player.UserId, ids, range, untilTime)
 		local grantId = tostring(grant)
-		Remotes.AbilityEffect:FireClient(player, { kind = "readGrant", id = grantId, targets = list, range = range, untilTime = untilTime })
+		sendEffect(player, { kind = "readGrant", id = grantId, targets = list, range = range, untilTime = untilTime })
 		return function()
 			NumberAssignmentService.endGrant(grant)
-			Remotes.AbilityEffect:FireClient(player, { kind = "readGrantEnd", id = grantId })
+			sendEffect(player, { kind = "readGrantEnd", id = grantId })
 		end
 	end
 
@@ -430,15 +438,15 @@ local function makeContext(player: Player, entry: Entry, aim: any, eye: any)
 	end
 
 	function ctx.warn(target: Player, text: string)
-		Remotes.AbilityEffect:FireClient(target, { kind = "warned", text = text })
+		sendEffect(target, { kind = "warned", text = text })
 	end
 
 	function ctx.effect(payload: { [string]: any })
-		Remotes.AbilityEffect:FireClient(player, payload)
+		sendEffect(player, payload)
 	end
 
 	function ctx.effectTo(target: Player, payload: { [string]: any })
-		Remotes.AbilityEffect:FireClient(target, payload)
+		sendEffect(target, payload)
 	end
 
 	function ctx.fx(kind: string, data: { [string]: any }?)
@@ -460,12 +468,13 @@ local function makeContext(player: Player, entry: Entry, aim: any, eye: any)
 		local character = player.Character
 		if character then
 			character:PivotTo(cframe)
+			MovementGuard.reset(player) -- a teleport ability, not a cheat
 		end
 	end
 
 	-- Moves the caster to `target` at `speed` (their client runs the motion toward the server's point).
 	function ctx.dashTo(target: Vector3, speed: number)
-		Remotes.AbilityEffect:FireClient(player, { kind = "grapple", target = target, speed = speed })
+		sendEffect(player, { kind = "grapple", target = target, speed = speed })
 	end
 
 	-- A dash along the aim, stopping short of walls. Returns (start, end, direction).
@@ -662,12 +671,14 @@ local function startClash(a: Player, b: Player, character: string, slot: string,
 	local standA, standB, axis = ClashRules.stances(rootA.Position, rootB.Position, Constants.CLASH_DISTANCE)
 	a.Character:PivotTo(CFrame.lookAt(standA, Vector3.new(standB.X, standA.Y, standB.Z)))
 	b.Character:PivotTo(CFrame.lookAt(standB, Vector3.new(standA.X, standB.Y, standA.Z)))
+	MovementGuard.reset(a)
+	MovementGuard.reset(b)
 	local seconds = Constants.CLASH_SECONDS
 	local freeA = addSpeed(a, 0, seconds)
 	local freeB = addSpeed(b, 0, seconds)
 	local untilTime = now() + seconds
-	Remotes.AbilityEffect:FireClient(a, { kind = "clash", untilTime = untilTime, face = standB, partner = b.UserId })
-	Remotes.AbilityEffect:FireClient(b, { kind = "clash", untilTime = untilTime, face = standA, partner = a.UserId })
+	sendEffect(a, { kind = "clash", untilTime = untilTime, face = standB, partner = b.UserId })
+	sendEffect(b, { kind = "clash", untilTime = untilTime, face = standA, partner = a.UserId })
 	local midpoint = (standA + standB) / 2
 	Remotes.AbilityFX:FireAllClients({
 		kind = "clash",
@@ -692,14 +703,14 @@ local function startClash(a: Player, b: Player, character: string, slot: string,
 		freeB()
 		local up = Vector3.new(0, Constants.CLASH_LAUNCH, 0)
 		if lifeOf(a) == lifeA then
-			Remotes.AbilityEffect:FireClient(a, { kind = "knockback", velocity = -axis * Constants.CLASH_KNOCKBACK + up })
+			sendEffect(a, { kind = "knockback", velocity = -axis * Constants.CLASH_KNOCKBACK + up })
 		end
 		if lifeOf(b) == lifeB then
-			Remotes.AbilityEffect:FireClient(b, { kind = "knockback", velocity = axis * Constants.CLASH_KNOCKBACK + up })
+			sendEffect(b, { kind = "knockback", velocity = axis * Constants.CLASH_KNOCKBACK + up })
 		end
 		for _, p in { a, b } do
 			if p.Parent then
-				Remotes.AbilityEffect:FireClient(p, { kind = "clash_end" })
+				sendEffect(p, { kind = "clash_end" })
 			end
 		end
 		Remotes.AbilityFX:FireAllClients({ kind = "clash_end", a = a.UserId, b = b.UserId, midpoint = midpoint })

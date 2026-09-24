@@ -5,6 +5,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Constants = require(ReplicatedStorage.Shared.Modules.Constants)
 local MapService = require(script.Parent.MapService)
+local MovementGuard = require(script.Parent.MovementGuard)
 
 local PlayerLifeService = {}
 
@@ -57,6 +58,7 @@ function PlayerLifeService.spawnAt(player: Player, cframe: CFrame, options: { ar
 	end
 
 	character:PivotTo(cframe + Vector3.new(0, 3, 0))
+	MovementGuard.reset(player) -- a server teleport, not a cheat
 	removeSpawnForceFields(character)
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	if humanoid then

@@ -139,9 +139,92 @@ end
 
 -- Luffy ------------------------------------------------------------------------------------------
 
-local function handOf(character: Model?): BasePart?
-	local hand = character and (character:FindFirstChild("RightHand") or character:FindFirstChild("Right Arm"))
-	return if hand and hand:IsA("BasePart") then hand else rootOf(character)
+-- Stretch Grapple (owner request 2026-09-24: "an arm stretching out to grab on to what it grapples").
+-- The upper arm stays real (the cast pose points it at the target); from the elbow on, the real forearm
+-- and hand are hidden and a rubber arm takes over:
+--   shoot   over the server's tell, a copy of Luffo's own hand flies out fingers-first; the arm behind it
+--           ripples like rubber and thins as it stretches (volume kept, roughly);
+--   grab    the hand plants flat on the surface with a squash and a ring of dust, and holds on;
+--   pull    the hand stays put while Luffo is pulled in (his own client moves him; everyone sees it
+--           replicate), so the arm shortens and thickens back;
+--   snap    on arrival (or a time limit) the hand lets go and the arm whips back into the elbow.
+local ARM_SEGMENTS = 10
+local ARM_WIDTH = 1.05 -- studs, at rest length (owner, 2026-09-24: "a little thicker"; was 0.85)
+local ARM_MIN_WIDTH = 0.6 -- studs, fully stretched (was 0.4)
+local ARM_REST = 2 -- studs: an unstretched forearm and hand
+local HAND_SCALE = 1.6 -- the flying hand is drawn a bit bigger, cartoon style
+local RIPPLE = 1.1 -- studs of sideways ripple while shooting out (decays)
+local RIPPLE_WAVES = 1.5 -- ripples along the arm
+local SNAP_SECONDS = 0.16
+local ARRIVE_DISTANCE = 3.5 -- elbow this close to the grip: let go
+local HIDDEN_PARTS = { "RightLowerArm", "RightHand", "Right Arm" } -- R15, and the R6 name
+
+local function jointPosition(character: Model): Vector3?
+	-- The elbow (R15), else the shoulder (R6: the whole arm is one part).
+	local upper = character:FindFirstChild("RightUpperArm")
+	local elbow = upper and upper:FindFirstChild("RightElbowRigAttachment")
+	if elbow and elbow:IsA("Attachment") then
+		return elbow.WorldPosition
+	end
+	local torso = character:FindFirstChild("Torso") or character:FindFirstChild("UpperTorso")
+	return if torso and torso:IsA("BasePart") then torso.CFrame:PointToWorldSpace(Vector3.new(1.5, 0.6, 0)) else nil
+end
+
+local function setArmHidden(character: Model, hidden: boolean)
+	for _, name in HIDDEN_PARTS do
+		local p = character:FindFirstChild(name)
+		if p and p:IsA("BasePart") then
+			p.LocalTransparencyModifier = if hidden then 1 else 0
+		end
+	end
+end
+
+-- A copy of the fighter's own hand (its mesh and skin), or a fist-sized ball if the rig has none.
+local function handCopy(character: Model, color: Color3): BasePart
+	local real = character:FindFirstChild("RightHand")
+	local copy: BasePart
+	if real and real:IsA("BasePart") then
+		copy = real:Clone()
+		for _, child in copy:GetChildren() do
+			if not child:IsA("SpecialMesh") and not child:IsA("SurfaceAppearance") then
+				child:Destroy()
+			end
+		end
+		copy.Size *= HAND_SCALE
+		copy.Anchored = true
+		copy.CanCollide = false
+		copy.CanQuery = false
+		copy.CanTouch = false
+		copy.CastShadow = false
+		copy.Massless = true
+		copy.Transparency = 0
+		copy.LocalTransparencyModifier = 0
+		copy.Parent = fxFolder()
+	else
+		copy = part(Enum.PartType.Ball, Vector3.one * 1.3, CFrame.new(), color, 0)
+		copy.Material = Enum.Material.SmoothPlastic
+	end
+	return copy
+end
+
+-- Fingers along `direction`: a rig's hand hangs down its -Y axis.
+local function handCFrame(at: Vector3, direction: Vector3): CFrame
+	return CFrame.lookAt(at, at + direction) * CFrame.Angles(math.rad(90), 0, 0)
+end
+
+local function grabDust(point: Vector3, normal: Vector3)
+	local ring = part(Enum.PartType.Cylinder, Vector3.new(0.12, 1, 1), alongCFrame(point + normal * 0.1, normal), Color3.fromRGB(240, 232, 214), 0.25)
+	ring.Material = Enum.Material.SmoothPlastic
+	fadeOut(ring, 0.4, { Size = Vector3.new(0.12, 6, 6) })
+	-- A few puffs kicked out across the surface.
+	local across = normal:Cross(if math.abs(normal.Y) > 0.9 then Vector3.xAxis else Vector3.yAxis).Unit
+	for i = 1, 6 do
+		local angle = (i / 6) * math.pi * 2
+		local dir = (CFrame.fromAxisAngle(normal, angle) * across)
+		local puff = part(Enum.PartType.Ball, Vector3.one * 0.5, CFrame.new(point + normal * 0.3), Color3.fromRGB(230, 220, 200), 0.3)
+		puff.Material = Enum.Material.SmoothPlastic
+		fadeOut(puff, 0.45, { Size = Vector3.one * 1.3, CFrame = CFrame.new(point + normal * 0.6 + dir * 2.4) })
+	end
 end
 
 local function luffyGrapple(event: any)
@@ -150,31 +233,114 @@ local function luffyGrapple(event: any)
 	if not character or typeof(target) ~= "Vector3" then
 		return
 	end
+	local start = jointPosition(character)
+	if not start then
+		return
+	end
+	local normal = if typeof(event.normal) == "Vector3" and event.normal.Magnitude > 0.5 then event.normal.Unit else (start - target).Unit
 	local reach = tonumber(event.delay) or 0.3
-	local arm = part(Enum.PartType.Cylinder, Vector3.new(0.1, 0.7, 0.7), CFrame.new(target), SKIN, 0)
-	arm.Material = Enum.Material.SmoothPlastic
-	local fist = part(Enum.PartType.Ball, Vector3.one * 1.3, CFrame.new(target), SKIN, 0)
-	fist.Material = Enum.Material.SmoothPlastic
+	local speed = tonumber(event.speed) or 120
+	-- Shoot + the pull (distance / speed) + slack for a blocked path; then let go regardless.
+	local limit = reach + (target - start).Magnitude / speed + 0.6
+
+	local lower = character:FindFirstChild("RightLowerArm") or character:FindFirstChild("Right Arm")
+	local skin = if lower and lower:IsA("BasePart") then lower.Color else SKIN
+	setArmHidden(character, true)
+	local hand = handCopy(character, skin)
+	local grip = target + normal * 0.35 -- the palm sits just off the surface
+	local segments, knuckles = {}, {}
+	for i = 1, ARM_SEGMENTS do
+		local seg = part(Enum.PartType.Cylinder, Vector3.new(0.1, ARM_WIDTH, ARM_WIDTH), CFrame.new(start), skin, 0)
+		seg.Material = Enum.Material.SmoothPlastic
+		segments[i] = seg
+		local ball = part(Enum.PartType.Ball, Vector3.one * ARM_WIDTH, CFrame.new(start), skin, 0)
+		ball.Material = Enum.Material.SmoothPlastic
+		knuckles[i] = ball
+	end
+
 	local started = os.clock()
-	local total = reach + 0.45 -- shoot out, then hold while the pull carries Luffy in
-	local connection
+	local phase = "shoot"
+	local snapFrom: Vector3? = nil
+	local snapStarted = 0
+	local connection: RBXScriptConnection
+	local function finish()
+		connection:Disconnect()
+		for i = 1, ARM_SEGMENTS do
+			segments[i]:Destroy()
+			knuckles[i]:Destroy()
+		end
+		hand:Destroy()
+		if character.Parent then
+			setArmHidden(character, false)
+		end
+	end
+
 	connection = RunService.RenderStepped:Connect(function()
-		local elapsed = os.clock() - started
-		local hand = handOf(character)
-		if elapsed >= total or not hand or not hand.Parent then
-			connection:Disconnect()
-			arm:Destroy()
-			fist:Destroy()
+		local now = os.clock()
+		local elapsed = now - started
+		local from = if character.Parent then jointPosition(character) else nil
+		if not from then
+			finish()
 			return
 		end
-		local from = hand.Position
-		local tip = if elapsed < reach then from:Lerp(target, elapsed / reach) else target
-		local span = tip - from
-		if span.Magnitude > 0.05 then
-			arm.Size = Vector3.new(span.Magnitude, 0.7, 0.7)
-			arm.CFrame = alongCFrame(from + span / 2, span.Unit)
+		-- Where the hand is, and how much the arm ripples.
+		local tip, ripple
+		if phase == "shoot" then
+			local t = math.min(elapsed / reach, 1)
+			local eased = 1 - (1 - t) ^ 2 -- fast out, slowing into the grab
+			tip = from:Lerp(grip, eased)
+			ripple = RIPPLE * (1 - t)
+			if t >= 1 then
+				phase = "hold"
+				grabDust(target, normal)
+				local size = hand.Size
+				hand.Size = size * Vector3.new(1.25, 0.75, 1.25) -- the squash of a hard grab
+				TweenService:Create(hand, TweenInfo.new(0.18, Enum.EasingStyle.Back), { Size = size }):Play()
+			end
+		elseif phase == "hold" then
+			tip = grip
+			ripple = 0
+			if (grip - from).Magnitude <= ARRIVE_DISTANCE or elapsed >= limit then
+				phase = "snap"
+				snapFrom = grip
+				snapStarted = now
+			end
+		else
+			local t = math.min((now - snapStarted) / SNAP_SECONDS, 1)
+			if t >= 1 then
+				finish()
+				return
+			end
+			tip = (snapFrom :: Vector3):Lerp(from, t * t) -- accelerating back in
+			ripple = RIPPLE * 0.6 * math.sin(t * math.pi) -- the whip
 		end
-		fist.CFrame = CFrame.new(tip)
+
+		local span = tip - from
+		local length = span.Magnitude
+		local direction = if length > 0.05 then span / length else normal * -1
+		-- Rubber: thinner the further it stretches.
+		local width = math.clamp(ARM_WIDTH * math.sqrt(ARM_REST / math.max(length, ARM_REST)), ARM_MIN_WIDTH, ARM_WIDTH)
+		local side = direction:Cross(Vector3.yAxis)
+		side = if side.Magnitude > 0.1 then side.Unit else Vector3.xAxis
+		local previous = from
+		for i = 1, ARM_SEGMENTS do
+			local along = i / ARM_SEGMENTS
+			local wave = math.sin(along * math.pi * 2 * RIPPLE_WAVES - elapsed * 30) * math.sin(along * math.pi)
+			local point = from + span * along + side * (wave * ripple)
+			local piece = point - previous
+			local pieceLength = piece.Magnitude
+			local seg, ball = segments[i], knuckles[i]
+			if pieceLength > 0.02 then
+				seg.Size = Vector3.new(pieceLength, width, width)
+				seg.CFrame = alongCFrame(previous + piece / 2, piece / pieceLength)
+			end
+			ball.Size = Vector3.one * width
+			ball.CFrame = CFrame.new(point)
+			previous = point
+		end
+		-- The hand: fingers leading while it flies, palm flat on the surface while it holds.
+		local facing = if phase == "hold" then -normal else direction
+		hand.CFrame = handCFrame(tip, facing)
 	end)
 end
 

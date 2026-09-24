@@ -1,6 +1,6 @@
 # HANDOFF — Numbers Assassin Universe
 
-Last updated: 2026-09-23, Phase 4 built (settings, phone pass, how to play, stress test, security review, sound).
+Last updated: 2026-09-24: Phase 4, the movement check and Luffo's stretching grapple arm, all committed.
 Current state first; a condensed history is at the end.
 
 Labels: **[Verified]** = checked directly (test output, measurement, screenshot, or file/Studio inspection).
@@ -68,6 +68,8 @@ colosseum crowd, passive yen + friend booster, 30-second alert (the four open ch
 | **Phone / tablet layouts** (Phase 4): touch cluster round Roblox's jump button; two-column touch keypad; kill list 6 rows on phones and hidden while the keypad is open; 44 pt touch targets on the card, settings, keypad, leave-queue; compact phone shop | `UI` (isTouch, isPhone, viewport, touchCluster, gearSize), `AbilityController`, `SubmissionController`, `HUDController`, `LobbyController`, `SettingsController`, `ShopController` (buildPhonePanels) | Emulated 844×390 phone with a measuring script [Verified]: arena HUD, keypad open, lobby, character card, settings and shop all 0 issues (text ≥ 11 pt, targets ≥ 44 pt, nothing off-screen or under the jump button, no overlaps); desktop shop geometry unchanged. Real phones and tablets [Not tested] |
 | **How to play** (Phase 4): five cards on a first visit, reopenable from settings; "seen" saved | `Controllers/TutorialController`, `Settings.tutorialDone` | Opened by itself on first Play, clicked through all five, saved `tutorialDone = true`, didn't reopen after stop → start, HOW TO PLAY reopened it [Verified]. The card-4 mark was changed from ✕ (missing in the font) to X after the last screenshot [Not re-checked visually] |
 | **12-player stress test** (Phase 4): Studio-only bots | `Systems/StressTestService`, `SprintFX` (dresses bots) | Owner's PC, Studio Play (client and server in one process), arena + High crowd [Verified]: 1 fighter 16.7 ms avg (60 fps), 99th pct 21.1 ms; 12 fighters 16.8 ms avg (60 fps), 99th pct 20.1 ms, one 91 ms hitch (bots spawning), memory 2,290 → 2,305 MB, server physics 0.00 → 0.94 ms. Studio's network counters are meaningless here (one process). Phones, real network [Not tested] |
+| **Movement check** (2026-09-24): server samples characters 10×/s against a distance budget; the game's own knockbacks, dashes and grapples raise the limit; server teleports reset it; violations are undone (back up to a second) plus 1.5 s without new numbers; no kicks | `Lib/MovementRules`, `Systems/MovementGuard`, `AbilityService` (sendEffect, teleport/clash resets), `PlayerLifeService` (spawn reset) | 7 unit tests. Solo Play [Verified]: running, strafing and jumping in the lobby, a spawn and two respawns, Luffo's real grapple (26 studs at 120 studs/s) and Vejaro's launch → no pull-backs; a client-side 50-stud teleport → put back at the exact start; forcing 90 studs/s → caught twice within ~0.75 s, net 0.1 studs gained. Multi-player, real network lag, Phase Shift, clash stances [Not tested] |
+| **Luffo's Stretch Grapple arm** (2026-09-24): rubber arm from the elbow with Luffo's own hand, ripple and thinning, grab with squash and dust, hold during the pull, snap back | `animations/Controllers/AbilityFX` (luffyGrapple), `Abilities/Luffy` (sends the surface normal) | Real grapple at full speed [Verified]: arm out at the cast, grab + dust 0.33 s later, pull, arm gone and forearm back on arrival. Slowed test screenshots [Verified]: the arm stretching out of the sleeve, the hand gripping a lamp post. Feel at full speed: owner to judge |
 | **Sound** (Phase 4): lobby/arena music, effects for round start, elimination (you / of you), wrong code, 30 s alert, sudden death, win, ability casts (3D), income, shop slots | `src/client/Audio`, hooks in `HUDController`, `SubmissionController`, `FXController`, `ShopController` | All 18 candidate ids load here [Verified]. In Play [Verified]: lobby music in the Music group, arena music + round-start gong on entering, ability cast at the caster, wrong code, eliminated, 30 s alert, income. Sudden death, the kill sound, win [Not tested]. How it all sounds: owner to judge (Claude can't listen) |
 
 ## 3. Repository state
@@ -114,8 +116,7 @@ colosseum crowd, passive yen + friend booster, 30-second alert (the four open ch
 
 ## 6. Tests
 
-- Unit tests (`TestRunner`, in Play on the Server): **118/118** [Verified, 2026-09-23; Settings 4 added, 2 aim checks added to
-  AbilityRules]. Specs: CodeBook 11, MatchCore 28,
+- Unit tests (`TestRunner`, in Play on the Server): **125/125** [Verified, 2026-09-24; MovementRules 7 added]. Specs: CodeBook 11, MatchCore 28,
   PlateVisibility 10, AbilityRules 13, AnimTimeline 8, ClashRules 10, Spring 6, ShopRules 6, Leaderboard 5, ProfileData 5,
   Income 6, TeamRules 6.
 - Owner-reported: 3-player check, multi-client ability test and 2-player clash test passed.
@@ -133,10 +134,10 @@ colosseum crowd, passive yen + friend booster, 30-second alert (the four open ch
   defeats that.
 - Crowd is ~7,500 parts: fine on this PC; low-end devices rely on the quality-based density [Assumption].
 - Studio input automation can't press number-row keys (keypad used in tests).
-- Security (Phase 4 review): characters are simulated by their own clients (Roblox), so speed hacks/teleports aren't
-  caught and a cheater could teleport in front of opponents to read their plates; knockbacks are applied by the
-  victim's client and can be ignored. Recommended follow-up (needs approval): a server-side movement sanity check that
-  allows the game's own dashes, grapples and knockbacks.
+- Security: the movement check (2026-09-24) stops speed hacks and teleports, but hops that fit its one-second
+  budget still pass (≤ ~38 studs about once a second, ~32 studs/s average against a legitimate 24). Knockbacks are
+  applied by the victim's own client and can still be ignored by a cheater. Tuning lives in `Constants`
+  (`MOVEMENT_*`); tighter settings mean more false pull-backs for laggy players.
 - Sound picks are Claude's (it can't listen). Alternatives that load: arena "Storm of the Shogun" 81644581161031,
   "Blades in Motion" 90151190692214; lobby "Bells and Harp (edit)" 1840049555, "A Delicate Art" 1840471940. Swap in
   `src/client/Audio.luau`.
@@ -153,8 +154,9 @@ colosseum crowd, passive yen + friend booster, 30-second alert (the four open ch
 the first-visit walkthrough (the Studio profile is reset so it shows), and ideally a phone (Roblox app, or Studio's
 device emulator). In parallel the multi-player test of team battle in Test → Clients and Servers (4+ clients): team
 split, teammate plates/tags, "That's a teammate", no friendly fire, team scoring; plus saved progress (leave, rejoin).
-**Next build:** item 6 + Robux yen bundles (approved) as soon as the owner sends the pass and product ids; or the
-movement sanity check (section 7) if approved.
+Phase 4 is committed (`ad4aa81`), then the movement check and Luffo's grapple arm (2026-09-24; arm thickened at the
+owner's request: 1.05 studs at rest, 0.6 fully stretched).
+**Next build:** item 6 + Robux yen bundles (approved) as soon as the owner sends the pass and product ids.
 
 Owner items in parallel: review the placeholder animations and shop/leaderboard/crowd look; author the first
 animation clips (Gokai + Luffo); create the two Game Passes when ready (item 6).

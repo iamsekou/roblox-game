@@ -7,6 +7,7 @@ local ORDER = {
 	"EconomyService",
 	"MapService",
 	"NumberAssignmentService",
+	"MovementGuard",
 	"PlayerLifeService",
 	"RoundManager",
 	"EliminationService",
