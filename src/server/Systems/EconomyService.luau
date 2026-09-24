@@ -1,6 +1,6 @@
 -- Yen balances, the character inventory, and leaderstats.
--- Everything is in memory for now (it resets when a player leaves). Saved progress (Phase 3 item 4) moves
--- it into a DataStore-backed profile (session lock, retries, autosave) without changing this API.
+-- This service holds the live numbers for the session; ProfileService saves and restores them (applySaved,
+-- and the balance/inventory listeners keep its copy current).
 -- Purchases are decided in ShopService (rules in Lib/ShopRules); this service only holds the numbers.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -14,6 +14,7 @@ local EconomyService = {}
 local balances: { [Player]: number } = {}
 local inventories: { [Player]: { [string]: boolean } } = {}
 local inventoryListeners: { (Player) -> () } = {}
+local balanceListeners: { (Player, number) -> () } = {}
 
 -- Finds or creates a leaderstats IntValue. "Elims" is created first so the player list sorts by it.
 function EconomyService.leaderstat(player: Player, name: string): IntValue
@@ -36,6 +37,35 @@ local function push(player: Player)
 	local amount = balances[player] or 0
 	EconomyService.leaderstat(player, "Yen").Value = amount
 	Remotes.UpdateCurrency:FireClient(player, { yen = amount })
+	for _, listener in balanceListeners do
+		task.spawn(listener, player, amount)
+	end
+end
+
+-- Called with (player, balance) whenever a balance changes (ProfileService keeps the save current).
+function EconomyService.onBalanceChanged(listener: (Player, number) -> ())
+	table.insert(balanceListeners, listener)
+end
+
+-- Every character this player bought for yen.
+function EconomyService.boughtList(player: Player): { string }
+	local list = {}
+	for id in inventories[player] or {} do
+		table.insert(list, id)
+	end
+	table.sort(list)
+	return list
+end
+
+-- Saved progress arrived (ProfileService): add the saved yen to anything earned while it loaded, and the
+-- saved purchases to the inventory.
+function EconomyService.applySaved(player: Player, yen: number, owned: { string })
+	if balances[player] == nil then
+		return -- already left
+	end
+	balances[player] += math.max(0, math.floor(yen))
+	EconomyService.grant(player, owned)
+	push(player)
 end
 
 function EconomyService.getBalance(player: Player): number

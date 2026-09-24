@@ -55,6 +55,7 @@ local speedMods: { [Player]: { { mult: number, untilTime: number, key: string? }
 local guardUntil: { [number]: number } = {}
 local mildBlockedUntil: { [number]: number } = {}
 local lastGuardSpark: { [number]: number } = {} -- Iron Guard block sparks, rate-limited per fighter
+local equipListeners: { (Player, string) -> () } = {}
 local clashState = ClashRules.new()
 local clashCasts: { [number]: any } = {} -- user id -> the context of their latest clashable cast (to cancel it)
 local CLASH_PARAMS = {
@@ -800,7 +801,26 @@ local function handleEquip(player: Player, characterId: any)
 	end
 	equipped[player] = def.id
 	pushState(player)
+	for _, listener in equipListeners do
+		task.spawn(listener, player, def.id)
+	end
 	return { status = "equipped", equipped = def.id }
+end
+
+-- Called with (player, characterId) on every equip (ProfileService keeps the save current).
+function AbilityService.onEquipped(listener: (Player, string) -> ())
+	table.insert(equipListeners, listener)
+end
+
+-- The saved equipped character arrived: use it unless the player already picked one this session.
+-- Returns the character now equipped.
+function AbilityService.applySavedEquip(player: Player, id: string): string
+	local def = CharacterDefs.byId[id]
+	if equipped[player] == nil and def and owns(player, def) then
+		equipped[player] = def.id
+		pushState(player)
+	end
+	return equipped[player] or Constants.DEFAULT_CHARACTER
 end
 
 local function onLifeStarted(player: Player, match: any, lifeId: number)

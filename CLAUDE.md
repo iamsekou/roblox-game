@@ -41,7 +41,12 @@ you eliminate someone by typing the number *you* see on them. Studio place: "InD
   (Studio-only, ignored live). Add `NAU_DevSelfTarget = true` to make every ability also hit its caster, which
   exercises the full on-target path (server → effect → client UI) with one player. For the shop:
   `NAU_DevUnlockAll = false` (ServerScriptService) shows real ownership, `NAU_DevGrantYen = <n>` (on a Player) grants yen.
-  Leaderboards: `NAU_DevFakeKills = "userId:count,..."` (ServerScriptService) injects kills. Without Studio API
+  Studio API access is on. In Studio every DataStore name gets `_Studio` (`SafeStore.name`), so saves and leaderboards
+  tested there never touch live data. Always open stores through `SafeStore`, never `DataStoreService` directly. Saves
+  run on stopping Play (BindToClose), so a stop → start cycle tests a rejoin.
+  Leaderboards: `NAU_DevFakeKills = "userId:count,..."` (ServerScriptService) injects kills. Round end:
+  `NAU_DevRoundSeconds = <n>` (ServerScriptService) shortens rounds that start after it's set (tests the 30 s alert
+  and sudden death). Friend booster: `NAU_DevFriends = <n>` (on a Player) fakes that many friends in the server. Without Studio API
   access the DataStores run offline (the boards show this server's session). Studio command-bar
   `require`s get their own module copies, so test through remotes and the GUI, not by reading module state. Anything involving two players needs **Test → Clients and Servers**, which
   only the owner can launch.

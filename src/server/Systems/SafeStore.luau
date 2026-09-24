@@ -5,7 +5,13 @@
 --   * notices when DataStores aren't reachable at all (Studio without "Enable Studio Access to API
 --     Services", or a place that was never published) and reports offline, so callers fall back
 --     instead of spamming errors.
+--   * keeps Studio's data apart from the live game's: in Studio every store name gets a suffix, so test yen,
+--     test purchases and injected kills never reach real players' saves or the live leaderboards.
 local DataStoreService = game:GetService("DataStoreService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+
+local Constants = require(ReplicatedStorage.Shared.Modules.Constants)
 
 local SafeStore = {}
 
@@ -14,6 +20,23 @@ local BUDGET_WAIT = 8 -- seconds to wait for request budget before giving up on 
 
 local offline = false
 local offlineReason: string? = nil
+
+-- The real name for a store: unchanged live, suffixed in Studio.
+function SafeStore.name(base: string): string
+	return if RunService:IsStudio() then base .. Constants.STUDIO_STORE_SUFFIX else base
+end
+
+function SafeStore.regular(base: string): DataStore?
+	if offline then
+		return nil
+	end
+	local ok, store = pcall(DataStoreService.GetDataStore, DataStoreService, SafeStore.name(base))
+	if not ok then
+		offline, offlineReason = true, tostring(store)
+		return nil
+	end
+	return store
+end
 
 local function looksPermanent(message: string): boolean
 	return string.find(message, "StudioAccessToApisNotAllowed", 1, true) ~= nil
@@ -27,11 +50,11 @@ function SafeStore.isOffline(): (boolean, string?)
 	return offline, offlineReason
 end
 
-function SafeStore.ordered(name: string): OrderedDataStore?
+function SafeStore.ordered(base: string): OrderedDataStore?
 	if offline then
 		return nil
 	end
-	local ok, store = pcall(DataStoreService.GetOrderedDataStore, DataStoreService, name)
+	local ok, store = pcall(DataStoreService.GetOrderedDataStore, DataStoreService, SafeStore.name(base))
 	if not ok then
 		offline, offlineReason = true, tostring(store)
 		return nil

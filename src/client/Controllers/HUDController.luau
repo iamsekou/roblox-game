@@ -206,6 +206,7 @@ local function build()
 		Parent = gui,
 	}, "X", { UI.padding(0, 12) })
 	UI.accentBar(yenPanel, "left", UI.Colors.Gold, 2)
+	refs.yenPanel = yenPanel
 	refs.yen = UI.label({
 		Size = UDim2.fromScale(0, 1),
 		AutomaticSize = Enum.AutomaticSize.X,
@@ -667,6 +668,76 @@ local function setYen(amount: number)
 	refs.yen.Text = "¥ " .. UI.formatNumber(amount)
 end
 
+-- Owner, 2026-09-23: everyone in the match is told when 30 seconds are left (and again in sudden death).
+local function onRoundAlert(alert: any)
+	if type(alert) ~= "table" or alert.kind ~= "time_left" or type(alert.seconds) ~= "number" then
+		return
+	end
+	local title = string.format("%d SECONDS LEFT", alert.seconds)
+	local subtitle = if alert.suddenDeath then "SOLE LEADER WINS · OTHERWISE A DRAW" else "MOST ELIMINATIONS WINS"
+	showBanner(title, subtitle, UI.Colors.Bad, 3)
+	UIMotion.pop(refs.timer)
+end
+
+-- Passive yen: a "+¥50" that slides out to the left of the yen counter (the kill feed sits below it), with
+-- what it was for. Payouts that land together (playtime and the friend boost every 10 minutes) show one
+-- after the other. Yields until the popup is gone.
+local incomeQueue: { any } = {}
+local showingIncome = false
+
+local function showIncome(notice: any)
+	local caption = "PLAYTIME"
+	if notice.source == "friends" then
+		local friends = if type(notice.friends) == "number" then notice.friends else 0
+		caption = string.format("FRIEND BOOST · %d %s HERE", friends, if friends == 1 then "FRIEND" else "FRIENDS")
+	end
+	-- A CanvasGroup fades the plate, its accent and the text together.
+	local popup = UI.new("CanvasGroup", {
+		Name = "IncomePopup",
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(0, -6, 0.5, 0),
+		Size = UDim2.fromOffset(0, 26),
+		AutomaticSize = Enum.AutomaticSize.X,
+		BackgroundTransparency = 1,
+		Parent = refs.yenPanel,
+	})
+	local plate, content = UI.slab({ Size = UDim2.fromOffset(0, 26), Parent = popup }, "X", { UI.padding(0, 10) })
+	UI.accentBar(plate, "left", UI.Colors.Gold, 2)
+	UI.label({
+		Size = UDim2.fromScale(0, 1),
+		AutomaticSize = Enum.AutomaticSize.X,
+		Font = UI.FontHeavy,
+		TextSize = 17,
+		TextColor3 = UI.Colors.Gold,
+		RichText = true,
+		Text = string.format('+¥%s  <font size="13" color="%s">%s</font>', UI.formatNumber(notice.amount), hex(UI.Colors.Muted), caption),
+		Parent = content,
+	})
+	UIMotion.pop(refs.yen)
+	local slide = TweenInfo.new(4.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	TweenService:Create(popup, slide, { Position = UDim2.new(0, -20, 0.5, 0) }):Play()
+	task.wait(3.7)
+	local fade = TweenService:Create(popup, TweenInfo.new(0.8), { GroupTransparency = 1 })
+	fade:Play()
+	fade.Completed:Wait()
+	popup:Destroy()
+end
+
+local function onIncome(notice: any)
+	if type(notice) ~= "table" or type(notice.amount) ~= "number" or not refs.yenPanel then
+		return
+	end
+	table.insert(incomeQueue, notice)
+	if showingIncome then
+		return
+	end
+	showingIncome = true
+	while #incomeQueue > 0 do
+		showIncome(table.remove(incomeQueue, 1))
+	end
+	showingIncome = false
+end
+
 function HUDController.Start()
 	build()
 	ClientState.Changed:Connect(function(kind)
@@ -677,9 +748,17 @@ function HUDController.Start()
 		end
 	end)
 	Remotes.MatchFeed.OnClientEvent:Connect(onFeed)
+	Remotes.RoundAlert.OnClientEvent:Connect(onRoundAlert)
+	Remotes.IncomeNotice.OnClientEvent:Connect(onIncome)
 	Remotes.UpdateCurrency.OnClientEvent:Connect(function(payload)
 		if type(payload) == "table" and type(payload.yen) == "number" then
 			setYen(payload.yen)
+		end
+	end)
+	-- Saved progress: only the failure is worth interrupting for (a normal load is silent).
+	Remotes.ProfileState.OnClientEvent:Connect(function(payload)
+		if type(payload) == "table" and payload.status == "offline" then
+			HUDController.toast("Progress isn't saving this session", "bad")
 		end
 	end)
 	task.spawn(function()

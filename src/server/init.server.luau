@@ -12,7 +12,9 @@ local ORDER = {
 	"EliminationService",
 	"AbilityService",
 	"ShopService",
+	"IncomeService",
 	"LeaderboardService",
+	"ProfileService",
 }
 
 local loaded = {}

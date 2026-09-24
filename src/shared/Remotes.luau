@@ -22,6 +22,7 @@ local DEFINITIONS: { [string]: string } = {
 	-- Life / feed
 	LifeState = "RemoteEvent", -- S->one player { alive, inMatch, respawnAt?, cause?, byName? }
 	MatchFeed = "RemoteEvent", -- S->all { kind = "eliminated" | "spawned", ... }
+	RoundAlert = "RemoteEvent", -- S->each fighter in the match { kind = "time_left", seconds, suddenDeath }
 
 	-- Abilities (approved sheet, docs/ABILITIES.md)
 	UseAbility = "RemoteFunction", -- C->S (slot: "mild" | "ultimate", aim: Vector3, eye: Vector3) -> { status }
@@ -36,7 +37,11 @@ local DEFINITIONS: { [string]: string } = {
 
 	-- Economy (names kept from the original scaffold)
 	UpdateCurrency = "RemoteEvent", -- S->one player { yen }
+	IncomeNotice = "RemoteEvent", -- S->one player { source = "passive" | "friends", amount, friends? }
 	PurchaseItem = "RemoteFunction", -- C->S (characterId) -> { status = bought|insufficient|owned|not_for_yen|unknown, granted?, price?, yen }
+
+	-- Saved progress
+	ProfileState = "RemoteEvent", -- S->one { status = "loaded" | "offline" }
 }
 
 local isServer = RunService:IsServer()

@@ -14,6 +14,7 @@ local Constants = require(ReplicatedStorage.Shared.Modules.Constants)
 local MapRegistry = require(ReplicatedStorage.Shared.Modules.MapRegistry)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local MatchCore = require(script.Parent.Parent.Lib.MatchCore)
+local RoundTimer = require(script.Parent.Parent.Lib.RoundTimer)
 local EconomyService = require(script.Parent.EconomyService)
 local MapService = require(script.Parent.MapService)
 local NumberAssignmentService = require(script.Parent.NumberAssignmentService)
@@ -32,6 +33,7 @@ local state = {
 	match = nil :: any,
 	result = nil :: any,
 	seq = 0,
+	warnedFor = nil :: number?, -- the end time the last "time left" alert was sent for
 }
 
 local queued: { [Player]: number } = {} -- player -> time they queued (earliest first)
@@ -61,6 +63,33 @@ local function minPlayers(): number
 		end
 	end
 	return Constants.MIN_PLAYERS_TO_START
+end
+
+local function roundTimeCap(): number
+	if RunService:IsStudio() then
+		local override = ServerScriptService:GetAttribute(Constants.DEV_ROUND_SECONDS_ATTRIBUTE)
+		if typeof(override) == "number" and override >= 1 then
+			return override
+		end
+	end
+	return Constants.ROUND_TIME_CAP
+end
+
+-- Owner, 2026-09-23: everyone in the match hears when ROUND_WARNING_SECONDS are left (regular time, and
+-- again in sudden death, which has its own end time).
+local function alertTimeLeft(match: any, t: number)
+	if not RoundTimer.warningDue(state.endsAt, t, Constants.ROUND_WARNING_SECONDS, state.warnedFor) then
+		return
+	end
+	state.warnedFor = state.endsAt
+	local payload = { kind = "time_left", seconds = math.ceil(state.endsAt - t), suddenDeath = match.suddenDeath == true }
+	for id in match.participants do
+		local player = Players:GetPlayerByUserId(id)
+		if player then
+			Remotes.RoundAlert:FireClient(player, payload)
+		end
+	end
+	devLog(string.format("%d seconds left alert sent%s", payload.seconds, if payload.suddenDeath then " (sudden death)" else ""))
 end
 
 local function queuedPlayers(): { Player }
@@ -348,7 +377,8 @@ local function startRound()
 		end
 	end
 	state.phase = "InRound"
-	state.endsAt = t + Constants.ROUND_TIME_CAP
+	state.endsAt = t + roundTimeCap()
+	state.warnedFor = nil
 	devLog(string.format("round started: %s on %s with %d fighters", mode, mapDef.id, #roster))
 	broadcast()
 
@@ -430,6 +460,7 @@ local function tick()
 			state.graceEndsAt = nil
 			broadcast()
 		end
+		alertTimeLeft(match, t)
 		if t >= state.endsAt then
 			if match.suddenDeath then
 				RoundManager.finish(match:endAsDraw("sudden_death_expired"))

@@ -16,9 +16,17 @@ local Constants = {
 	INTERMISSION_SECONDS = 15, -- approved
 	ROUND_END_SECONDS = 6, -- results banner before everyone returns to the lobby
 	UNDERPOPULATED_GRACE = 15, -- a round below MIN_PLAYERS_TO_START waits this long for a joiner, then ends with no winner
+	ROUND_WARNING_SECONDS = 30, -- owner, 2026-09-23: everyone in the match is alerted this long before time runs out
 
 	-- Eliminations
 	YEN_PER_ELIMINATION = 500,
+
+	-- Passive yen (owner, 2026-09-23; rules in Lib/IncomeRules). Every player in the server earns it, in the
+	-- lobby or a match; each player's clocks start when they join.
+	PASSIVE_YEN = 50, -- playtime yen...
+	PASSIVE_YEN_SECONDS = 2 * 60, -- ...paid this often
+	FRIEND_YEN_PER_FRIEND = 100, -- friend booster: this much per Roblox friend in the same server...
+	FRIEND_YEN_SECONDS = 5 * 60, -- ...paid this often
 	RESPAWN_SECONDS = 3,
 	CODE_LENGTH = 4, -- codes are strings "0000".."9999"; leading zeros allowed
 	WRONG_SUBMISSION_LIMIT = 2, -- approved: 1st wrong code = screen shake, 2nd wrong code in the same life = self-elimination
@@ -65,6 +73,15 @@ local Constants = {
 	CROWD_DENSITY_LOW = 0.45, -- share of seats filled at low graphics quality (1-3)
 	CROWD_DENSITY_MID = 0.7, -- at medium quality (4-6)
 	CROWD_DENSITY_TOUCH_MAX = 0.55, -- phones and tablets never go above this
+
+	-- Saved progress (Phase 3 item 4): yen, owned characters, equipped character. DataStores via SafeStore.
+	PROFILE_STORE = "NAU_Profiles_v1",
+	PROFILE_AUTOSAVE_SECONDS = 60, -- every loaded profile is saved this often (also renews its session lock)
+	PROFILE_LOCK_STALE_SECONDS = 180, -- a lock not renewed for this long is from a dead server and can be taken
+	PROFILE_LOAD_RETRY_SECONDS = 4, -- a profile locked by another server is re-tried this often...
+	PROFILE_LOAD_ATTEMPTS = 8, -- ...this many times (the other server's save-on-leave), then taken over
+	PROFILE_SHUTDOWN_WAIT_SECONDS = 25, -- a closing server waits this long for saves (Roblox allows 30)
+	STUDIO_STORE_SUFFIX = "_Studio", -- Studio's DataStores are kept apart from the live game's
 
 	-- Kill leaderboards (owner-approved 2026-09-23): all-time + weekly (Monday 00:00 UTC), global via DataStores.
 	LEADERBOARD_FLUSH_SECONDS = 30, -- unsaved kills are added to the stores this often (and on shutdown)
@@ -254,6 +271,12 @@ local Constants = {
 	DEV_GRANT_YEN_ATTRIBUTE = "NAU_DevGrantYen",
 	-- Studio-only: "userId:count,..." on ServerScriptService adds test kills to both leaderboards. Ignored live.
 	DEV_FAKE_KILLS_ATTRIBUTE = "NAU_DevFakeKills",
+	-- Studio-only: a number on a Player makes the friend booster count that many friends in the server (solo
+	-- testing). Ignored live.
+	DEV_FRIENDS_ATTRIBUTE = "NAU_DevFriends",
+	-- Studio-only: a number on ServerScriptService replaces the round length (seconds) for rounds that start
+	-- after it's set, so the 30-second alert and sudden death can be tested without waiting 8 minutes. Ignored live.
+	DEV_ROUND_SECONDS_ATTRIBUTE = "NAU_DevRoundSeconds",
 }
 
 return Constants
