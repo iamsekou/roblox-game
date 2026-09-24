@@ -453,7 +453,7 @@ AbilityPoses.Gojo = {
 		},
 		hold = 0.25,
 	},
-	-- Infinity: the crossed-finger sign raised in front of the face; then the arms open, calm and
+	-- Boundless: the crossed-finger sign raised in front of the face; then the arms open, calm and
 	-- unhurried, chin up, as the barrier forms.
 	ultimate = {
 		windup = {

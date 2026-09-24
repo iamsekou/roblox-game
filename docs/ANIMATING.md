@@ -42,7 +42,7 @@ Suggested order: Gokai and Luffo first (4 abilities, 8 clips). Test those in gam
 | Sazuki | Lightning Dash (mild) | 0.3 s | 0.3 s | Crouched, crackling blade held low and back in the right hand, left hand forward → blade driven ahead in a thrust |
 | Sazuki | Hunter's Eye (ult) | 0.8 s | 0.6 s | Head bowed, hand raised over one eye → head snaps up, arm points at the target |
 | Gozen | Blink (mild) | 0.3 s | 0.25 s | Relaxed and upright, two fingers raised in front of the chest |
-| Gozen | Infinity (ult) | 0.8 s | 1.0 s | Crossed-finger sign in front of the face → arms open calmly, chin up |
+| Gozen | Boundless (ult) | 0.8 s | 1.0 s | Crossed-finger sign in front of the face → arms open calmly, chin up |
 
 Lengths come from `Constants.luau` (cast times) and `AbilityPoses.luau` (hold times). If a number there changes,
 this table goes stale. The wind-up auto-fits either way.

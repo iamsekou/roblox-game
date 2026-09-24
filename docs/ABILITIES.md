@@ -19,7 +19,7 @@ respawn the mild is ready and the ultimate loses 10 s of remaining cooldown (min
 "Input lock" = the target can't submit codes (their entry box greys out) — it never touches movement.
 
 **Approved exceptions to the 11-stud / facing reading rule** (owner, 2026-09-23): Krillin's Tracking Disc,
-Sasuke's Hunter's Eye and Gojo's Infinity let the caster read plates beyond it, **in line of sight only**
+Sasuke's Hunter's Eye and Gojo's Boundless let the caster read plates beyond it, **in line of sight only**
 (rule 2 still holds). The server extends its disclosure gate for the caster while the effect lasts; nothing
 changes for anyone else.
 
@@ -36,7 +36,7 @@ changes for anyone else.
 | 7 | **Naruto** | **Shadow Clone** — a clone runs forward for 4 s with its own fake plate (a unique code in each observer's table). Typing a clone's code pops it: **no strike**, no kill, "It was a clone!" (misdirection) | **Spiral Sphere** — 0.6 s wind-up, lunge 20 studs; the first opponent hit is launched 25 studs and input-locked 2 s (mobility + disruption) |
 | 8 | **Ichigo** | **Flash Step** — 22-stud dash; your plate vanishes for its 0.4 s (evasive mobility) | **Moon Fang Wave** — 1 s charge, wide crescent wave (40 studs); leaves a trail for 3 s that slows opponents inside by 40 % (zone control) |
 | 9 | **Sasuke** (Robux) | **Lightning Dash** — 30-stud dash with a crackling trail (mobility) | **Hunter's Eye** — mark one opponent you can see for 6 s: their plate stays readable to you at any distance in line of sight (**approved exception**), and they can't use their mild ability. The target is warned (information + disruption) |
-| 10 | **Satoru Gojo** (Robux) | **Blink** — teleport to a visible point within 30 studs (mobility) | **Infinity** — a 4 s barrier (10-stud radius) pushes opponents out. From activation, you can read **every opponent's number you can see, at any distance or angle** (**approved exception**, line of sight only). The reading ends after **3 eliminations or 10 s**, whichever comes first. Wrong codes still follow the strike rule (information + defense) |
+| 10 | **Satoru Gojo** (Robux) | **Blink** — teleport to a visible point within 30 studs (mobility) | **Boundless** — a 4 s barrier (10-stud radius) pushes opponents out. From activation, you can read **every opponent's number you can see, at any distance or angle** (**approved exception**, line of sight only). The reading ends after **3 eliminations or 10 s**, whichever comes first. Wrong codes still follow the strike rule (information + defense) |
 
 ## Decisions recorded (owner, 2026-09-23)
 
@@ -44,7 +44,8 @@ changes for anyone else.
   Gojo's ultimate changed to the reading version above.
 - Krillin, Sasuke and Gojo reading beyond 11 studs: deliberate exceptions, line of sight only.
 - Attack names: all generic. "Instant Transmission" (the one franchise attack name) was renamed **Phase Shift**
-  by the owner on 2026-09-23.
+  by the owner on 2026-09-23. Gojo's ultimate "Infinity" (the franchise's technique name) was renamed
+  **Boundless** by the owner on 2026-09-24, everywhere including internal ids (`gojo_boundless`, `GOJO_BOUNDLESS_TELL`).
 - Naruto's clone: popping it is not a strike.
 
 ## Build scope per ability (Phase 3)
@@ -64,7 +65,7 @@ changes for anyone else.
   2 → 3.5 s (Big Bang 1.5 → 2.6 s; the approved 2 s lock cap scales to 3.5 s), Solar Flare 1.5 → 2.6 s, Tracking Disc
   mark 5 → 8.75 s, Saiyan Pride 4 → 7 s, Iron Guard 2 → 3.5 s, Surveillance Camera 20 → 35 s, Deduction 3 → 5.25 s,
   Shadow Clone 4 → 7 s, Flash Step plate hide 0.4 → 0.7 s, Moon Fang trail 3 → 5.25 s, Hunter's Eye 6 → 10.5 s,
-  Infinity barrier 4 → 7 s and its reading 10 → 17.5 s (still ends early after 3 eliminations), Gatling flurry
+  Boundless barrier 4 → 7 s and its reading 10 → 17.5 s (still ends early after 3 eliminations), Gatling flurry
   1.5 → 2.6 s. Wind-ups, cooldowns, ranges and speeds are unchanged.
 - **Eli's Deduction lasts 7 s** (owner; replaces the 1.75x value of 5.25 s).
 - **Flash Step and Blink go where you look** (owner): to the spot at the centre of your screen (the camera's

@@ -13,7 +13,7 @@ local RoundManager = require(script.Parent.RoundManager)
 local EliminationService = {}
 
 -- Hooks for AbilityService: a popped Shadow Clone (remove its model) and every elimination (Gojo's
--- Infinity ends after 3). Handlers run after the rules have already decided; they never change them.
+-- Boundless ends after 3). Handlers run after the rules have already decided; they never change them.
 local clonePoppedHandlers: { (popper: Player, decoyId: number) -> () } = {}
 local eliminationHandlers: { (attacker: Player, victimId: number) -> () } = {}
 

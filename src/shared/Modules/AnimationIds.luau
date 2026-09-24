@@ -50,7 +50,7 @@ AnimationIds.ids = {
 	},
 	Gojo = { -- Gozen
 		mild = { windup = "", release = "" }, -- Blink
-		ultimate = { windup = "", release = "" }, -- Infinity
+		ultimate = { windup = "", release = "" }, -- Boundless
 	},
 }
 

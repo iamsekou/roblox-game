@@ -1,6 +1,6 @@
 -- Satoru Gojo (approved sheet, docs/ABILITIES.md).
 --   Mild  — Blink: teleport to the point you aim at, within 30 studs (open ground inside the arena only).
---   Ult   — Infinity: a 4 s barrier (10-stud radius) that pushes opponents out and stops projectiles.
+--   Ult   — Boundless: a 4 s barrier (10-stud radius) that pushes opponents out and stops projectiles.
 --           From activation you can read every opponent's number you can see, at any distance or angle
 --           (approved exception, line of sight only). The reading ends after 3 eliminations or 10 s,
 --           whichever comes first. Wrong codes still follow the strike rule.
@@ -67,11 +67,11 @@ Gojo.ultimate = {
 		if not ctx.root() then
 			return nil, "not_alive"
 		end
-		local tell = Constants.GOJO_INFINITY_TELL
+		local tell = Constants.GOJO_BOUNDLESS_TELL
 		return {
 			castSeconds = tell,
 			run = function()
-				ctx.fx("gojo_infinity_tell", { duration = tell })
+				ctx.fx("gojo_boundless_tell", { duration = tell })
 				task.wait(tell)
 				if not ctx.stillValid() then
 					return
@@ -93,7 +93,7 @@ Gojo.ultimate = {
 				local radius = Constants.GOJO_BARRIER_RADIUS
 				local seconds = Constants.GOJO_BARRIER_SECONDS
 				ctx.addBarrier(radius, seconds)
-				ctx.fx("gojo_infinity", { radius = radius, duration = seconds })
+				ctx.fx("gojo_boundless", { radius = radius, duration = seconds })
 				local stop = os.clock() + seconds
 				while os.clock() < stop and ctx.stillValid() do
 					local root = ctx.root()

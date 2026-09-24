@@ -201,7 +201,7 @@ local function addSpeed(player: Player, mult: number, seconds: number, key: stri
 	end
 end
 
--- Is `point` inside someone else's active Infinity barrier?
+-- Is `point` inside someone else's active Boundless barrier?
 local function insideForeignBarrier(point: Vector3, ownerId: number): boolean
 	local t = now()
 	for i = #barriers, 1, -1 do

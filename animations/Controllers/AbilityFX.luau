@@ -983,24 +983,24 @@ end
 
 -- Gojo -------------------------------------------------------------------------------------------
 
-local INFINITY = Color3.fromRGB(150, 210, 255)
+local BOUNDLESS = Color3.fromRGB(150, 210, 255)
 
 handlers.gojo_blink = function(event)
 	if typeof(event.from) == "Vector3" then
-		burst(event.from, INFINITY)
+		burst(event.from, BOUNDLESS)
 	end
 	if typeof(event.to) == "Vector3" then
-		task.delay(tonumber(event.delay) or 0.3, burst, event.to, INFINITY)
+		task.delay(tonumber(event.delay) or 0.3, burst, event.to, BOUNDLESS)
 	end
 end
 
-handlers.gojo_infinity_tell = function(event)
-	chargeOrb(characterOf(event.caster), INFINITY, tonumber(event.duration) or 0.8, 1.6)
+handlers.gojo_boundless_tell = function(event)
+	chargeOrb(characterOf(event.caster), BOUNDLESS, tonumber(event.duration) or 0.8, 1.6)
 end
 
-handlers.gojo_infinity = function(event)
+handlers.gojo_boundless = function(event)
 	local radius = tonumber(event.radius) or 10
-	followShell(characterOf(event.caster), INFINITY, tonumber(event.duration) or 4, radius * 2, Enum.Material.ForceField, 0.5)
+	followShell(characterOf(event.caster), BOUNDLESS, tonumber(event.duration) or 4, radius * 2, Enum.Material.ForceField, 0.5)
 end
 
 -- Clashes (owner-approved 2026-09-23) -------------------------------------------------------------

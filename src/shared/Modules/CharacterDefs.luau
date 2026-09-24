@@ -167,7 +167,7 @@ local list: { CharacterDef } = {
 		franchise = "Jujutsu Kaisen",
 		tier = "Robux",
 		identity = "Bends space: short blinks and a barrier that reshapes the battlefield.",
-		abilities = { mild = "Blink", ultimate = "Infinity" },
+		abilities = { mild = "Blink", ultimate = "Boundless" },
 		accent = Color3.fromRGB(90, 170, 255),
 		bubbleCenter = Color3.fromRGB(130, 225, 255),
 		bubbleEdge = Color3.fromRGB(30, 85, 205),
