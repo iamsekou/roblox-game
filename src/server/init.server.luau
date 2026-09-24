@@ -15,6 +15,7 @@ local ORDER = {
 	"IncomeService",
 	"LeaderboardService",
 	"ProfileService",
+	"StressTestService", -- Studio only
 }
 
 local loaded = {}

@@ -11,9 +11,12 @@ local ClientState = {}
 ClientState.round = nil :: any -- latest RoundState broadcast
 ClientState.life = { alive = true, inMatch = false } :: any -- latest LifeState for this player
 ClientState.ability = { equipped = "Goku" } :: any -- latest AbilityState: equipped character, slots, cooldowns
+-- latest ProfileState ({ status, settings }). Kept here because a remote event that fires before anyone listens
+-- is delivered only to the first listener, and ClientState always connects first.
+ClientState.profile = nil :: any
 
 local changed = Instance.new("BindableEvent")
-ClientState.Changed = changed.Event -- fires with "round", "life" or "ability"
+ClientState.Changed = changed.Event -- fires with "round", "life", "ability" or "profile"
 
 local localPlayer = Players.LocalPlayer
 
@@ -94,6 +97,13 @@ function ClientState.Start()
 		end
 		ClientState.life = life
 		changed:Fire("life")
+	end)
+	Remotes.ProfileState.OnClientEvent:Connect(function(profile)
+		if type(profile) ~= "table" then
+			return
+		end
+		ClientState.profile = profile
+		changed:Fire("profile")
 	end)
 	Remotes.AbilityState.OnClientEvent:Connect(function(state)
 		if type(state) ~= "table" then

@@ -1,21 +1,24 @@
 -- Saved progress (Phase 3 item 4): the profile format and its rules. Pure, unit-tested.
---   * A profile is { version, yen, owned, equipped, session?, updated }.
+--   * A profile is { version, yen, owned, equipped, settings, session?, updated }.
 --   * Anything loaded is sanitised: a saved record can be old, damaged or tampered with, and the game only ever
 --     sees valid values (never negative yen, only real yen-tier characters as purchases, an equipped character
 --     the player actually owns).
 --   * Session lock: one server owns a profile at a time. A server may claim it when nobody holds it, when it
 --     already holds it, or when the holder's heartbeat is stale (that server crashed or lost contact).
+--   * Settings (Phase 4) ride along in the same record, sanitised by the shared Modules/Settings schema.
+local Settings = require(game:GetService("ReplicatedStorage").Shared.Modules.Settings)
+
 local ProfileData = {}
 
 ProfileData.VERSION = 1
 local MAX_YEN = 1e12
 
 export type Def = { id: string, tier: string }
-export type Profile = { version: number, yen: number, owned: { string }, equipped: string }
+export type Profile = { version: number, yen: number, owned: { string }, equipped: string, settings: { [string]: any } }
 export type Session = { jobId: string, time: number }
 
 function ProfileData.new(defaultCharacter: string): Profile
-	return { version = ProfileData.VERSION, yen = 0, owned = {}, equipped = defaultCharacter }
+	return { version = ProfileData.VERSION, yen = 0, owned = {}, equipped = defaultCharacter, settings = Settings.defaults() }
 end
 
 -- A clean profile from whatever was stored (nil for a new player).
@@ -48,6 +51,7 @@ function ProfileData.sanitize(raw: any, defs: { Def }, defaultCharacter: string)
 	if def and (def.tier == "Free" or table.find(profile.owned, equipped) ~= nil) then
 		profile.equipped = equipped
 	end
+	profile.settings = Settings.sanitize(raw.settings)
 	return profile
 end
 
@@ -73,6 +77,7 @@ function ProfileData.record(profile: Profile, jobId: string, now: number, releas
 		yen = profile.yen,
 		owned = table.clone(profile.owned),
 		equipped = profile.equipped,
+		settings = table.clone(profile.settings),
 		session = if release then nil else { jobId = jobId, time = now },
 		updated = now,
 	}

@@ -41,7 +41,8 @@ local DEFINITIONS: { [string]: string } = {
 	PurchaseItem = "RemoteFunction", -- C->S (characterId) -> { status = bought|insufficient|owned|not_for_yen|unknown, granted?, price?, yen }
 
 	-- Saved progress
-	ProfileState = "RemoteEvent", -- S->one { status = "loaded" | "offline" }
+	ProfileState = "RemoteEvent", -- S->one { status = "loaded" | "offline", settings }
+	SetSettings = "RemoteFunction", -- C->S ({ [key] = value }) -> { status = "ok" | "rate_limited" | "malformed", settings }
 }
 
 local isServer = RunService:IsServer()

@@ -17,6 +17,11 @@ export type Config = {
 local connection: RBXScriptConnection? = nil
 local activeConfig: Config? = nil
 local running = false
+local wide = true -- player setting (Phase 4): off keeps the base field of view while running
+
+function RunFOV.setWide(on: boolean)
+	wide = on
+end
 
 function RunFOV.start(config: Config)
 	if connection then
@@ -41,7 +46,7 @@ function RunFOV.start(config: Config)
 		else
 			running = false
 		end
-		local target = if running then config.run else config.base
+		local target = if running and wide then config.run else config.base
 		local alpha = 1 - math.exp(-config.response * dt)
 		camera.FieldOfView += (target - camera.FieldOfView) * alpha
 	end)

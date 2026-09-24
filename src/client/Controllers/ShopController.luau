@@ -14,10 +14,12 @@
 -- The client only asks: PurchaseItem and EquipCharacter are decided by the server (ShopService /
 -- AbilityService); the menu redraws from what the server sends back (balance, owned list, equipped).
 -- EXIT or [X] closes it and reverses everything; it also closes itself if the player leaves the lobby.
+local GuiService = game:GetService("GuiService")
 local Players = game:GetService("Players")
 local ProximityPromptService = game:GetService("ProximityPromptService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local TextService = game:GetService("TextService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 
@@ -30,6 +32,7 @@ local CameraShake = require(AnimControllers:WaitForChild("CameraShake"))
 local Client = script.Parent.Parent
 local ClientState = require(Client:WaitForChild("ClientState"))
 local UI = require(Client:WaitForChild("UI"))
+local Audio = require(Client:WaitForChild("Audio"))
 
 local ShopController = {}
 
@@ -43,18 +46,12 @@ local GLASS = Color3.fromRGB(8, 14, 22)
 local WHITE = Color3.new(1, 1, 1)
 local HEAVY = UI.FontHeavy
 local BODY = UI.FontBody
-local CANVAS = Vector2.new(1920, 1080) -- the menu is laid out on this canvas and scaled to the screen
-
--- Sound slots (owner-approved: left empty until real audio exists). Paste a published sound's
--- "rbxassetid://..." here and it plays at that moment; blank = silent. Never invent ids.
-local SOUNDS: { [string]: string } = {
-	boot = "", -- the menu powers up
-	select = "", -- a roster card is picked
-	charge = "", -- hold-to-buy starts charging
-	purchase = "", -- the "UNLOCKED" burst
-	equip = "",
-	denied = "", -- not enough yen
-}
+local DESKTOP_CANVAS = Vector2.new(1920, 1080) -- the menu is laid out on this canvas and scaled to the screen
+-- Phones (Phase 4 phone pass): a compact layout on a canvas 700 units tall, as wide as the screen's shape
+-- allows, so text stays at least ~11 pt and every button at least 44 pt on a 390 pt tall phone.
+local PHONE_CANVAS_HEIGHT = 700
+local CANVAS = DESKTOP_CANVAS -- the canvas in use (set when the menu is built)
+local phoneLayout = false
 
 -- Timing
 local HOLD_TO_BUY = 1 -- seconds the BUY button must be held
@@ -164,19 +161,9 @@ local function text(props: { [string]: any }): TextLabel
 	return label
 end
 
+-- Sound slots (owner-approved) live in the client's Audio module as "shop_<name>".
 local function sound(name: string)
-	local id = SOUNDS[name]
-	if not id or id == "" then
-		return
-	end
-	local s = Instance.new("Sound")
-	s.SoundId = id
-	s.Volume = 0.6
-	s.Parent = refs.gui or localPlayer:WaitForChild("PlayerGui")
-	s.Ended:Connect(function()
-		s:Destroy()
-	end)
-	s:Play()
+	Audio.play("shop_" .. name)
 end
 
 -- Effects ------------------------------------------------------------------------------------------
@@ -252,13 +239,27 @@ end
 
 -- Canvas ----------------------------------------------------------------------------------------
 
-local function buildCard(parent: Instance, def: any, index: number)
+-- Roster card geometry: desktop (in the roster panel) and phone (in a scrolling list).
+type CardStyle = {
+	top: number, step: number, height: number, x: number, xSelected: number, xHover: number,
+	portrait: number, nameSize: number, subSize: number, badgeSize: number, textX: number,
+}
+local DESKTOP_CARD: CardStyle = {
+	top = 58, step = 72, height = 64, x = 18, xSelected = 36, xHover = 28,
+	portrait = 54, nameSize = 28, subSize = 15, badgeSize = 22, textX = 76,
+}
+local PHONE_CARD: CardStyle = {
+	top = 0, step = 92, height = 84, x = 8, xSelected = 8, xHover = 8,
+	portrait = 64, nameSize = 32, subSize = 22, badgeSize = 26, textX = 86,
+}
+
+local function buildCard(parent: Instance, def: any, index: number, style: CardStyle)
 	local card = UI.new("TextButton", {
 		Name = "Card_" .. def.id,
 		AutoButtonColor = false,
 		Text = "",
-		Position = UDim2.fromOffset(18, 58 + (index - 1) * 72),
-		Size = UDim2.new(1, -36, 0, 64),
+		Position = UDim2.fromOffset(style.x, style.top + (index - 1) * style.step),
+		Size = UDim2.new(1, -2 * style.x, 0, style.height),
 		BackgroundColor3 = GLASS,
 		BackgroundTransparency = 0.35,
 		BorderSizePixel = 0,
@@ -278,8 +279,8 @@ local function buildCard(parent: Instance, def: any, index: number)
 		Parent = tint,
 	})
 	local portrait = UI.new("ImageLabel", {
-		Position = UDim2.fromOffset(8, 5),
-		Size = UDim2.fromOffset(54, 54),
+		Position = UDim2.fromOffset(8, (style.height - style.portrait) / 2),
+		Size = UDim2.fromOffset(style.portrait, style.portrait),
 		BackgroundColor3 = def.bubbleCenter,
 		Image = def.portrait or "",
 		ScaleType = Enum.ScaleType.Crop,
@@ -287,28 +288,38 @@ local function buildCard(parent: Instance, def: any, index: number)
 	})
 	UI.new("UICorner", { CornerRadius = UDim.new(0.5, 0), Parent = portrait })
 	UI.new("UIStroke", { Color = def.accent, Thickness = 2, Parent = portrait })
-	text({ Position = UDim2.fromOffset(76, 6), Size = UDim2.fromOffset(260, 32), Text = string.upper(def.name), TextSize = 28, Parent = card })
-	local sub = text({ Name = "Sub", Position = UDim2.fromOffset(77, 36), Size = UDim2.fromOffset(260, 20), Font = BODY, TextSize = 15, TextColor3 = UI.Colors.Muted, Parent = card })
+	local textTop = (style.height - style.nameSize - style.subSize - 6) / 2
+	text({ Position = UDim2.fromOffset(style.textX, textTop), Size = UDim2.fromOffset(260, style.nameSize + 4), Text = string.upper(def.name), TextSize = style.nameSize, Parent = card })
+	local sub = text({
+		Name = "Sub",
+		Position = UDim2.fromOffset(style.textX + 1, textTop + style.nameSize + 4),
+		Size = UDim2.new(1, -(style.textX + 150), 0, style.subSize + 4),
+		Font = BODY,
+		TextSize = style.subSize,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		TextColor3 = UI.Colors.Muted,
+		Parent = card,
+	})
 	local badge = text({
 		Name = "Badge",
 		AnchorPoint = Vector2.new(1, 0.5),
 		Position = UDim2.new(1, -14, 0.5, 0),
-		Size = UDim2.fromOffset(150, 30),
+		Size = UDim2.fromOffset(150, style.badgeSize + 8),
 		TextXAlignment = Enum.TextXAlignment.Right,
-		TextSize = 22,
+		TextSize = style.badgeSize,
 		Parent = card,
 	})
 	card.MouseEnter:Connect(function()
 		if state.selected ~= def then
-			tween(card, 0.15, { Position = UDim2.fromOffset(28, card.Position.Y.Offset) })
+			tween(card, 0.15, { Position = UDim2.fromOffset(style.xHover, card.Position.Y.Offset) })
 		end
 	end)
 	card.MouseLeave:Connect(function()
 		if state.selected ~= def then
-			tween(card, 0.15, { Position = UDim2.fromOffset(18, card.Position.Y.Offset) })
+			tween(card, 0.15, { Position = UDim2.fromOffset(style.x, card.Position.Y.Offset) })
 		end
 	end)
-	refs.cards[def.id] = { card = card, stroke = stroke, tint = tint, sub = sub, badge = badge, def = def }
+	refs.cards[def.id] = { card = card, stroke = stroke, tint = tint, sub = sub, badge = badge, def = def, style = style }
 	return card
 end
 
@@ -320,7 +331,7 @@ local function refreshCards()
 		entry.stroke.Thickness = if selected then 2 else 1
 		entry.stroke.Transparency = if selected then 0 else 0.75
 		entry.tint.BackgroundTransparency = if selected then 0.55 else 0.85
-		entry.card.Position = UDim2.fromOffset(if selected then 36 else 18, entry.card.Position.Y.Offset)
+		entry.card.Position = UDim2.fromOffset(if selected then entry.style.xSelected else entry.style.x, entry.card.Position.Y.Offset)
 		entry.sub.Text = string.format("%s  ·  %s", def.abilities.mild, def.abilities.ultimate)
 		if isEquipped then
 			entry.badge.Text = "EQUIPPED"
@@ -361,6 +372,33 @@ local function setAction(label: string, color: Color3, enabled: boolean)
 	refs.actionFill.Size = UDim2.fromScale(0, 1)
 end
 
+-- Sets `label`'s text at its largest size that fits its width (between its MaxTextSize and MinTextSize
+-- attributes; anything still too long is truncated). Measured in the background (the measure yields).
+local function fitText(label: TextLabel, value: string)
+	label.Text = value
+	local max = label:GetAttribute("MaxTextSize") or label.TextSize
+	local min = label:GetAttribute("MinTextSize") or max
+	label.TextSize = max
+	task.spawn(function()
+		local params = Instance.new("GetTextBoundsParams")
+		params.Text = value
+		params.Font = label.FontFace
+		params.Width = 100000
+		local size = max
+		while size > min do
+			params.Size = size
+			local ok, bounds = pcall(TextService.GetTextBoundsAsync, TextService, params)
+			if not ok or bounds.X <= label.Size.X.Offset then
+				break
+			end
+			size -= 1
+		end
+		if label.Text == value then
+			label.TextSize = size
+		end
+	end)
+end
+
 local function refreshDetail()
 	local def = state.selected
 	if not def then
@@ -369,8 +407,8 @@ local function refreshDetail()
 	refs.name.Text = string.upper(def.name)
 	refs.nameShadow.Text = refs.name.Text
 	refs.identity.Text = def.identity
-	refs.mild.Text = def.abilities.mild
-	refs.ultimate.Text = def.abilities.ultimate
+	fitText(refs.mild, def.abilities.mild)
+	fitText(refs.ultimate, def.abilities.ultimate)
 	refs.tier.Text = if def.tier == "Free" then "STARTER" elseif def.tier == "Yen" then string.format("TIER %d  ·  YEN", def.yenTier or 0) else "PREMIUM  ·  ROBUX"
 	refs.accentBar.BackgroundColor3 = def.accent
 	local extra = includes(def)
@@ -400,34 +438,101 @@ local function refreshDetail()
 	end
 end
 
-local function buildGui()
-	local gui = UI.screen("NAU_Shop", 30, true)
-	gui.Enabled = false
-	refs.gui = gui
+-- One ability line in the fighter file, with a preview button that plays it on the hologram.
+type RowStyle = {
+	x: number, width: number, height: number, keycap: number, keySize: number,
+	captionSize: number, nameSize: number, minNameSize: number, previewSize: Vector2, previewText: number,
+}
+local DESKTOP_ROW: RowStyle = {
+	x = 28, width = 524, height = 64, keycap = 44, keySize = 30,
+	captionSize = 14, nameSize = 26, minNameSize = 26, previewSize = Vector2.new(110, 40), previewText = 18,
+}
+local PHONE_ROW: RowStyle = {
+	x = 22, width = 516, height = 90, keycap = 56, keySize = 34,
+	captionSize = 20, nameSize = 30, minNameSize = 21, previewSize = Vector2.new(150, 80), previewText = 24,
+}
 
-	local canvas = UI.new("Frame", {
-		Name = "Canvas",
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(CANVAS.X, CANVAS.Y),
-		BackgroundTransparency = 1,
-		Parent = gui,
+local function abilityRow(detail: Frame, style: RowStyle, y: number, key: string, slot: string): TextLabel
+	local h = style.height
+	local row = UI.new("Frame", { Position = UDim2.fromOffset(style.x, y), Size = UDim2.fromOffset(style.width, h), BackgroundColor3 = GLASS, BackgroundTransparency = 0.3, BorderSizePixel = 0, Parent = detail })
+	UI.stroke(HOLO, 1, 0.7).Parent = row
+	local keycap = text({
+		Text = key,
+		TextSize = style.keySize,
+		TextColor3 = GLASS,
+		TextXAlignment = Enum.TextXAlignment.Center,
+		BackgroundTransparency = 0,
+		BackgroundColor3 = HOLO,
+		Position = UDim2.fromOffset(10, (h - style.keycap) / 2),
+		Size = UDim2.fromOffset(style.keycap, style.keycap),
+		Parent = row,
 	})
-	refs.scale = UI.new("UIScale", { Parent = canvas })
-	refs.canvas = canvas
-
-	-- Scanlines and a slow scan band over everything, very faint.
-	local lines = UI.new("Frame", { Name = "Scanlines", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, ZIndex = 15, Parent = canvas })
-	for y = 0, CANVAS.Y, 18 do
-		UI.new("Frame", { Position = UDim2.fromOffset(0, y), Size = UDim2.new(1, 0, 0, 1), BackgroundColor3 = HOLO, BackgroundTransparency = 0.95, BorderSizePixel = 0, ZIndex = 15, Parent = lines })
-	end
-	refs.band = UI.new("Frame", { Name = "ScanBand", Size = UDim2.new(1, 0, 0, 140), BackgroundColor3 = HOLO, BackgroundTransparency = 0.94, BorderSizePixel = 0, ZIndex = 15, Parent = canvas })
-	UI.new("UIGradient", {
-		Rotation = 90,
-		Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.5, 0), NumberSequenceKeypoint.new(1, 1) }),
-		Parent = refs.band,
+	UI.new("UICorner", { CornerRadius = UDim.new(0, 4), Parent = keycap })
+	local textX = 10 + style.keycap + 16
+	local captionY = (h - (style.captionSize + 2 + style.nameSize + 6)) / 2
+	text({
+		Text = if slot == "mild" then "MILD  ·  8 s" else "ULTIMATE  ·  20 s",
+		TextSize = style.captionSize,
+		TextColor3 = UI.Colors.Muted,
+		Position = UDim2.fromOffset(textX, captionY),
+		Size = UDim2.fromOffset(300, style.captionSize + 2),
+		Parent = row,
 	})
+	-- Long ability names step down to fit (never below minNameSize; see fitText). TextScaled isn't used: under
+	-- the canvas's UIScale it sized names past their box.
+	local name = text({
+		Text = "",
+		TextSize = style.nameSize,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		Position = UDim2.fromOffset(textX, captionY + style.captionSize + 2),
+		Size = UDim2.fromOffset(style.width - textX - style.previewSize.X - 20, style.nameSize + 6),
+		Parent = row,
+	})
+	name:SetAttribute("MaxTextSize", style.nameSize)
+	name:SetAttribute("MinTextSize", style.minNameSize)
+	local preview = UI.new("TextButton", {
+		Name = "Preview",
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -10, 0.5, 0),
+		Size = UDim2.fromOffset(style.previewSize.X, style.previewSize.Y),
+		BackgroundColor3 = GLASS,
+		AutoButtonColor = true,
+		FontFace = HEAVY,
+		TextSize = style.previewText,
+		TextColor3 = HOLO,
+		Text = "▶ PREVIEW",
+		Parent = row,
+	})
+	UI.stroke(HOLO, 1, 0.3).Parent = preview
+	preview.Activated:Connect(function()
+		ShopController.preview(slot)
+	end)
+	return name
+end
 
+-- The hold-to-buy / equip button at the bottom of the fighter file.
+local function actionButton(detail: Frame, height: number, bottom: number, textSize: number): TextButton
+	local action = UI.new("TextButton", {
+		Name = "Action",
+		Text = "",
+		AutoButtonColor = false,
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -bottom),
+		Size = UDim2.new(1, -56, 0, height),
+		BackgroundColor3 = Color3.fromRGB(150, 30, 110),
+		BorderSizePixel = 0,
+		ClipsDescendants = true,
+		Parent = detail,
+	})
+	neonEdge(action, 3, 0)
+	refs.actionFill = UI.new("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = HOLO, BackgroundTransparency = 0.25, BorderSizePixel = 0, Parent = action })
+	refs.actionText = text({ Text = "", TextSize = textSize, TextXAlignment = Enum.TextXAlignment.Center, Size = UDim2.fromScale(1, 1), ZIndex = 3, Parent = action })
+	refs.action = action
+	return action
+end
+
+-- Desktop: header across the top, roster left, fighter file right, the hologram framed in between.
+local function buildDesktopPanels(canvas: Frame)
 	-- Header: title on the left, balance and exit on the right.
 	local header = UI.new("Frame", { Name = "Header", Position = UDim2.fromOffset(70, 36), Size = UDim2.fromOffset(CANVAS.X - 140, 110), BackgroundTransparency = 1, Parent = canvas })
 	refs.header = header
@@ -462,14 +567,15 @@ local function buildGui()
 	refs.roster = roster
 	text({ Text = "ROSTER  ·  ロスター", TextSize = 24, TextColor3 = HOLO, Position = UDim2.fromOffset(22, 14), Size = UDim2.fromOffset(400, 30), Parent = roster })
 	for i, def in CharacterDefs.list do
-		local card = buildCard(roster, def, i)
+		local card = buildCard(roster, def, i, DESKTOP_CARD)
 		card.Activated:Connect(function()
 			ShopController.select(def)
 		end)
 	end
 
 	-- Right: the selected character.
-	local detail = glassPanel({ Name = "Detail", AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -70, 0, 172), Size = UDim2.fromOffset(580, 790), Parent = canvas })
+	refs.detailHome = UDim2.new(1, -70, 0, 172)
+	local detail = glassPanel({ Name = "Detail", AnchorPoint = Vector2.new(1, 0), Position = refs.detailHome, Size = UDim2.fromOffset(580, 790), Parent = canvas })
 	refs.detail = detail
 	refs.accentBar = UI.new("Frame", { Position = UDim2.fromOffset(0, 0), Size = UDim2.new(1, 0, 0, 6), BorderSizePixel = 0, BackgroundColor3 = HOLO, Parent = detail })
 	text({ Text = "キャラクター  //  FIGHTER FILE", TextSize = 18, TextColor3 = PINK, Position = UDim2.fromOffset(28, 24), Size = UDim2.fromOffset(500, 22), Parent = detail })
@@ -487,68 +593,165 @@ local function buildGui()
 		Size = UDim2.fromOffset(520, 80),
 		Parent = detail,
 	})
-	-- Abilities, each with a preview button that plays it on the hologram.
-	local function abilityRow(y: number, key: string, slot: string): TextLabel
-		local row = UI.new("Frame", { Position = UDim2.fromOffset(28, y), Size = UDim2.fromOffset(524, 64), BackgroundColor3 = GLASS, BackgroundTransparency = 0.3, BorderSizePixel = 0, Parent = detail })
-		UI.stroke(HOLO, 1, 0.7).Parent = row
-		local keycap = text({ Text = key, TextSize = 30, TextColor3 = GLASS, TextXAlignment = Enum.TextXAlignment.Center, BackgroundTransparency = 0, BackgroundColor3 = HOLO, Position = UDim2.fromOffset(10, 10), Size = UDim2.fromOffset(44, 44), Parent = row })
-		UI.new("UICorner", { CornerRadius = UDim.new(0, 4), Parent = keycap })
-		text({ Text = if slot == "mild" then "MILD  ·  8 s" else "ULTIMATE  ·  20 s", TextSize = 14, TextColor3 = UI.Colors.Muted, Position = UDim2.fromOffset(70, 8), Size = UDim2.fromOffset(300, 16), Parent = row })
-		local name = text({ Text = "", TextSize = 26, Position = UDim2.fromOffset(70, 24), Size = UDim2.fromOffset(320, 32), Parent = row })
-		local preview = UI.new("TextButton", {
-			AnchorPoint = Vector2.new(1, 0.5),
-			Position = UDim2.new(1, -10, 0.5, 0),
-			Size = UDim2.fromOffset(110, 40),
-			BackgroundColor3 = GLASS,
-			AutoButtonColor = true,
-			FontFace = HEAVY,
-			TextSize = 18,
-			TextColor3 = HOLO,
-			Text = "▶ PREVIEW",
-			Parent = row,
-		})
-		UI.stroke(HOLO, 1, 0.3).Parent = preview
-		preview.Activated:Connect(function()
-			ShopController.preview(slot)
-		end)
-		return name
-	end
-	refs.mild = abilityRow(276, "Q", "mild")
-	refs.ultimate = abilityRow(352, "E", "ultimate")
+	refs.mild = abilityRow(detail, DESKTOP_ROW, 276, "Q", "mild")
+	refs.ultimate = abilityRow(detail, DESKTOP_ROW, 352, "E", "ultimate")
 	text({ Text = "PRICE  ·  価格", TextSize = 16, TextColor3 = UI.Colors.Muted, Position = UDim2.fromOffset(30, 456), Size = UDim2.fromOffset(300, 20), Parent = detail })
 	refs.price = text({ Text = "", TextSize = 60, TextColor3 = GOLD, Position = UDim2.fromOffset(28, 474), Size = UDim2.fromOffset(520, 70), Parent = detail })
 	refs.includes = text({ Text = "", Font = BODY, TextSize = 16, TextWrapped = true, TextColor3 = HOLO, Position = UDim2.fromOffset(30, 548), Size = UDim2.fromOffset(520, 44), Parent = detail })
-
-	-- The action button: a charge bar fills while BUY is held.
-	local action = UI.new("TextButton", {
-		Name = "Action",
-		Text = "",
-		AutoButtonColor = false,
-		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, -34),
-		Size = UDim2.new(1, -56, 0, 92),
-		BackgroundColor3 = Color3.fromRGB(150, 30, 110),
-		BorderSizePixel = 0,
-		ClipsDescendants = true,
-		Parent = detail,
-	})
-	neonEdge(action, 3, 0)
-	refs.actionFill = UI.new("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = HOLO, BackgroundTransparency = 0.25, BorderSizePixel = 0, Parent = action })
-	refs.actionText = text({ Text = "", TextSize = 36, TextXAlignment = Enum.TextXAlignment.Center, Size = UDim2.fromScale(1, 1), ZIndex = 3, Parent = action })
-	refs.action = action
+	actionButton(detail, 92, 34, 36)
 
 	-- Centre: a targeting frame round the hologram, with a caption.
 	local focus = UI.new("Frame", { Name = "Focus", Position = UDim2.fromOffset(700, 190), Size = UDim2.fromOffset(520, 720), BackgroundTransparency = 1, Parent = canvas })
 	brackets(focus, HOLO, 40, 2)
 	refs.focusCaption = text({ Text = "", TextSize = 22, TextColor3 = HOLO, TextXAlignment = Enum.TextXAlignment.Center, AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 1, 12), Size = UDim2.fromOffset(520, 26), Parent = focus })
 	refs.focus = focus
+	refs.stampSize = Vector2.new(1200, 140)
+	refs.stampText = 120
+end
+
+-- Phones (Phase 4): the same menu, compact. Text is at least 20 canvas units (about 11 pt on a 390 pt tall
+-- phone) and every button at least 80 (about 44 pt). The roster scrolls; the hologram still shows between the
+-- two panels. The canvas is as wide as the screen's shape (fitCanvas), so the header and the hologram frame
+-- are sized from the canvas edges.
+local function buildPhonePanels(canvas: Frame)
+	local margin, top, gap = 24, 110, 20
+	local rosterWidth, detailWidth = 470, 560
+	local panelHeight = PHONE_CANVAS_HEIGHT - top - 16
+
+	local header = UI.new("Frame", { Name = "Header", Position = UDim2.fromOffset(margin, 12), Size = UDim2.new(1, -2 * margin, 0, 86), BackgroundTransparency = 1, Parent = canvas })
+	refs.header = header
+	local title = text({ Text = "FIGHTER EXCHANGE", TextSize = 50, Position = UDim2.fromOffset(0, 14), Size = UDim2.fromOffset(620, 58), Parent = header })
+	UI.new("UIGradient", {
+		Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, WHITE), ColorSequenceKeypoint.new(1, HOLO) }),
+		Parent = title,
+	})
+	refs.title = title
+	local wallet = glassPanel({ Name = "Wallet", AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 0), Size = UDim2.fromOffset(300, 86), Parent = header })
+	text({ Text = "BALANCE", TextSize = 20, TextColor3 = UI.Colors.Muted, Position = UDim2.fromOffset(18, 6), Size = UDim2.fromOffset(260, 24), Parent = wallet })
+	refs.balance = text({ Text = "¥0", TextSize = 44, TextColor3 = GOLD, Position = UDim2.fromOffset(16, 30), Size = UDim2.fromOffset(270, 50), Parent = wallet })
+	refs.exit = UI.new("TextButton", {
+		Name = "Exit",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -316, 0, 3),
+		Size = UDim2.fromOffset(150, 80),
+		BackgroundColor3 = GLASS,
+		BackgroundTransparency = 0.2,
+		AutoButtonColor = true,
+		FontFace = HEAVY,
+		TextSize = 28,
+		TextColor3 = WHITE,
+		Text = "EXIT",
+		Parent = header,
+	})
+	neonEdge(refs.exit, 2, 0.2)
+
+	-- Left: the roster, scrolling.
+	local roster = glassPanel({ Name = "Roster", Position = UDim2.fromOffset(margin, top), Size = UDim2.fromOffset(rosterWidth, panelHeight), Parent = canvas })
+	refs.roster = roster
+	text({ Text = "ROSTER", TextSize = 24, TextColor3 = HOLO, Position = UDim2.fromOffset(18, 10), Size = UDim2.fromOffset(300, 30), Parent = roster })
+	local list = UI.new("ScrollingFrame", {
+		Name = "List",
+		Position = UDim2.fromOffset(0, 48),
+		Size = UDim2.new(1, 0, 1, -56),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		ScrollBarThickness = 6,
+		ScrollBarImageColor3 = HOLO,
+		ScrollingDirection = Enum.ScrollingDirection.Y,
+		CanvasSize = UDim2.fromOffset(0, #CharacterDefs.list * PHONE_CARD.step),
+		Parent = roster,
+	})
+	for i, def in CharacterDefs.list do
+		local card = buildCard(list, def, i, PHONE_CARD)
+		card.Activated:Connect(function()
+			ShopController.select(def)
+		end)
+	end
+
+	-- Right: the selected character.
+	refs.detailHome = UDim2.new(1, -margin, 0, top)
+	local detail = glassPanel({ Name = "Detail", AnchorPoint = Vector2.new(1, 0), Position = refs.detailHome, Size = UDim2.fromOffset(detailWidth, panelHeight), Parent = canvas })
+	refs.detail = detail
+	refs.accentBar = UI.new("Frame", { Position = UDim2.fromOffset(0, 0), Size = UDim2.new(1, 0, 0, 6), BorderSizePixel = 0, BackgroundColor3 = HOLO, Parent = detail })
+	refs.nameShadow = text({ Text = "", TextSize = 52, TextColor3 = PINK, TextTransparency = 0.45, Position = UDim2.fromOffset(25, 17), Size = UDim2.fromOffset(510, 58), Parent = detail })
+	refs.name = text({ Text = "", TextSize = 52, Position = UDim2.fromOffset(22, 14), Size = UDim2.fromOffset(510, 58), Parent = detail })
+	refs.tier = text({ Text = "", TextSize = 22, TextColor3 = HOLO, Position = UDim2.fromOffset(24, 70), Size = UDim2.fromOffset(510, 26), Parent = detail })
+	refs.identity = text({
+		Text = "",
+		Font = BODY,
+		TextSize = 22,
+		TextWrapped = true,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		TextColor3 = Color3.fromRGB(200, 214, 226),
+		Position = UDim2.fromOffset(24, 98),
+		Size = UDim2.fromOffset(512, 54),
+		Parent = detail,
+	})
+	refs.mild = abilityRow(detail, PHONE_ROW, 158, "Q", "mild")
+	refs.ultimate = abilityRow(detail, PHONE_ROW, 256, "E", "ultimate")
+	text({ Text = "PRICE", TextSize = 20, TextColor3 = UI.Colors.Muted, Position = UDim2.fromOffset(24, 352), Size = UDim2.fromOffset(300, 24), Parent = detail })
+	refs.price = text({ Text = "", TextSize = 44, TextColor3 = GOLD, Position = UDim2.fromOffset(22, 374), Size = UDim2.fromOffset(510, 50), Parent = detail })
+	refs.includes = text({ Text = "", Font = BODY, TextSize = 20, TextWrapped = true, TextColor3 = HOLO, Position = UDim2.fromOffset(24, 424), Size = UDim2.fromOffset(512, 46), Parent = detail })
+	actionButton(detail, 84, 14, 32)
+
+	-- Centre: the hologram's frame fills whatever width is left between the panels.
+	local left = margin + rosterWidth + gap
+	local right = margin + detailWidth + gap
+	local focus = UI.new("Frame", { Name = "Focus", Position = UDim2.fromOffset(left, top + 10), Size = UDim2.new(1, -(left + right), 0, panelHeight - 70), BackgroundTransparency = 1, Parent = canvas })
+	brackets(focus, HOLO, 30, 2)
+	refs.focusCaption = text({ Text = "", TextSize = 20, TextColor3 = HOLO, TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Center, AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 1, 8), Size = UDim2.new(1, 0, 0, 48), Parent = focus })
+	refs.focus = focus
+	refs.stampSize = Vector2.new(900, 110)
+	refs.stampText = 90
+end
+
+local function buildGui()
+	local gui = UI.screen("NAU_Shop", 30, true)
+	gui.Enabled = false
+	refs.gui = gui
+
+	phoneLayout = UI.isPhone()
+	if phoneLayout then
+		local viewport = UI.viewport()
+		CANVAS = Vector2.new(math.floor(viewport.X * PHONE_CANVAS_HEIGHT / viewport.Y), PHONE_CANVAS_HEIGHT)
+	end
+	local canvas = UI.new("Frame", {
+		Name = "Canvas",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(CANVAS.X, CANVAS.Y),
+		BackgroundTransparency = 1,
+		Parent = gui,
+	})
+	refs.scale = UI.new("UIScale", { Parent = canvas })
+	refs.canvas = canvas
+
+	-- Scanlines and a slow scan band over everything, very faint.
+	local lines = UI.new("Frame", { Name = "Scanlines", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, ZIndex = 15, Parent = canvas })
+	for y = 0, CANVAS.Y, 18 do
+		UI.new("Frame", { Position = UDim2.fromOffset(0, y), Size = UDim2.new(1, 0, 0, 1), BackgroundColor3 = HOLO, BackgroundTransparency = 0.95, BorderSizePixel = 0, ZIndex = 15, Parent = lines })
+	end
+	refs.band = UI.new("Frame", { Name = "ScanBand", Size = UDim2.new(1, 0, 0, 140), BackgroundColor3 = HOLO, BackgroundTransparency = 0.94, BorderSizePixel = 0, ZIndex = 15, Parent = canvas })
+	UI.new("UIGradient", {
+		Rotation = 90,
+		Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.5, 0), NumberSequenceKeypoint.new(1, 1) }),
+		Parent = refs.band,
+	})
+
+	if phoneLayout then
+		buildPhonePanels(canvas)
+	else
+		buildDesktopPanels(canvas)
+	end
 
 	-- Effects layer on top of everything, and a full-screen flash for purchases.
 	refs.fx = UI.new("Frame", { Name = "FX", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, ZIndex = 18, Parent = canvas })
 	refs.flash = UI.new("Frame", { Name = "Flash", Size = UDim2.new(1, 400, 1, 400), Position = UDim2.fromOffset(-200, -200), BackgroundColor3 = WHITE, BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 19, Parent = canvas })
-	refs.stamp = text({ Text = "UNLOCKED  解放", TextSize = 120, TextXAlignment = Enum.TextXAlignment.Center, TextColor3 = HOLO, TextStrokeColor3 = PINK, TextStrokeTransparency = 0, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromOffset(CANVAS.X / 2, CANVAS.Y / 2), Size = UDim2.fromOffset(1200, 140), Visible = false, ZIndex = 20, Parent = canvas })
+	refs.stamp = text({ Text = "UNLOCKED  解放", TextSize = refs.stampText, TextXAlignment = Enum.TextXAlignment.Center, TextColor3 = HOLO, TextStrokeColor3 = PINK, TextStrokeTransparency = 0, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(refs.stampSize.X, refs.stampSize.Y), Visible = false, ZIndex = 20, Parent = canvas })
 
 	-- Hold-to-buy / equip input.
+	local action = refs.action
 	action.InputBegan:Connect(function(input)
 		if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then
 			return
@@ -569,11 +772,25 @@ local function buildGui()
 end
 
 local function fitCanvas()
-	local camera = workspace.CurrentCamera
-	if refs.scale and camera then
-		local size = camera.ViewportSize
+	if not refs.scale then
+		return
+	end
+	local size = UI.viewport()
+	if phoneLayout then
+		-- As tall as the screen; as wide as the screen's shape allows (the panels hang off the canvas edges).
+		local scale = size.Y / PHONE_CANVAS_HEIGHT
+		CANVAS = Vector2.new(math.floor(size.X / scale), PHONE_CANVAS_HEIGHT)
+		refs.canvas.Size = UDim2.fromOffset(CANVAS.X, CANVAS.Y)
+		refs.scale.Scale = scale
+	else
 		refs.scale.Scale = math.min(size.X / CANVAS.X, size.Y / CANVAS.Y)
 	end
+end
+
+-- The centre of a menu element, in canvas units (for effects that burst from it).
+local function canvasCenterOf(gui: GuiObject): Vector2
+	local scale = if refs.scale and refs.scale.Scale > 0 then refs.scale.Scale else 1
+	return (gui.AbsolutePosition + gui.AbsoluteSize / 2 - refs.canvas.AbsolutePosition) / scale
 end
 
 -- The hologram and the camera -------------------------------------------------------------------
@@ -642,6 +859,8 @@ end
 -- Freeze the character while shopping (this place has no standard PlayerModule to disable controls
 -- through, so the humanoid is held still directly and restored exactly as it was).
 local function setControls(enabled: boolean)
+	-- Roblox's own touch controls (thumbstick, jump) would sit over the menu's buttons on phones.
+	GuiService.TouchControlsEnabled = enabled
 	local character = localPlayer.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	if not humanoid then
@@ -686,8 +905,8 @@ function ShopController.select(def: any)
 		sound("select")
 		speedBurst(Vector2.new(CANVAS.X / 2, CANVAS.Y / 2), HOLO, 16)
 		glitch(refs.name, 5)
-		refs.detail.Position = UDim2.new(1, -40, 0, 172)
-		tween(refs.detail, 0.25, { Position = UDim2.new(1, -70, 0, 172) })
+		refs.detail.Position = refs.detailHome + UDim2.fromOffset(30, 0)
+		tween(refs.detail, 0.25, { Position = refs.detailHome })
 	end
 	state.previewSlot = "mild"
 	state.nextPreview = 0 -- play the new character's mild straight away
@@ -715,7 +934,7 @@ function ShopController.pressAction()
 		if ok and type(result) == "table" and result.status == "equipped" then
 			ClientState.ability.equipped = def.id -- the server's AbilityState follows; redraw now
 			sound("equip")
-			speedBurst(Vector2.new(CANVAS.X - 360, 870), HOLO, 12)
+			speedBurst(canvasCenterOf(refs.action), HOLO, 12)
 			refreshCards()
 			refreshDetail()
 		end
@@ -767,8 +986,8 @@ local function completePurchase(def: any)
 		refs.stamp.Visible = true
 		refs.stamp.TextTransparency = 0
 		refs.stamp.TextStrokeTransparency = 0
-		refs.stamp.Size = UDim2.fromOffset(1800, 200)
-		tween(refs.stamp, 0.35, { Size = UDim2.fromOffset(1200, 140) }, Enum.EasingStyle.Back)
+		refs.stamp.Size = UDim2.fromOffset(refs.stampSize.X * 1.5, refs.stampSize.Y * 1.43)
+		tween(refs.stamp, 0.35, { Size = UDim2.fromOffset(refs.stampSize.X, refs.stampSize.Y) }, Enum.EasingStyle.Back)
 		task.delay(1.1, function()
 			local fade = tween(refs.stamp, 0.35, { TextTransparency = 1, TextStrokeTransparency = 1 })
 			fade.Completed:Connect(function()

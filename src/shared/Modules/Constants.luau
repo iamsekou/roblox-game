@@ -16,6 +16,7 @@ local Constants = {
 	INTERMISSION_SECONDS = 15, -- approved
 	ROUND_END_SECONDS = 6, -- results banner before everyone returns to the lobby
 	UNDERPOPULATED_GRACE = 15, -- a round below MIN_PLAYERS_TO_START waits this long for a joiner, then ends with no winner
+	QUEUE_MIN_INTERVAL = 0.5, -- seconds between FIGHT / leave-queue requests from one player (each one broadcasts)
 	ROUND_WARNING_SECONDS = 30, -- owner, 2026-09-23: everyone in the match is alerted this long before time runs out
 
 	-- Eliminations
@@ -82,6 +83,7 @@ local Constants = {
 	PROFILE_LOAD_ATTEMPTS = 8, -- ...this many times (the other server's save-on-leave), then taken over
 	PROFILE_SHUTDOWN_WAIT_SECONDS = 25, -- a closing server waits this long for saves (Roblox allows 30)
 	STUDIO_STORE_SUFFIX = "_Studio", -- Studio's DataStores are kept apart from the live game's
+	SETTINGS_MIN_INTERVAL = 0.2, -- seconds between accepted settings changes from one player (schema: Modules/Settings)
 
 	-- Kill leaderboards (owner-approved 2026-09-23): all-time + weekly (Monday 00:00 UTC), global via DataStores.
 	LEADERBOARD_FLUSH_SECONDS = 30, -- unsaved kills are added to the stores this often (and on shutdown)
@@ -288,6 +290,9 @@ local Constants = {
 	-- Studio-only: "FFA" or "Team6v6" on ServerScriptService forces the mode of rounds that start after it's set
 	-- (team mode then ignores TEAM_MODE_MIN_PLAYERS, so it can be tested solo). Ignored live.
 	DEV_MODE_ATTRIBUTE = "NAU_DevMode",
+	-- Studio-only: a number (1-11) on ServerScriptService during a round runs that many bot fighters around the
+	-- arena for the 12-player stress test (Systems/StressTestService); 0 removes them. Ignored live.
+	DEV_STRESS_BOTS_ATTRIBUTE = "NAU_DevStressBots",
 }
 
 return Constants

@@ -56,6 +56,8 @@ local lines: { Frame } = {}
 local overlay: ScreenGui? = nil
 local vignette: { Frame } = {}
 local localFactor = 0
+-- Player settings (Phase 4): each part of the package can be switched off.
+local options = { speedLines = true, cameraSway = true }
 local roll = 0
 local bobClock = 0
 local lastRedraw = 0
@@ -134,7 +136,7 @@ local function updateOverlay(now: number)
 	if not gui then
 		return
 	end
-	local active = localFactor > 0.05
+	local active = options.speedLines and localFactor > 0.05
 	gui.Enabled = active
 	if not active then
 		return
@@ -243,8 +245,23 @@ local function updateCharacters(dt: number, config: Config)
 			rigs[character] = nil
 		end
 	end
+	-- Every player's fighter, plus Studio's stress-test bots (workspace.NAU_StressBots, Studio only), so the
+	-- stress test costs the client what real fighters would.
+	local fighters: { { character: Model?, player: Player? } } = {}
 	for _, player in Players:GetPlayers() do
-		local character = player.Character
+		table.insert(fighters, { character = player.Character, player = player })
+	end
+	local bots = workspace:FindFirstChild("NAU_StressBots")
+	if bots then
+		for _, bot in bots:GetChildren() do
+			if bot:IsA("Model") then
+				table.insert(fighters, { character = bot })
+			end
+		end
+	end
+	for _, fighter in fighters do
+		local player = fighter.player
+		local character = fighter.character
 		local root = character and character:FindFirstChild("HumanoidRootPart")
 		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 		if character and root and root:IsA("BasePart") and humanoid then
@@ -315,6 +332,10 @@ local function updateCamera(dt: number, config: Config)
 	if not camera or camera.CameraType ~= Enum.CameraType.Custom or not root or not root:IsA("BasePart") then
 		return
 	end
+	if not options.cameraSway then
+		roll = 0
+		return
+	end
 	local turnRate = root.AssemblyAngularVelocity.Y
 	local targetRoll = math.clamp(-turnRate * 0.08, -1, 1) * config.rollDegrees * localFactor
 	roll = approach(roll, targetRoll, 6, dt)
@@ -322,6 +343,17 @@ local function updateCamera(dt: number, config: Config)
 	local bob = math.sin(bobClock * math.pi * 2) * config.bob * localFactor
 	if math.abs(roll) > 0.01 or math.abs(bob) > 0.001 then
 		camera.CFrame = camera.CFrame * CFrame.new(0, bob, 0) * CFrame.Angles(0, 0, math.rad(roll))
+	end
+end
+
+-- Player settings: `speedLines` (streaks + vignette) and `cameraSway` (lean + stride bob). The run pose,
+-- trails and dust are on other fighters too, so they stay.
+function SprintFX.setOptions(new: { speedLines: boolean?, cameraSway: boolean? })
+	if new.speedLines ~= nil then
+		options.speedLines = new.speedLines
+	end
+	if new.cameraSway ~= nil then
+		options.cameraSway = new.cameraSway
 	end
 end
 

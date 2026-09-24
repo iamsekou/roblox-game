@@ -1,7 +1,7 @@
 # HANDOFF — Numbers Assassin Universe
 
-Last updated: 2026-09-23, end of the third working session (animations, swords, clashes, ability audit, yen shop,
-kill leaderboards, colosseum crowd). Current state first; a condensed history is at the end.
+Last updated: 2026-09-23, Phase 4 built (settings, phone pass, how to play, stress test, security review, sound).
+Current state first; a condensed history is at the end.
 
 Labels: **[Verified]** = checked directly (test output, measurement, screenshot, or file/Studio inspection).
 **[Owner-reported]** = the owner tested it; Claude didn't observe it. **[Assumption]** = believed true, not checked.
@@ -24,6 +24,18 @@ Phase 3 (plan approved 2026-09-23, 8 items), worked in the owner's order:
 
 Extras added at the owner's request this session: swords and slash effects, clashes, kill leaderboards,
 colosseum crowd, passive yen + friend booster, 30-second alert (the four open choices on these were approved as built).
+
+**Phase 4** (approved 2026-09-23: all items; map 2 planning skipped for now). Built, uncommitted:
+
+| Item | State |
+|---|---|
+| 1 Settings menu | Done (section 2) |
+| 2 Phone / tablet pass | Done (section 2); measured on an emulated 844×390 phone, not on a real device |
+| 3 How to play | Done (section 2) |
+| 4 12-player stress test | Harness + first measurements done (section 2); a real 12-player test still needs real players |
+| 5 Security review | Done: 2 fixes, 1 recommended follow-up (section 7) |
+| 6 Map 2 plan | Skipped by the owner for now |
+| 7 Sound | Done with Claude's picks from licensed libraries (section 2); owner to listen and swap any |
 
 ## 2. Implemented systems
 
@@ -52,6 +64,11 @@ colosseum crowd, passive yen + friend booster, 30-second alert (the four open ch
 | Arena "The Proving Grounds": circular stadium, terrain, dense cover, random unmarked spawns, crowd bowl | `assets/Builders/ProvingGrounds`, `Systems/MapService` | [Verified] |
 | Run feel: FOV 70°→96°, speed lines, camera lean/bob, ninja-run pose, trails, dust | `animations/Controllers/RunFOV`, `SprintFX` | [Verified] |
 | **Saved progress**: yen, yen purchases and equipped character in one DataStore record per player; session lock (wait 4 s × 8 for another server's fresh lock, then take over; stale after 180 s); a save only writes while holding the lock; autosave 60 s, save + release on leave and shutdown; loads sanitised; unsaved-session toast. Studio stores are separate (`_Studio` suffix, leaderboards too) | `Lib/ProfileData`, `Systems/ProfileService`, `Systems/SafeStore`, `EconomyService` (applySaved, listeners), `AbilityService` (applySavedEquip, onEquipped) | 5 unit tests. In Studio with real DataStores [Verified]: new profile; bought Vejaro (+Krillo) and equipped → stop → restart restored ¥10,000, 2 bought, Vejaro, `Zorin` still `not_owned`; a planted foreign lock made autosave refuse to overwrite; the next join waited ~26 s then took over and loaded the other server's data. Live servers, real server hops, the offline toast [Not tested] |
+| **Settings menu** (Phase 4): gear top-right; speed lines, camera sway, wide running view, screen shake (off → red edge flash), crowd Auto/Off/Low/Medium/High, music + effects volume; HOW TO PLAY button. Saved in the profile, validated by the server | `Modules/Settings`, `Controllers/SettingsController`, `ProfileService` (SetSettings), `SprintFX`/`RunFOV`/`CameraShake`/`Crowd` switches, `src/client/Audio` | 4 unit tests. Real clicks [Verified]: speed lines off → no streaks while running, on → streaks; wide view on → 96°, off → stays 70°; screen shake off → edge flash (35% opaque) and no camera offset; crowd Low 3,336 parts → High 7,498 rebuilt live; bad request refused whole; rate limit; settings restored after stop → start. Camera sway not measured separately [Not tested] |
+| **Phone / tablet layouts** (Phase 4): touch cluster round Roblox's jump button; two-column touch keypad; kill list 6 rows on phones and hidden while the keypad is open; 44 pt touch targets on the card, settings, keypad, leave-queue; compact phone shop | `UI` (isTouch, isPhone, viewport, touchCluster, gearSize), `AbilityController`, `SubmissionController`, `HUDController`, `LobbyController`, `SettingsController`, `ShopController` (buildPhonePanels) | Emulated 844×390 phone with a measuring script [Verified]: arena HUD, keypad open, lobby, character card, settings and shop all 0 issues (text ≥ 11 pt, targets ≥ 44 pt, nothing off-screen or under the jump button, no overlaps); desktop shop geometry unchanged. Real phones and tablets [Not tested] |
+| **How to play** (Phase 4): five cards on a first visit, reopenable from settings; "seen" saved | `Controllers/TutorialController`, `Settings.tutorialDone` | Opened by itself on first Play, clicked through all five, saved `tutorialDone = true`, didn't reopen after stop → start, HOW TO PLAY reopened it [Verified]. The card-4 mark was changed from ✕ (missing in the font) to X after the last screenshot [Not re-checked visually] |
+| **12-player stress test** (Phase 4): Studio-only bots | `Systems/StressTestService`, `SprintFX` (dresses bots) | Owner's PC, Studio Play (client and server in one process), arena + High crowd [Verified]: 1 fighter 16.7 ms avg (60 fps), 99th pct 21.1 ms; 12 fighters 16.8 ms avg (60 fps), 99th pct 20.1 ms, one 91 ms hitch (bots spawning), memory 2,290 → 2,305 MB, server physics 0.00 → 0.94 ms. Studio's network counters are meaningless here (one process). Phones, real network [Not tested] |
+| **Sound** (Phase 4): lobby/arena music, effects for round start, elimination (you / of you), wrong code, 30 s alert, sudden death, win, ability casts (3D), income, shop slots | `src/client/Audio`, hooks in `HUDController`, `SubmissionController`, `FXController`, `ShopController` | All 18 candidate ids load here [Verified]. In Play [Verified]: lobby music in the Music group, arena music + round-start gong on entering, ability cast at the caster, wrong code, eliminated, 30 s alert, income. Sudden death, the kill sound, win [Not tested]. How it all sounds: owner to judge (Claude can't listen) |
 
 ## 3. Repository state
 
@@ -74,7 +91,8 @@ colosseum crowd, passive yen + friend booster, 30-second alert (the four open ch
 - Place settings untouched by Claude: `Lighting.Technology`, `StreamingEnabled = true`, `CharacterAutoLoads = true`
   (server sets false at runtime), HttpService off. **Studio API access on** (owner, 2026-09-23): Studio uses the
   `_Studio` stores. The owner's Studio test profile was reset to a fresh start at the owner's request: ¥133,500
-  (enough to buy all six yen characters one by one), nothing bought, Gokai equipped. `NAU_DevUnlockAll = false` is
+  (enough to buy all six yen characters one by one), nothing bought, Gokai equipped, default settings, walkthrough
+  not yet seen (reset again after the Phase 4 tests). `NAU_DevUnlockAll = false` is
   saved on ServerScriptService in the place (so Studio shows real ownership; delete the attribute to unlock all again).
   The Studio leaderboards show 3 injected kills.
 - Rojo 7.4.4 via Rokit. `rojo serve` restarted after the owner's PC crash (2026-09-23 19:05, pids 3068 / 10220);
@@ -96,7 +114,8 @@ colosseum crowd, passive yen + friend booster, 30-second alert (the four open ch
 
 ## 6. Tests
 
-- Unit tests (`TestRunner`, in Play on the Server): **114/114** [Verified, 2026-09-23]. Specs: CodeBook 11, MatchCore 28,
+- Unit tests (`TestRunner`, in Play on the Server): **118/118** [Verified, 2026-09-23; Settings 4 added, 2 aim checks added to
+  AbilityRules]. Specs: CodeBook 11, MatchCore 28,
   PlateVisibility 10, AbilityRules 13, AnimTimeline 8, ClashRules 10, Spring 6, ShopRules 6, Leaderboard 5, ProfileData 5,
   Income 6, TeamRules 6.
 - Owner-reported: 3-player check, multi-client ability test and 2-player clash test passed.
@@ -114,7 +133,15 @@ colosseum crowd, passive yen + friend booster, 30-second alert (the four open ch
   defeats that.
 - Crowd is ~7,500 parts: fine on this PC; low-end devices rely on the quality-based density [Assumption].
 - Studio input automation can't press number-row keys (keypad used in tests).
-- Motion-sensitive players: speed lines, camera bob and wide FOV have no settings toggle yet.
+- Security (Phase 4 review): characters are simulated by their own clients (Roblox), so speed hacks/teleports aren't
+  caught and a cheater could teleport in front of opponents to read their plates; knockbacks are applied by the
+  victim's client and can be ignored. Recommended follow-up (needs approval): a server-side movement sanity check that
+  allows the game's own dashes, grapples and knockbacks.
+- Sound picks are Claude's (it can't listen). Alternatives that load: arena "Storm of the Shogun" 81644581161031,
+  "Blades in Motion" 90151190692214; lobby "Bells and Harp (edit)" 1840049555, "A Delicate Art" 1840471940. Swap in
+  `src/client/Audio.luau`.
+- Studio's tooling resets the camera after each scripted command, which made the shop camera look wrong in automated
+  tests only.
 - IP: names are original, but silhouettes come from franchise art, abilities/poses follow the shows, and the shop
   cottage is inspired by a Dragon Ball frame; the Robux passes for Sazuki/Gozen remain the highest-risk part.
 - Animation placeholders were tuned on one avatar's proportions; very different avatars may land hands off target.
@@ -122,11 +149,12 @@ colosseum crowd, passive yen + friend booster, 30-second alert (the four open ch
 
 ## 8. Single next task
 
-**Owner: multi-player test of team battle** in Test → Clients and Servers (4+ clients, `NAU_DevMode = "Team6v6"` or
-just 4 queued): team split, teammate plates/tags, "That's a teammate", no friendly fire, team scoring; plus saved
-progress (leave, rejoin).
-**Next build:** Phase 4 (polish, more maps, 12-player stress test), plan to be approved by the owner. Item 6 + Robux yen
-bundles (approved) are built as soon as the owner sends the pass and product ids.
+**Owner: play Phase 4 and approve a commit** (it's uncommitted): listen to the music and effects, try the settings,
+the first-visit walkthrough (the Studio profile is reset so it shows), and ideally a phone (Roblox app, or Studio's
+device emulator). In parallel the multi-player test of team battle in Test → Clients and Servers (4+ clients): team
+split, teammate plates/tags, "That's a teammate", no friendly fire, team scoring; plus saved progress (leave, rejoin).
+**Next build:** item 6 + Robux yen bundles (approved) as soon as the owner sends the pass and product ids; or the
+movement sanity check (section 7) if approved.
 
 Owner items in parallel: review the placeholder animations and shop/leaderboard/crowd look; author the first
 animation clips (Gokai + Luffo); create the two Game Passes when ready (item 6).

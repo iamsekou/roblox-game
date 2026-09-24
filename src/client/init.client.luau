@@ -11,9 +11,12 @@ local ORDER = {
 	"ShopController",
 	"LeaderboardController",
 	"FXController",
+	"SettingsController", -- after FXController: it switches the effects FXController started
+	"TutorialController",
 }
 
 ClientState.Start()
+require(script:WaitForChild("Audio")).Start()
 for _, name in ORDER do
 	local ok, err = pcall(function()
 		require(Controllers:WaitForChild(name)).Start()

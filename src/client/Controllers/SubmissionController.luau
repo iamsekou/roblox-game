@@ -17,12 +17,19 @@ local CameraShake = require(AnimControllers:WaitForChild("CameraShake"))
 local Client = script.Parent.Parent
 local ClientState = require(Client:WaitForChild("ClientState"))
 local UI = require(Client:WaitForChild("UI"))
+local Audio = require(Client:WaitForChild("Audio"))
 local HUDController = require(script.Parent:WaitForChild("HUDController"))
 
 local SubmissionController = {}
 
 local CODE_LENGTH = Constants.CODE_LENGTH
 local STRIKE_LIMIT = Constants.WRONG_SUBMISSION_LIMIT
+
+-- Touch layout (Phase 4 phone pass): [code column | keypad]. Keys are at least 44 px tall (touch target).
+local KEY_SIZE = Vector2.new(60, 44)
+local KEY_GAP = 6
+local TOUCH_COLUMN_WIDTH = 230 -- four 50 px slots with 8 px gaps, plus a little air
+local TOUCH_PANEL_WIDTH = 12 + TOUCH_COLUMN_WIDTH + 12 + (3 * KEY_SIZE.X + 2 * KEY_GAP) + 12
 
 local DIGIT_KEYS: { [Enum.KeyCode]: string } = {
 	[Enum.KeyCode.Zero] = "0",
@@ -92,6 +99,7 @@ local function close()
 	isOpen = false
 	table.clear(digits)
 	refs.panel.Visible = false
+	HUDController.setEntryOpen(false)
 	render()
 end
 
@@ -107,6 +115,7 @@ local function open()
 	isOpen = true
 	table.clear(digits)
 	refs.panel.Visible = true
+	HUDController.setEntryOpen(isTouch and UI.isPhone()) -- phones: the kill list makes room for the keypad
 	UIMotion.pop(refs.panel)
 	render()
 end
@@ -138,6 +147,7 @@ end
 local function onResult(result: any)
 	local status = result.status
 	if status == "eliminated" then
+		Audio.play("elimination")
 		HUDController.toast(
 			string.format("ELIMINATED %s   +¥%s", tostring(result.targetName), UI.formatNumber(result.yen or Constants.YEN_PER_ELIMINATION)),
 			"good"
@@ -145,6 +155,7 @@ local function onResult(result: any)
 	elseif status == "wrong" then
 		strikesLeft = if type(result.strikesLeft) == "number" then result.strikesLeft else strikesLeft - 1
 		HUDController.toast("Wrong code. Careful: one more miss and you're out.", "bad")
+		Audio.play("wrong_code")
 		CameraShake.shake(0.7, 0.4) -- approved: the first wrong submission shakes the screen
 	elseif status == "self_eliminated" then
 		strikesLeft = 0
@@ -215,22 +226,24 @@ local function makeSlot(parent: Instance, index: number)
 end
 
 local function build()
-	isTouch = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+	isTouch = UI.isTouch()
 	local gui = UI.screen("NAU_CodeEntry", 6)
 
 	-- Outer slab (holds the accent bar) + inner content (padding and layout), so the bar never moves.
+	-- Touch (Phase 4 phone pass): two columns, the code on the left and the keypad on the right, so the panel
+	-- stays short enough for a phone held sideways (about 350 px of height below Roblox's top bar).
 	local outer = UI.panel({
 		Name = "CodeEntry",
 		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, -24),
-		Size = UDim2.fromOffset(290, 0),
+		Position = UDim2.new(0.5, 0, 1, if isTouch then -16 else -24),
+		Size = UDim2.fromOffset(if isTouch then TOUCH_PANEL_WIDTH else 290, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		BackgroundTransparency = 0.06,
 		Visible = false,
 		Parent = gui,
 	})
 	UI.accentBar(outer, "top", UI.Colors.Accent, 2)
-	local panel = UI.new("Frame", {
+	local content = UI.new("Frame", {
 		Name = "Content",
 		Size = UDim2.fromScale(1, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
@@ -239,11 +252,31 @@ local function build()
 	}, {
 		UI.padding(12),
 		UI.new("UIListLayout", {
+			FillDirection = if isTouch then Enum.FillDirection.Horizontal else Enum.FillDirection.Vertical,
 			SortOrder = Enum.SortOrder.LayoutOrder,
 			HorizontalAlignment = Enum.HorizontalAlignment.Center,
-			Padding = UDim.new(0, 7),
+			VerticalAlignment = Enum.VerticalAlignment.Center,
+			Padding = UDim.new(0, if isTouch then 12 else 7),
 		}),
 	})
+	-- The code column: the whole panel on a PC, the left column on touch.
+	local panel = content
+	if isTouch then
+		panel = UI.new("Frame", {
+			Name = "Column",
+			LayoutOrder = 1,
+			Size = UDim2.fromOffset(TOUCH_COLUMN_WIDTH, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			BackgroundTransparency = 1,
+			Parent = content,
+		}, {
+			UI.new("UIListLayout", {
+				SortOrder = Enum.SortOrder.LayoutOrder,
+				HorizontalAlignment = Enum.HorizontalAlignment.Center,
+				Padding = UDim.new(0, 7),
+			}),
+		})
+	end
 	refs.panel = outer
 
 	refs.feedback = UI.label({
@@ -305,7 +338,7 @@ local function build()
 	local buttons = UI.new("Frame", {
 		Name = "Buttons",
 		LayoutOrder = 5,
-		Size = UDim2.new(1, 0, 0, 36),
+		Size = UDim2.new(1, 0, 0, if isTouch then 44 else 36),
 		BackgroundTransparency = 1,
 		Parent = panel,
 	}, {
@@ -317,7 +350,7 @@ local function build()
 	})
 	local submitButton = UI.button({
 		Name = "Submit",
-		Size = UDim2.fromOffset(160, 36),
+		Size = UDim2.fromOffset(if isTouch then 130 else 160, if isTouch then 44 else 36),
 		BackgroundColor3 = UI.Colors.Accent,
 		Font = UI.FontHeavy,
 		TextSize = 17,
@@ -326,7 +359,7 @@ local function build()
 	})
 	local cancelButton = UI.button({
 		Name = "Cancel",
-		Size = UDim2.fromOffset(100, 36),
+		Size = UDim2.fromOffset(if isTouch then 90 else 100, if isTouch then 44 else 36),
 		Font = UI.Font,
 		TextColor3 = UI.Colors.Muted,
 		Text = if isTouch then "CANCEL" else "CANCEL  [F]",
@@ -339,14 +372,14 @@ local function build()
 	if isTouch then
 		local keypad = UI.new("Frame", {
 			Name = "Keypad",
-			LayoutOrder = 6,
-			Size = UDim2.fromOffset(276, 4 * 46 + 3 * 6),
+			LayoutOrder = 2,
+			Size = UDim2.fromOffset(3 * KEY_SIZE.X + 2 * KEY_GAP, 4 * KEY_SIZE.Y + 3 * KEY_GAP),
 			BackgroundTransparency = 1,
-			Parent = panel,
+			Parent = content, -- the right-hand column
 		}, {
 			UI.new("UIGridLayout", {
-				CellSize = UDim2.fromOffset(88, 46),
-				CellPadding = UDim2.fromOffset(6, 6),
+				CellSize = UDim2.fromOffset(KEY_SIZE.X, KEY_SIZE.Y),
+				CellPadding = UDim2.fromOffset(KEY_GAP, KEY_GAP),
 				SortOrder = Enum.SortOrder.LayoutOrder,
 			}),
 		})
@@ -386,11 +419,12 @@ local function build()
 		})
 	end
 
+	local cluster = UI.touchCluster() -- touch: beside Roblox's jump button
 	refs.openButton = UI.button({
 		Name = "OpenCodeEntry",
 		AnchorPoint = Vector2.new(1, 1),
-		Position = if isTouch then UDim2.new(1, -24, 1, -200) else UDim2.new(1, -20, 1, -24),
-		Size = if isTouch then UDim2.fromOffset(84, 84) else UDim2.fromOffset(128, 40),
+		Position = if isTouch then cluster.code.position else UDim2.new(1, -20, 1, -24),
+		Size = if isTouch then cluster.code.size else UDim2.fromOffset(128, 40),
 		BackgroundColor3 = UI.Colors.Panel,
 		BackgroundTransparency = 0.12,
 		Font = UI.FontHeavy,
@@ -401,6 +435,14 @@ local function build()
 	}, { UI.stroke(Color3.new(1, 1, 1), 1, 0.9) })
 	UI.accentBar(refs.openButton, if isTouch then "bottom" else "left", UI.Colors.Accent, 3)
 	refs.openButton.Activated:Connect(toggle)
+	local camera = workspace.CurrentCamera
+	if isTouch and camera then
+		camera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+			local placed = UI.touchCluster()
+			refs.openButton.Position = placed.code.position
+			refs.openButton.Size = placed.code.size
+		end)
+	end
 
 	render()
 end

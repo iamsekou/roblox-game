@@ -6,8 +6,72 @@
 -- used sparingly as thin bars. Text-bearing panels size themselves to their text (AutomaticSize)
 -- so nothing spills out of its box.
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local StarterPlayer = game:GetService("StarterPlayer")
+local UserInputService = game:GetService("UserInputService")
 
 local UI = {}
+
+-- Touch layouts (on-screen keypad, big ability buttons) are for devices without a keyboard. Studio-only:
+-- set attribute NAU_DevTouchUI = true on StarterPlayer (before pressing Play) to build them on a PC.
+function UI.isTouch(): boolean
+	if RunService:IsStudio() and StarterPlayer:GetAttribute("NAU_DevTouchUI") == true then
+		return true
+	end
+	return UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+end
+
+-- The screen size layouts are chosen for. Studio-only: attribute NAU_DevViewport = "844x390" on StarterPlayer
+-- pretends the screen is that size (with NAU_DevTouchUI, this lays out a phone on a PC).
+function UI.viewport(): Vector2
+	if RunService:IsStudio() then
+		local fake = StarterPlayer:GetAttribute("NAU_DevViewport")
+		local w, h
+		if type(fake) == "string" then
+			w, h = string.match(fake, "^(%d+)x(%d+)$")
+		end
+		if w and h then
+			return Vector2.new(tonumber(w) :: number, tonumber(h) :: number)
+		end
+	end
+	local camera = workspace.CurrentCamera
+	return if camera then camera.ViewportSize else Vector2.new(1024, 768)
+end
+
+-- Phones: the short side of the screen is 500 px or less (Roblox's own rule for its small touch controls).
+function UI.isPhone(): boolean
+	local viewport = UI.viewport()
+	return math.min(viewport.X, viewport.Y) <= 500
+end
+
+-- The settings gear sits at the top-right, below Roblox's top bar, with the yen counter to its left (Phase 4).
+-- 44 px on touch (minimum touch target), else the yen counter's height.
+function UI.gearSize(): number
+	return if UI.isTouch() then 44 else 30
+end
+
+-- Touch action buttons, arranged around Roblox's own jump button (Phase 4 phone pass). Roblox draws the jump
+-- button at 70 px, 25 px from the right and 20 px from the bottom when the screen's short side is 500 px or
+-- less (phones), else at 120 px, 50 px from the right and 90 px from the bottom (tablets). Layout:
+--   [E ultimate] [Q mild]
+--   [CODE]       [jump]
+-- Returns bottom-right anchored { position, size } per button (AnchorPoint 1, 1).
+export type Placement = { position: UDim2, size: UDim2 }
+function UI.touchCluster(): { code: Placement, mild: Placement, ultimate: Placement }
+	local phone = UI.isPhone()
+	local jumpSize = if phone then 70 else 120
+	local jumpRight = if phone then 25 else 50
+	local jumpBottom = if phone then 20 else 90
+	local codeSize = if phone then 72 else 84
+	local buttonSize = if phone then 64 else 84
+	local gap = 12
+	local column = jumpRight + jumpSize + gap -- right edge of the column left of the jump button
+	return {
+		code = { position = UDim2.new(1, -column, 1, -jumpBottom), size = UDim2.fromOffset(codeSize, codeSize) },
+		mild = { position = UDim2.new(1, -jumpRight, 1, -(jumpBottom + jumpSize + gap)), size = UDim2.fromOffset(buttonSize, buttonSize) },
+		ultimate = { position = UDim2.new(1, -column, 1, -(jumpBottom + codeSize + gap)), size = UDim2.fromOffset(buttonSize, buttonSize) },
+	}
+end
 
 UI.Colors = {
 	Ink = Color3.fromRGB(11, 12, 15), -- deepest backdrop

@@ -514,12 +514,24 @@ local function refreshPicker()
 end
 
 local function build()
-	isTouch = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+	isTouch = UI.isTouch()
 	local gui = UI.screen("NAU_Abilities", 5)
 	if isTouch then
-		-- Two square buttons beside the CODE button (which sits at bottom-right, 200 px up).
-		refs.slots.mild = makeSlot(gui, "mild", "Q", UDim2.new(1, -116, 1, -200), UDim2.fromOffset(84, 84))
-		refs.slots.ultimate = makeSlot(gui, "ultimate", "E", UDim2.new(1, -24, 1, -292), UDim2.fromOffset(84, 84))
+		-- Square buttons around Roblox's jump button, with the CODE button (UI.touchCluster). Re-placed if the
+		-- screen changes size (rotation, window resize).
+		local cluster = UI.touchCluster()
+		refs.slots.mild = makeSlot(gui, "mild", "Q", cluster.mild.position, cluster.mild.size)
+		refs.slots.ultimate = makeSlot(gui, "ultimate", "E", cluster.ultimate.position, cluster.ultimate.size)
+		local camera = workspace.CurrentCamera
+		if camera then
+			camera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+				local placed = UI.touchCluster()
+				for _, slot in { "mild", "ultimate" } do
+					refs.slots[slot].frame.Position = placed[slot].position
+					refs.slots[slot].frame.Size = placed[slot].size
+				end
+			end)
+		end
 	else
 		-- A row to the left of the [F] CODE button: [Q mild] [E ultimate] [F CODE].
 		refs.slots.ultimate = makeSlot(gui, "ultimate", "E", UDim2.new(1, -156, 1, -24), UDim2.fromOffset(176, 40))

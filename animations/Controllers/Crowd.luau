@@ -69,7 +69,19 @@ local function pick(rng: Random, list: { any }): any
 	return list[rng:NextInteger(1, #list)]
 end
 
+-- Player setting (Phase 4): "Auto" (graphics quality, capped on touch devices), "Off", "Low", "Medium", "High".
+local densityChoice = "Auto"
+
 local function density(): number
+	if densityChoice == "Off" then
+		return 0
+	elseif densityChoice == "Low" then
+		return Constants.CROWD_DENSITY_LOW
+	elseif densityChoice == "Medium" then
+		return Constants.CROWD_DENSITY_MID
+	elseif densityChoice == "High" then
+		return 1
+	end
 	local d = 1
 	local ok, level = pcall(function()
 		return UserSettings():GetService("UserGameSettings").SavedQualityLevel.Value
@@ -467,6 +479,19 @@ end
 
 function Crowd.count(): number
 	return #specs
+end
+
+-- Changing the density rebuilds the crowd of the arena that's loaded (if any) straight away.
+function Crowd.setDensity(choice: string)
+	if choice == densityChoice then
+		return
+	end
+	densityChoice = choice
+	local map = builtFor
+	local config = map and map:FindFirstChild("Crowd")
+	if map and config and map.Parent then
+		task.spawn(build, map, config)
+	end
 end
 
 local started = false

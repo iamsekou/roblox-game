@@ -86,6 +86,8 @@ test("[ABIL] client aim is sanitised: junk falls back, NaN is rejected", functio
 	T.eq(AbilityRules.flatAim(Vector3.new(0 / 0, 0, 0), fallback), fallback, "NaN")
 	T.truthy(AbilityRules.flatAim(Vector3.new(0, -0.5, -2), fallback):FuzzyEq(Vector3.new(0, 0, -1)), "flattened and normalised")
 	T.eq(AbilityRules.unitAim(Vector3.new(1e6, 0, 0)), nil, "absurd magnitude")
+	T.eq(AbilityRules.flatAim(Vector3.new(math.huge, 0, 0), fallback), fallback, "infinite (would turn into NaN positions)")
+	T.eq(AbilityRules.flatAim(Vector3.new(1e6, 0, 0), fallback), fallback, "absurd magnitude (flat)")
 	T.eq(AbilityRules.isSlot("mild"), true)
 	T.eq(AbilityRules.isSlot("super"), false)
 end)

@@ -20,6 +20,7 @@ local localPlayer = Players.LocalPlayer
 -- Every server answer gets a visible explanation; nothing fails silently.
 local MESSAGES: { [string]: { string } } = {
 	joined = { "Dropping into the fight!", "good" },
+	rate_limited = { "One moment...", "info" },
 	queued = { "You're queued. The round starts when enough fighters are ready.", "info" },
 	queued_round_ending = { "This round is wrapping up. You're queued for the next one.", "info" },
 	queued_match_full = { "The match is full (12/12). You'll drop in as soon as a slot opens.", "info" },
@@ -138,7 +139,7 @@ local function buildCard(gui: ScreenGui)
 		Name = "InspectCard",
 		AnchorPoint = Vector2.new(0, 0.5),
 		Position = UDim2.new(0, 16, 0.5, 0),
-		Size = UDim2.fromOffset(300, 262),
+		Size = UDim2.fromOffset(300, if UI.isTouch() then 266 else 262),
 		BackgroundColor3 = UI.Colors.Panel,
 		BackgroundTransparency = 0.04,
 		Visible = false,
@@ -153,7 +154,7 @@ local function buildCard(gui: ScreenGui)
 	}, { UI.corner(2) })
 	refs.cardName = UI.label({
 		Position = UDim2.fromOffset(0, 12),
-		Size = UDim2.new(1, -30, 0, 28),
+		Size = UDim2.new(1, if UI.isTouch() then -44 else -30, 0, 28), -- clear of the close button
 		TextSize = 24,
 		Font = UI.FontHeavy,
 		TextXAlignment = Enum.TextXAlignment.Left,
@@ -199,7 +200,7 @@ local function buildCard(gui: ScreenGui)
 	refs.cardAction = UI.button({
 		Name = "Action",
 		Position = UDim2.fromOffset(0, 190),
-		Size = UDim2.new(1, 0, 0, 40),
+		Size = UDim2.new(1, 0, 0, if UI.isTouch() then 44 else 40), -- 44: minimum touch target
 		Font = UI.FontHeavy,
 		TextSize = 17,
 		Parent = card,
@@ -210,8 +211,8 @@ local function buildCard(gui: ScreenGui)
 	local closeButton = UI.button({
 		Name = "Close",
 		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, 0, 0, 10),
-		Size = UDim2.fromOffset(28, 28),
+		Position = UDim2.new(1, if UI.isTouch() then 6 else 0, 0, if UI.isTouch() then 2 else 10),
+		Size = if UI.isTouch() then UDim2.fromOffset(44, 44) else UDim2.fromOffset(28, 28),
 		Text = "X",
 		TextSize = 16,
 		Parent = card,
@@ -227,7 +228,7 @@ local function build()
 		Name = "FightHolder",
 		AnchorPoint = Vector2.new(0.5, 1),
 		Position = UDim2.new(0.5, 0, 1, -16),
-		Size = UDim2.fromOffset(240, 112),
+		Size = UDim2.fromOffset(240, if UI.isTouch() then 134 else 112),
 		BackgroundTransparency = 1,
 		Parent = gui,
 	})
@@ -293,10 +294,10 @@ local function build()
 		Name = "LeaveQueue",
 		AnchorPoint = Vector2.new(0.5, 0),
 		Position = UDim2.new(0.5, 0, 0, 88),
-		Size = UDim2.fromOffset(120, 22),
+		Size = if UI.isTouch() then UDim2.fromOffset(150, 44) else UDim2.fromOffset(120, 22), -- 44: touch target
 		BackgroundColor3 = UI.Colors.Ink,
 		BackgroundTransparency = 0.25,
-		TextSize = 12,
+		TextSize = if UI.isTouch() then 15 else 12,
 		Text = "Leave queue",
 		Visible = false,
 		Parent = holder,

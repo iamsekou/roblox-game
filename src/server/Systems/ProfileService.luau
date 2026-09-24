@@ -18,6 +18,7 @@ local RunService = game:GetService("RunService")
 local Constants = require(ReplicatedStorage.Shared.Modules.Constants)
 local CharacterDefs = require(ReplicatedStorage.Shared.Modules.CharacterDefs)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
+local Settings = require(ReplicatedStorage.Shared.Modules.Settings)
 local ProfileData = require(script.Parent.Parent.Lib.ProfileData)
 local SafeStore = require(script.Parent.SafeStore)
 local EconomyService = require(script.Parent.EconomyService)
@@ -45,9 +46,9 @@ local function log(message: string)
 	end
 end
 
-local function tell(player: Player, status: string)
+local function tell(player: Player, status: string, settings: { [string]: any })
 	if player.Parent then
-		Remotes.ProfileState:FireClient(player, { status = status })
+		Remotes.ProfileState:FireClient(player, { status = status, settings = settings })
 	end
 end
 
@@ -93,8 +94,9 @@ local function load(player: Player)
 			entry.profile.yen = EconomyService.getBalance(player)
 			entry.profile.owned = EconomyService.boughtList(player)
 			entry.profile.equipped = AbilityService.applySavedEquip(player, profile.equipped)
+			entry.profile.settings = profile.settings
 			log(string.format("loaded %s: ¥%d, %d bought, equipped %s%s", player.Name, profile.yen, #profile.owned, profile.equipped, if force then " (lock taken over)" else ""))
-			tell(player, "loaded")
+			tell(player, "loaded", entry.profile.settings)
 			return
 		end
 		if SafeStore.isOffline() then
@@ -104,7 +106,7 @@ local function load(player: Player)
 	end
 	-- No DataStores (or no answer at all): the session still works, it just isn't saved.
 	log(string.format("%s is playing unsaved (%s)", player.Name, tostring(select(2, SafeStore.isOffline()) or "no response")))
-	tell(player, "offline")
+	tell(player, "offline", entry.profile.settings)
 end
 
 -- Saving -----------------------------------------------------------------------------------------
@@ -153,7 +155,30 @@ local function saveAll(release: boolean)
 	end
 end
 
+-- Settings (Phase 4): the client asks, the schema decides. Kept in the profile, so they're saved with it
+-- (and still work for the session when the profile couldn't load).
+local lastSettingsAt: { [Player]: number } = {}
+
+local function handleSetSettings(player: Player, changes: any)
+	local entry = entries[player]
+	if not entry then
+		return { status = "malformed", settings = Settings.defaults() }
+	end
+	local t = os.clock()
+	if lastSettingsAt[player] and t - lastSettingsAt[player] < Constants.SETTINGS_MIN_INTERVAL then
+		return { status = "rate_limited", settings = entry.profile.settings }
+	end
+	lastSettingsAt[player] = t
+	local updated, ok = Settings.apply(entry.profile.settings, changes)
+	if not ok then
+		return { status = "malformed", settings = entry.profile.settings }
+	end
+	entry.profile.settings = updated
+	return { status = "ok", settings = updated }
+end
+
 function ProfileService.Init()
+	Remotes.SetSettings.OnServerInvoke = handleSetSettings
 	-- The profile follows the game as it happens, so it's already current when the player leaves.
 	EconomyService.onBalanceChanged(function(player, balance)
 		local entry = entries[player]
@@ -183,6 +208,7 @@ function ProfileService.Init()
 	Players.PlayerRemoving:Connect(function(player)
 		local entry = entries[player]
 		entries[player] = nil
+		lastSettingsAt[player] = nil
 		if entry then
 			if save(player, entry, true) then
 				log("saved and released " .. player.Name)

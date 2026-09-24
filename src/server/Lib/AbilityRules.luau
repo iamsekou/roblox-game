@@ -143,7 +143,8 @@ end
 
 -- A horizontal unit aim from a client-supplied look vector; `fallback` when it's unusable.
 function AbilityRules.flatAim(aim: any, fallback: Vector3): Vector3
-	if typeof(aim) == "Vector3" and aim.Magnitude == aim.Magnitude then -- rejects NaN
+	-- Rejects NaN (x ~= x) and infinite or absurd vectors (a client sends a unit look vector).
+	if typeof(aim) == "Vector3" and aim.Magnitude == aim.Magnitude and aim.Magnitude < 10 then
 		local flat = Vector3.new(aim.X, 0, aim.Z)
 		if flat.Magnitude > 0.1 then
 			return flat.Unit

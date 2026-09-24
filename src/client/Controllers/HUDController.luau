@@ -15,6 +15,7 @@ local UIMotion = require(ReplicatedStorage:WaitForChild("Animations"):WaitForChi
 local Client = script.Parent.Parent
 local ClientState = require(Client:WaitForChild("ClientState"))
 local UI = require(Client:WaitForChild("UI"))
+local Audio = require(Client:WaitForChild("Audio"))
 
 local HUDController = {}
 
@@ -27,11 +28,13 @@ local REFRESH_SECONDS = 0.1
 local TOAST_MAX_WIDTH = 520
 local DEATH_SATURATION = -0.85 -- the world drains of colour while you wait to respawn
 local LEADERBOARD_WIDTH = 190
+local LEADERBOARD_PHONE_ROWS = 6 -- rows shown on phones (short side of the screen <= 500 px)
 
 local refs: { [string]: any } = {}
 local lastPhase: string? = nil
 local lastSuddenDeath = false
 local wasInMatch = false
+local wasAlive = true -- so a death is heard once, not on every LifeState while waiting to respawn
 local bannerToken, toastToken, feedOrder = 0, 0, 0
 local deathGrade: ColorCorrectionEffect? = nil
 local deathGradeOn = false
@@ -206,10 +209,11 @@ local function build()
 		Parent = track,
 	})
 
+	-- Yen sits left of the settings gear (SettingsController, top-right corner).
 	local yenPanel, yenContent = UI.slab({
 		Name = "Yen",
 		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -10, 0, 8),
+		Position = UDim2.new(1, -(10 + UI.gearSize() + 6), 0, 8),
 		Size = UDim2.fromOffset(0, 30),
 		Parent = gui,
 	}, "X", { UI.padding(0, 12) })
@@ -306,7 +310,7 @@ local function build()
 	refs.feed = UI.new("Frame", {
 		Name = "Feed",
 		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -10, 0, 46),
+		Position = UDim2.new(1, -10, 0, 8 + math.max(30, UI.gearSize()) + 8), -- below the yen counter and gear
 		Size = UDim2.fromOffset(320, 150),
 		BackgroundTransparency = 1,
 		Parent = gui,
@@ -421,6 +425,12 @@ local function build()
 	})
 
 	deathGrade = UI.new("ColorCorrectionEffect", { Name = "NAU_DeathGrade", Saturation = 0, Parent = Lighting })
+end
+
+-- Phones (Phase 4): while the touch keypad is open, the in-match kill list steps aside for it.
+local entryOpen = false
+function HUDController.setEntryOpen(open: boolean)
+	entryOpen = open
 end
 
 function HUDController.toast(text: string, tone: string?)
@@ -540,11 +550,15 @@ local function onRoundChanged()
 		if r.phase == "RoundEnd" and lastPhase == "InRound" and ClientState.isParticipant() then
 			local won = r.result
 				and (r.result.userId == localPlayer.UserId or (r.result.team ~= nil and r.result.team == ClientState.myTeam()))
+			if won then
+				Audio.play("round_won")
+			end
 			showBanner(resultText(r.result), "ROUND OVER", if won then UI.Colors.Gold else UI.Colors.Text, 5)
 		end
 		lastPhase = r.phase
 	end
 	if r.phase == "InRound" and r.suddenDeath and not lastSuddenDeath and ClientState.isParticipant() then
+		Audio.play("sudden_death")
 		showBanner("SUDDEN DEATH", if ClientState.myTeam() then "NEXT TEAM TO TAKE THE LEAD WINS" else "NEXT SOLE LEADER WINS", UI.Colors.Bad, 3)
 	end
 	lastSuddenDeath = r.suddenDeath == true
@@ -553,6 +567,9 @@ end
 local function onLifeChanged()
 	local life = ClientState.life
 	if life.alive == false and life.inMatch then
+		if wasAlive then
+			Audio.play("eliminated")
+		end
 		if life.cause == "code" then
 			refs.overlayTitle.Text = "ELIMINATED"
 			refs.overlaySub.Text = string.upper(string.format("%s read your number", life.byName or "Someone"))
@@ -565,6 +582,7 @@ local function onLifeChanged()
 		end
 	end
 	if life.inMatch and life.alive and not wasInMatch then
+		Audio.play("round_start")
 		local team = ClientState.myTeam()
 		if team then
 			showBanner("FIGHT", string.format("YOU'RE %s · MOST TEAM ELIMINATIONS WINS", string.upper(team)), ClientState.teamColor(team), 3)
@@ -573,6 +591,7 @@ local function onLifeChanged()
 		end
 	end
 	wasInMatch = life.inMatch == true
+	wasAlive = life.alive == true
 end
 
 local function setDeathGrade(on: boolean)
@@ -669,7 +688,7 @@ local function refresh()
 
 	-- Leaderboard: most eliminations first; ties keep a stable order by name. Team battle: your team's
 	-- fighters first, each row marked with its team colour.
-	refs.leaderboard.Visible = showScores
+	refs.leaderboard.Visible = showScores and not entryOpen
 	if showScores then
 		local rows = {}
 		for _, entry in r.scores do
@@ -690,17 +709,37 @@ local function refresh()
 			end
 			return string.lower(a.name) < string.lower(b.name)
 		end)
+		-- Phones (Phase 4): only the top rows fit beside the thumbstick; your own row always shows.
+		for i, row in rows do
+			row.rank = i
+		end
+		local maxRows = if UI.isPhone() then LEADERBOARD_PHONE_ROWS else #refs.leaderRows
+		if #rows > maxRows then
+			local shown = table.move(rows, 1, maxRows, 1, {})
+			local mineShown = false
+			for _, row in shown do
+				mineShown = mineShown or row.userId == localPlayer.UserId
+			end
+			if not mineShown then
+				for _, row in rows do
+					if row.userId == localPlayer.UserId then
+						shown[maxRows] = row
+					end
+				end
+			end
+			rows = shown
+		end
 		for i, ref in refs.leaderRows do
 			local row = rows[i]
 			ref.frame.Visible = row ~= nil
 			if row then
 				local mine = row.userId == localPlayer.UserId
-				ref.rank.Text = tostring(i)
+				ref.rank.Text = tostring(row.rank)
 				ref.name.Text = string.upper(row.name)
 				ref.kills.Text = tostring(row.score)
 				ref.frame.BackgroundTransparency = if mine then 0.2 else 1
 				ref.name.TextColor3 = if mine then UI.Colors.Gold else UI.Colors.Text
-				ref.kills.TextColor3 = if i == 1 and row.score > 0 and not teamRound then UI.Colors.Gold else UI.Colors.Text
+				ref.kills.TextColor3 = if row.rank == 1 and row.score > 0 and not teamRound then UI.Colors.Gold else UI.Colors.Text
 				local color = ClientState.teamColor(row.team)
 				ref.stripe.Visible = color ~= nil
 				if color then
@@ -748,6 +787,7 @@ local function onRoundAlert(alert: any)
 		subtitle = if team then "MOST TEAM ELIMINATIONS WINS" else "MOST ELIMINATIONS WINS"
 	end
 	showBanner(title, subtitle, UI.Colors.Bad, 3)
+	Audio.play("time_left")
 	UIMotion.pop(refs.timer)
 end
 
@@ -786,6 +826,7 @@ local function showIncome(notice: any)
 		Parent = content,
 	})
 	UIMotion.pop(refs.yen)
+	Audio.play("income")
 	local slide = TweenInfo.new(4.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 	TweenService:Create(popup, slide, { Position = UDim2.new(0, -20, 0.5, 0) }):Play()
 	task.wait(3.7)
@@ -828,11 +869,18 @@ function HUDController.Start()
 		end
 	end)
 	-- Saved progress: only the failure is worth interrupting for (a normal load is silent).
-	Remotes.ProfileState.OnClientEvent:Connect(function(payload)
-		if type(payload) == "table" and payload.status == "offline" then
+	local function onProfile()
+		local profile = ClientState.profile
+		if profile and profile.status == "offline" then
 			HUDController.toast("Progress isn't saving this session", "bad")
 		end
+	end
+	ClientState.Changed:Connect(function(kind)
+		if kind == "profile" then
+			onProfile()
+		end
 	end)
+	onProfile()
 	task.spawn(function()
 		local stats = localPlayer:WaitForChild("leaderstats", 15)
 		local yen = stats and stats:WaitForChild("Yen", 15)

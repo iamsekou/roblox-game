@@ -13,7 +13,7 @@ Source of truth for approved decisions, contracts and phase status. Code constan
 | 2.2 — Owner changes (2026-09-23): 2-step facing plates, arena rework, aggressive FIGHT button, random hidden spawns, smaller HUD, anime sprint | Built; 37/37 unit tests; solo-tested; plate rule between players passed the owner's 3-player check (2026-09-23) |
 | 3 prep — Ability sheet | **Approved 2026-09-23** (`docs/ABILITIES.md`; Goku and Gojo changed, Krillin/Sasuke/Gojo reading exceptions) |
 | 3 — Team mode, economy, persistence, Robux entitlements, abilities, respawn character select | **Plan approved 2026-09-23** (all 8 items). Built: abilities (all 10), Q/E + touch, character select, saved progress, yen shop, team battle 6v6, animation playback (placeholders); extras: swords, clashes, kill leaderboards, crowd, passive yen, 30 s alert. 114/114 unit tests. **Waiting on the owner:** Game Pass ids (item 6) and Developer Product ids (Robux yen bundles), authored animation clips (item 8), multi-player tests of team battle and saves |
-| 4 — Polish, 5 more maps (plan only until map 1 plays well), 12-player stress test | Not started |
+| 4 — Polish, 5 more maps (plan only until map 1 plays well), 12-player stress test | **Approved 2026-09-23 (owner: all items, map 2 planning skipped for now). Built:** settings menu, phone/tablet pass, how-to-play walkthrough, 12-player stress harness + measurements, remote security review (2 fixes), sound (music + effects). Details in the Phase 4 section below |
 
 ## Locked decisions
 
@@ -46,6 +46,17 @@ Source of truth for approved decisions, contracts and phase status. Code constan
 | Robux yen bundles | **Approved 2026-09-23, not built (waiting for the owner's Developer Product ids).** Four Developer Products: ¥5,000 / ¥12,000 / ¥27,500 / ¥75,000 (Robux prices set by the owner on Roblox; suggested 49 / 99 / 199 / 499 R$). A YEN tab in the holo shop, plus a "get more yen" button beside "NEED ¥X MORE". Every receipt is recorded in the player's saved profile before `PurchaseGranted` is returned (duplicates never pay twice; a crash means Roblox retries). Built together with the Sazuki/Gozen Game Passes (item 6) |
 | Yen ladder | Placeholder (approved as placeholder): 1,500 / 3,000 / 5,000 / 7,500 / 10,000 / 13,000 |
 
+## Phase 4 (built 2026-09-23)
+
+| Topic | Decision |
+|---|---|
+| Settings | Gear button top-right (below Roblox's top bar, yen counter to its left). MOTION: speed lines, camera sway, wide running view, screen shake (off → red edge flash instead, so a wrong code is still signalled). VISUALS: crowd Auto / Off / Low / Medium / High (changes rebuild the crowd at once). AUDIO: music and effects volume. Schema shared by client and server (`Modules/Settings`); the server validates every change (all or nothing, one per 0.2 s) and keeps it in the saved profile (`settings`). Hidden state setting `tutorialDone` |
+| How to play | Five cards (different number per observer; range + facing; type to eliminate; two misses; abilities and winning). Opens by itself on a first visit (lobby, once the profile loads) until finished or skipped; HOW TO PLAY in settings reopens it (`Controllers/TutorialController`) |
+| Phones / tablets | "Phone" = the screen's short side ≤ 500 px (Roblox's own rule). Touch buttons cluster round Roblox's jump button: [E][Q] above [CODE][jump] (`UI.touchCluster`). Touch code entry is two columns (code + keypad) to fit a sideways phone; the kill list hides while it's open on phones and shows 6 rows (your own row always). Touch targets ≥ 44 pt, text ≥ 11 pt. The shop has a compact phone layout (700-unit canvas, scrolling roster) and hides Roblox's touch controls while open |
+| Stress test | Studio-only bots (`NAU_DevStressBots`, `Systems/StressTestService`) wearing the player's avatar, running with its run animation; the client dresses them like fighters. Measured on the owner's PC with 12 fighters + full crowd: 60 fps average, 99% of frames ≤ 20 ms, server physics 0.94 ms (details in HANDOFF) |
+| Security review | Every client-callable remote checked (validation, identity, rate limits, cost). Fixed: FIGHT / leave-queue rate-limited (0.5 s; each one broadcast to everyone); ability aim rejects infinite vectors (would have made NaN positions). Known and accepted: characters are client-simulated (Roblox), so movement speed/teleports and ability knockbacks aren't server-verified; a server-side movement check is a recommended follow-up |
+| Sound | All sounds through `src/client/Audio` (Music and Effects sound groups, set by the settings). Licensed library audio only (APM Music, Pro Sound Effects, DistroKid official), never user uploads; picks listed there and in HANDOFF, all verified to load. Lobby "Sunset Song", arena "Thunder over Kyoto"; effects for round start, eliminations, wrong code, 30 s alert, sudden death, win, ability casts (3D, 120 studs), income and the shop slots |
+
 ## Anti-brute-force reasoning
 
 With ≤11 live targets among 10,000 codes, a random guess hits with p ≈ 0.0011. Two misses end a life
@@ -66,7 +77,7 @@ Waiting ──(≥MIN queued)──▶ Intermission ──(15 s)──▶ InRoun
 
 | Remote | Kind | Direction | Payload |
 |---|---|---|---|
-| RequestFight | Function | C→S | `()` → `{status}`: joined, queued, queued_round_ending, queued_match_full, already_queued, already_in_match, queue_full |
+| RequestFight | Function | C→S | `()` → `{status}`: joined, queued, queued_round_ending, queued_match_full, already_queued, already_in_match, queue_full, rate_limited (FIGHT and leave-queue share a 0.5 s limit) |
 | LeaveQueue | Function | C→S | `()` → `{status}` |
 | GetRoundState / RoundState | Function / Event | C→S / S→all | `{seq, phase, endsAt, graceEndsAt, mode, mapName, suddenDeath, maxPlayers, minPlayers, participants[], queued[], scores[{userId,score,alive,protected,team?}], teamScores? ({teamName = eliminations}, team battle only), result}` |
 | SubmitCode | Function | C→S | `(code: string)` → `{status, strikesLeft?, targetName?, yen?}`; status ∈ eliminated, wrong, self_eliminated, stale, teammate, protected, malformed, rate_limited, not_alive, not_in_match, round_over |
@@ -80,7 +91,8 @@ Waiting ──(≥MIN queued)──▶ Intermission ──(15 s)──▶ InRoun
 | Leaderboards | Event | S→all | `{serverTime, offline, boards = {AllTime, Weekly = {rows, you, syncedAt, resetAt?}}}`; rows = top 10 `{userId, name, kills, live, rank, delta}` (`Systems/LeaderboardService`) |
 | GetLeaderboards | Function | C→S | `()` → the latest Leaderboards payload (for players who just joined) |
 | PurchaseItem | Function | C→S | `(characterId)` → `{status, granted?, price?, yen}`; status ∈ bought, insufficient, owned, not_for_yen, unknown. Rules in `Lib/ShopRules` (yen tier N also grants every lower yen tier); check, spend and grant happen without yielding (`Systems/ShopService`) |
-| ProfileState | Event | S→one player | `{status = "loaded" or "offline"}` once the saved profile has loaded, or when this session can't be saved (the client shows a toast for `offline`) (`Systems/ProfileService`) |
+| ProfileState | Event | S→one player | `{status = "loaded" or "offline", settings}` once the saved profile has loaded, or when this session can't be saved (the client shows a toast for `offline`) (`Systems/ProfileService`). Cached in `ClientState.profile` (only the first listener gets an event fired before anyone listens) |
+| SetSettings | Function | C→S | `({[key] = value})` → `{status = "ok" or "rate_limited" or "malformed", settings}`; validated against `Modules/Settings`, all or nothing, one change per 0.2 s |
 | UseAbility | Function | C→S | `(slot: "mild" or "ultimate", aim: Vector3, eye: Vector3)` → `{status, readyAt?}` (aim = camera direction, eye = camera position, trusted only within 40 studs of the character); status ∈ ok, cooldown, casting, protected, not_alive, not_in_match, not_available, no_target, no_room, clashing, malformed. The aim is only a direction hint; every range/cone/line-of-sight check is server-side |
 | EquipCharacter | Function | C→S | `(characterId)` → `{status, equipped?}`; status ∈ equipped, not_owned, in_fight, unknown. Allowed in the lobby or while waiting to respawn |
 | AbilityState | Event | S→one player | `{equipped, character?, implemented?, mild = {name, readyAt}?, ultimate = {name, readyAt}?}` |

@@ -14,6 +14,7 @@ local SprintFX = require(AnimControllers:WaitForChild("SprintFX"))
 local LightingFX = require(AnimControllers:WaitForChild("LightingFX"))
 local Crowd = require(AnimControllers:WaitForChild("Crowd"))
 local ClientState = require(script.Parent.Parent:WaitForChild("ClientState"))
+local Audio = require(script.Parent.Parent:WaitForChild("Audio"))
 
 local FXController = {}
 
@@ -56,10 +57,23 @@ function FXController.Start()
 		return if ClientState.life.inMatch then "Arena" else "Lobby"
 	end
 	LightingFX.start(lightingPreset())
+	Audio.music(if ClientState.life.inMatch then "arena" else "lobby")
 	Crowd.start() -- builds the colosseum crowd whenever an arena with Crowd rows appears
 	ClientState.Changed:Connect(function(kind)
 		if kind == "life" then
 			LightingFX.apply(lightingPreset())
+			Audio.music(if ClientState.life.inMatch then "arena" else "lobby")
+		end
+	end)
+
+	-- Every ability cast whooshes at its caster, heard by everyone nearby (3D sound).
+	Remotes.AbilityFX.OnClientEvent:Connect(function(event)
+		if type(event) == "table" and event.kind == "cast" then
+			local character = characterOf(event.caster, 0)
+			local root = character and character:FindFirstChild("HumanoidRootPart")
+			if root then
+				Audio.play("ability_cast", root)
+			end
 		end
 	end)
 

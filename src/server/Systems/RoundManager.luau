@@ -545,7 +545,23 @@ function RoundManager.getMatch(): any
 	return nil
 end
 
+-- Queue requests re-broadcast the round state to everyone, so one player can't ask more than every
+-- QUEUE_MIN_INTERVAL seconds (Phase 4 security review).
+local lastQueueRequest: { [Player]: number } = {}
+local function queueRateLimited(player: Player): boolean
+	local t = os.clock()
+	local last = lastQueueRequest[player]
+	if last and t - last < Constants.QUEUE_MIN_INTERVAL then
+		return true
+	end
+	lastQueueRequest[player] = t
+	return false
+end
+
 function RoundManager.requestFight(player: Player)
+	if queueRateLimited(player) then
+		return { status = "rate_limited" }
+	end
 	local match = state.match
 	if match and not match.ended and match.participants[player.UserId] then
 		return { status = "already_in_match" }
@@ -573,6 +589,9 @@ function RoundManager.requestFight(player: Player)
 end
 
 function RoundManager.leaveQueue(player: Player)
+	if queueRateLimited(player) then
+		return { status = "rate_limited" }
+	end
 	if not queued[player] then
 		return { status = "not_queued" }
 	end
@@ -591,6 +610,7 @@ function RoundManager.Init()
 	Players.PlayerRemoving:Connect(function(player)
 		queued[player] = nil
 		pendingRespawn[player] = nil
+		lastQueueRequest[player] = nil
 		local match = state.match
 		if match and match.participants[player.UserId] then
 			match:removeParticipant(player.UserId, now())

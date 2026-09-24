@@ -47,7 +47,12 @@ you eliminate someone by typing the number *you* see on them. Studio place: "InD
   Leaderboards: `NAU_DevFakeKills = "userId:count,..."` (ServerScriptService) injects kills. Round end:
   `NAU_DevRoundSeconds = <n>` (ServerScriptService) shortens rounds that start after it's set (tests the 30 s alert
   and sudden death). Friend booster: `NAU_DevFriends = <n>` (on a Player) fakes that many friends in the server. Mode:
-  `NAU_DevMode = "Team6v6"` or `"FFA"` (ServerScriptService) forces the mode of the next rounds (team battle solo). Without Studio API
+  `NAU_DevMode = "Team6v6"` or `"FFA"` (ServerScriptService) forces the mode of the next rounds (team battle solo).
+  Phone layouts on a PC: before pressing Play set `NAU_DevTouchUI = true` (touch controls) and
+  `NAU_DevViewport = "844x390"` (layout size) on **StarterPlayer**, in Edit mode; remove both afterwards.
+  Stress test: during a round, `NAU_DevStressBots = 11` (ServerScriptService) runs 11 bot fighters; 0 removes them.
+  Studio's tooling resets the camera to Custom after each `execute_luau` call, so the shop's scripted camera looks
+  wrong in tests driven that way (not a game bug). Without Studio API
   access the DataStores run offline (the boards show this server's session). Studio command-bar
   `require`s get their own module copies, so test through remotes and the GUI, not by reading module state. Anything involving two players needs **Test → Clients and Servers**, which
   only the owner can launch.
