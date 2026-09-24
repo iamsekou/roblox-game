@@ -16,6 +16,7 @@ local ORDER = {
 	"IncomeService",
 	"LeaderboardService",
 	"ProfileService",
+	"RobuxService", -- after ProfileService: bundle receipts are saved through it
 	"StressTestService", -- Studio only
 }
 

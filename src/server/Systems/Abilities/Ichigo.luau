@@ -1,6 +1,6 @@
 -- Ichigo (approved sheet, docs/ABILITIES.md).
---   Mild  — Flash Step: a 22-stud dash (stops short of walls); your plate vanishes for its 0.4 s.
---   Ult   — Moon Fang Wave: 1 s charge, then a wide crescent wave sweeps 40 studs forward and leaves a
+--   Mild  — Blur Step: a 22-stud dash (stops short of walls); your plate vanishes for its 0.4 s.
+--   Ult   — Crescent Wave: 1 s charge, then a wide crescent wave sweeps 40 studs forward and leaves a
 --           dark trail for 3 s that slows opponents inside it by 40 %.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -13,7 +13,7 @@ local Ichigo = {}
 
 local CHEST = Vector3.new(0, 1.5, 0)
 
--- Owner, 2026-09-23: Flash Step goes where you look — the spot at the centre of your screen, up to 22 studs.
+-- Owner, 2026-09-23: Blur Step goes where you look — the spot at the centre of your screen, up to 22 studs.
 -- Looking at the ground: land there. Looking at a wall: stop just short of it. Looking up: dash up that way.
 Ichigo.mild = {
 	prepare = function(ctx)

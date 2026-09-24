@@ -82,6 +82,12 @@ local Constants = {
 	PROFILE_LOAD_RETRY_SECONDS = 4, -- a profile locked by another server is re-tried this often...
 	PROFILE_LOAD_ATTEMPTS = 8, -- ...this many times (the other server's save-on-leave), then taken over
 	PROFILE_SHUTDOWN_WAIT_SECONDS = 25, -- a closing server waits this long for saves (Roblox allows 30)
+
+	-- Robux purchases (Phase 3 item 6 + credit bundles; ids and amounts in Modules/RobuxCatalog).
+	PURCHASE_RECEIPTS_KEPT = 100, -- credited bundle receipts remembered per profile (a retried receipt never pays twice)
+	PURCHASE_PROFILE_WAIT_SECONDS = 45, -- a receipt arriving while the profile loads waits this long, then Roblox retries
+	GAMEPASS_CHECK_ATTEMPTS = 3, -- asking Roblox whether a joining player owns a Game Pass...
+	GAMEPASS_CHECK_RETRY_SECONDS = 2, -- ...retried this often when the request fails
 	STUDIO_STORE_SUFFIX = "_Studio", -- Studio's DataStores are kept apart from the live game's
 	SETTINGS_MIN_INTERVAL = 0.2,
 
@@ -290,6 +296,11 @@ local Constants = {
 	-- unlocked; set a number on a Player to grant them that much yen. Both ignored in live servers.
 	DEV_UNLOCK_ATTRIBUTE = "NAU_DevUnlockAll",
 	DEV_GRANT_YEN_ATTRIBUTE = "NAU_DevGrantYen",
+	-- Studio-only: set "<productId>" or "<productId>:<purchaseId>" on a Player to run a fake credit-bundle receipt
+	-- through the real ProcessReceipt path (the same purchaseId twice tests a retried receipt). The decision is
+	-- written back to NAU_DevReceiptResult. Ignored in live servers.
+	DEV_RECEIPT_ATTRIBUTE = "NAU_DevReceipt",
+	DEV_RECEIPT_RESULT_ATTRIBUTE = "NAU_DevReceiptResult",
 	-- Studio-only: "userId:count,..." on ServerScriptService adds test kills to both leaderboards. Ignored live.
 	DEV_FAKE_KILLS_ATTRIBUTE = "NAU_DevFakeKills",
 	-- Studio-only: a number on a Player makes the friend booster count that many friends in the server (solo

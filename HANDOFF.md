@@ -1,6 +1,8 @@
 # HANDOFF — Numbers Assassin Universe
 
-Last updated: 2026-09-24: Phase 4, the movement check and Luffo's stretching grapple arm, all committed.
+Last updated: 2026-09-24: all work committed. The owner declared the game's **first drop ready and complete**
+(2026-09-24). Last commits: Boundless rename (`f82898d`), then Yern Credits, original ability names, Phase 3 item 6
+(Robux characters + credit bundles), the speed-lines fix and Robux prices on the lobby bubbles.
 Current state first; a condensed history is at the end.
 
 Labels: **[Verified]** = checked directly (test output, measurement, screenshot, or file/Studio inspection).
@@ -18,14 +20,14 @@ Phase 3 (plan approved 2026-09-23, 8 items), worked in the owner's order:
 | 3 Choose character at the pedestal / respawn screen | Done |
 | 4 Saved progress (yen, owned characters, equipped) | Done 2026-09-23 (section 2), committed |
 | 5 Yen shop | Done (shop cottage in the lobby garden); purchases now saved |
-| 6 Robux characters via Game Passes | Approved; waiting for the owner to create the two passes and send their ids (steps given 2026-09-23; never invent ids). To be built together with Robux yen bundles (Developer Products; bundle list approved 2026-09-23, see `docs/DESIGN.md`). Owner will supply both sets of ids later |
+| 6 Robux characters via Game Passes | Built 2026-09-24 with the Robux credit bundles, from the owner's ids (section 2); committed. Owner: rename product 3714587623 on Roblox from "2000 YERN CREDITS" to "20000 YERN CREDITS" (it grants 20,000) |
 | 7 Team 6v6 mode alongside FFA | Built 2026-09-23, all 8 decisions approved (section 2); committed; needs a multi-player test |
 | 8 Hand-keyframed animations | Playback + fluid placeholders done; clips pending from the owner (`docs/ANIMATING.md`) |
 
 Extras added at the owner's request this session: swords and slash effects, clashes, kill leaderboards,
 colosseum crowd, passive yen + friend booster, 30-second alert (the four open choices on these were approved as built).
 
-**Phase 4** (approved 2026-09-23: all items; map 2 planning skipped for now). Built, uncommitted:
+**Phase 4** (approved 2026-09-23: all items; map 2 planning skipped for now). Committed (`ad4aa81`):
 
 | Item | State |
 |---|---|
@@ -64,13 +66,15 @@ colosseum crowd, passive yen + friend booster, 30-second alert (the four open ch
 | Arena "The Proving Grounds": circular stadium, terrain, dense cover, random unmarked spawns, crowd bowl | `assets/Builders/ProvingGrounds`, `Systems/MapService` | [Verified] |
 | Run feel: FOV 70°→96°, speed lines, camera lean/bob, ninja-run pose, trails, dust | `animations/Controllers/RunFOV`, `SprintFX` | [Verified] |
 | **Saved progress**: yen, yen purchases and equipped character in one DataStore record per player; session lock (wait 4 s × 8 for another server's fresh lock, then take over; stale after 180 s); a save only writes while holding the lock; autosave 60 s, save + release on leave and shutdown; loads sanitised; unsaved-session toast. Studio stores are separate (`_Studio` suffix, leaderboards too) | `Lib/ProfileData`, `Systems/ProfileService`, `Systems/SafeStore`, `EconomyService` (applySaved, listeners), `AbilityService` (applySavedEquip, onEquipped) | 5 unit tests. In Studio with real DataStores [Verified]: new profile; bought Vejaro (+Krillo) and equipped → stop → restart restored ¥10,000, 2 bought, Vejaro, `Zorin` still `not_owned`; a planted foreign lock made autosave refuse to overwrite; the next join waited ~26 s then took over and loaded the other server's data. Live servers, real server hops, the offline toast [Not tested] |
-| **Settings menu** (Phase 4): gear top-right; speed lines, camera sway, wide running view, screen shake (off → red edge flash), crowd Auto/Off/Low/Medium/High, music + effects volume; HOW TO PLAY button. Saved in the profile, validated by the server | `Modules/Settings`, `Controllers/SettingsController`, `ProfileService` (SetSettings), `SprintFX`/`RunFOV`/`CameraShake`/`Crowd` switches, `src/client/Audio` | 4 unit tests. Real clicks [Verified]: speed lines off → no streaks while running, on → streaks; wide view on → 96°, off → stays 70°; screen shake off → edge flash (35% opaque) and no camera offset; crowd Low 3,336 parts → High 7,498 rebuilt live; bad request refused whole; rate limit; settings restored after stop → start. Camera sway not measured separately [Not tested] |
+| **Settings menu** (Phase 4): gear top-right; speed lines, camera sway, wide running view, screen shake (off → red edge flash), crowd Auto/Off/Low/Medium/High, music + effects volume; HOW TO PLAY button. Saved in the profile, validated by the server | `Modules/Settings`, `Controllers/SettingsController`, `ProfileService` (SetSettings), `SprintFX`/`RunFOV`/`CameraShake`/`Crowd` switches, `src/client/Audio` | 4 unit tests. Real clicks [Verified]: speed lines off → no streaks while running, on → streaks (2026-09-24, owner: the hand wind trails still showed with it off and read as speed lines; the setting now hides them too, on every fighter this client draws: off → edge lines 0/23 and trails 0/23 samples while running, on → 23/23 each [Verified]); wide view on → 96°, off → stays 70°; screen shake off → edge flash (35% opaque) and no camera offset; crowd Low 3,336 parts → High 7,498 rebuilt live; bad request refused whole; rate limit; settings restored after stop → start. Camera sway not measured separately [Not tested] |
 | **Phone / tablet layouts** (Phase 4): touch cluster round Roblox's jump button; two-column touch keypad; kill list 6 rows on phones and hidden while the keypad is open; 44 pt touch targets on the card, settings, keypad, leave-queue; compact phone shop | `UI` (isTouch, isPhone, viewport, touchCluster, gearSize), `AbilityController`, `SubmissionController`, `HUDController`, `LobbyController`, `SettingsController`, `ShopController` (buildPhonePanels) | Emulated 844×390 phone with a measuring script [Verified]: arena HUD, keypad open, lobby, character card, settings and shop all 0 issues (text ≥ 11 pt, targets ≥ 44 pt, nothing off-screen or under the jump button, no overlaps); desktop shop geometry unchanged. Real phones and tablets [Not tested] |
 | **How to play** (Phase 4): five cards on a first visit, reopenable from settings; "seen" saved | `Controllers/TutorialController`, `Settings.tutorialDone` | Opened by itself on first Play, clicked through all five, saved `tutorialDone = true`, didn't reopen after stop → start, HOW TO PLAY reopened it [Verified]. The card-4 mark was changed from ✕ (missing in the font) to X after the last screenshot [Not re-checked visually] |
 | **12-player stress test** (Phase 4): Studio-only bots | `Systems/StressTestService`, `SprintFX` (dresses bots) | Owner's PC, Studio Play (client and server in one process), arena + High crowd [Verified]: 1 fighter 16.7 ms avg (60 fps), 99th pct 21.1 ms; 12 fighters 16.8 ms avg (60 fps), 99th pct 20.1 ms, one 91 ms hitch (bots spawning), memory 2,290 → 2,305 MB, server physics 0.00 → 0.94 ms. Studio's network counters are meaningless here (one process). Phones, real network [Not tested] |
 | **Movement check** (2026-09-24): server samples characters 10×/s against a distance budget; the game's own knockbacks, dashes and grapples raise the limit; server teleports reset it; violations are undone (back up to a second) plus 1.5 s without new numbers; no kicks | `Lib/MovementRules`, `Systems/MovementGuard`, `AbilityService` (sendEffect, teleport/clash resets), `PlayerLifeService` (spawn reset) | 7 unit tests. Solo Play [Verified]: running, strafing and jumping in the lobby, a spawn and two respawns, Luffo's real grapple (26 studs at 120 studs/s) and Vejaro's launch → no pull-backs; a client-side 50-stud teleport → put back at the exact start; forcing 90 studs/s → caught twice within ~0.75 s, net 0.1 studs gained. Multi-player, real network lag, Phase Shift, clash stances [Not tested] |
 | **Luffo's Stretch Grapple arm** (2026-09-24): rubber arm from the elbow with Luffo's own hand, ripple and thinning, grab with squash and dust, hold during the pull, snap back | `animations/Controllers/AbilityFX` (luffyGrapple), `Abilities/Luffy` (sends the surface normal) | Real grapple at full speed [Verified]: arm out at the cast, grab + dust 0.33 s later, pull, arm gone and forearm back on arrival. Slowed test screenshots [Verified]: the arm stretching out of the sleeve, the hand gripping a lamp post. Feel at full speed: owner to judge |
 | **Sound** (Phase 4): lobby/arena music, effects for round start, elimination (you / of you), wrong code, 30 s alert, sudden death, win, ability casts (3D), income, shop slots | `src/client/Audio`, hooks in `HUDController`, `SubmissionController`, `FXController`, `ShopController` | All 18 candidate ids load here [Verified]. In Play [Verified]: lobby music in the Music group, arena music + round-start gong on entering, ability cast at the caster, wrong code, eliminated, 30 s alert, income. Sudden death, the kill sound, win [Not tested]. How it all sounds: owner to judge (Claude can't listen) |
+| **Robux characters + credit bundles** (Phase 3 item 6, 2026-09-24, owner's ids): Game Passes for Sazuki/Gozen (2,499 R$), checked with Roblox on join and granted at once when bought in game; four credit bundles (5,000 / 10,000 / 20,000 / 40,000 YC for 199 / 499 / 999 / 1,999 R$). Lobby bubbles under Sazuki/Gozen show "R$ 2,499" (live Game Pass price, owner 2026-09-24) instead of "ROBUX". Shop: BUY WITH ROBUX, live Robux prices, "+ GET CREDITS" on the balance and "NEED X YC · GET MORE" open a CREDITS overlay. Receipts saved with the credit before PurchaseGranted | `Systems/RobuxService`, `Modules/RobuxCatalog`, `ProfileService.creditPurchase`, `Lib/ProfileData` (receipts), `EconomyService` (grantPass), `AbilityService` (owns, pending Robux equip), `ShopController` | 1 unit test (receipts). Studio [Verified]: the owner's account owns both passes → both shown OWNED; credits overlay and live prices (screenshot); fake receipts through the real ProcessReceipt (`NAU_DevReceipt`): 999 R$ bundle credited 20,000 and saved, the same receipt again → granted, no second credit, unknown product → NotProcessedYet, after stop → start the receipt was still recognised; Sazuki equipped → rejoin → still equipped. Studio profile restored afterwards. **Not tested:** Roblox's real purchase dialog (automation can't click it: owner, click a bundle and a pass in Studio for a test purchase), buying a pass in game, live servers, the phone layout of the overlay beyond Studio's small window |
+| **Shown names** (owner, 2026-09-24): currency **Yern Credits / YC** (`Modules/Currency`; player-list column "Credits"); original ability names replace the shows' terms (Blitz Barrage, Blinding Burst, Rising Fury, Nova Blast, Cyclone Cut, Mirror Decoy, Vortex Orb, Blur Step, Crescent Wave; Boundless committed earlier) | `Modules/Currency`, `CharacterDefs`, toasts | Studio [Verified]: HUD, player list, lobby bubbles, shop prompt/menu, tutorial text fit; no "Infinity"/"¥" left in scripts. Internal ids keep the old keys |
 
 ## 3. Repository state
 
@@ -116,8 +120,8 @@ colosseum crowd, passive yen + friend booster, 30-second alert (the four open ch
 
 ## 6. Tests
 
-- Unit tests (`TestRunner`, in Play on the Server): **125/125** [Verified, 2026-09-24; MovementRules 7 added]. Specs: CodeBook 11, MatchCore 28,
-  PlateVisibility 10, AbilityRules 13, AnimTimeline 8, ClashRules 10, Spring 6, ShopRules 6, Leaderboard 5, ProfileData 5,
+- Unit tests (`TestRunner`, in Play on the Server): **126/126** [Verified, 2026-09-24; receipts test added]. Specs: CodeBook 11, MatchCore 28,
+  PlateVisibility 10, AbilityRules 13, AnimTimeline 8, ClashRules 10, Spring 6, ShopRules 6, Leaderboard 5, ProfileData 6,
   Income 6, TeamRules 6.
 - Owner-reported: 3-player check, multi-client ability test and 2-player clash test passed.
 - **Not tested**: saves on live servers and real server hops; phones/touch layouts (shop, crowd density);
@@ -145,22 +149,25 @@ colosseum crowd, passive yen + friend booster, 30-second alert (the four open ch
   tests only.
 - IP: names are original, but silhouettes come from franchise art, abilities/poses follow the shows, and the shop
   cottage is inspired by a Dragon Ball frame; the Robux passes for Sazuki/Gozen remain the highest-risk part.
-  Gozen's ultimate was renamed Infinity → **Boundless** (owner, 2026-09-24; internal ids too).
+  Gozen's ultimate was renamed Infinity → **Boundless** (owner, 2026-09-24; internal ids too). The currency is shown
+  as **Yern Credits / YC** (owner, 2026-09-24; `Modules/Currency`); internally, and in these notes, it's still "yen".
+  The shows' ability names were replaced with original ones (2026-09-24, list in `docs/ABILITIES.md`).
+- Robux pricing is the owner's: bundles give 25 YC per R$ at 199 but 20 YC per R$ at 499 / 999 / 1,999, so bigger
+  bundles are worse value, and the 40,000 bundle alone doesn't reach Ichiro (43,500, which unlocks every yen character).
+- The Roblox product 3714587623 is still named "2000 YERN CREDITS" but grants 20,000 (owner's answer): rename it.
 - Animation placeholders were tuned on one avatar's proportions; very different avatars may land hands off target.
 - `DEV_UNLOCK_ALL_IN_STUDIO` must stay Studio-only (it is).
 
 ## 8. Single next task
 
-**Owner: play Phase 4 and approve a commit** (it's uncommitted): listen to the music and effects, try the settings,
-the first-visit walkthrough (the Studio profile is reset so it shows), and ideally a phone (Roblox app, or Studio's
-device emulator). In parallel the multi-player test of team battle in Test → Clients and Servers (4+ clients): team
-split, teammate plates/tags, "That's a teammate", no friendly fire, team scoring; plus saved progress (leave, rejoin).
-Phase 4 is committed (`ad4aa81`), then the movement check and Luffo's grapple arm (2026-09-24; arm thickened at the
-owner's request: 1.05 studs at rest, 0.6 fully stretched).
-**Next build:** item 6 + Robux yen bundles (approved) as soon as the owner sends the pass and product ids.
+First drop declared ready by the owner (2026-09-24); everything is committed, **not pushed and not published**
+(both are the owner's call). Before or right after publishing: rename product 3714587623 to "20000 YERN CREDITS" on
+Roblox; do one test purchase by hand in Studio (shop → tap the balance → buy a bundle in Roblox's test dialog; no
+Robux are charged); and ideally the multi-player test of team battle (Test → Clients and Servers, 4+ clients). Live
+saves, live purchases and real phones are only exercised once the game is published.
 
-Owner items in parallel: review the placeholder animations and shop/leaderboard/crowd look; author the first
-animation clips (Gokai + Luffo); create the two Game Passes when ready (item 6).
+Owner items in parallel: listen to the sounds, review the placeholder animations and shop/leaderboard/crowd look;
+author the first animation clips (Gokai + Luffo).
 
 ---
 

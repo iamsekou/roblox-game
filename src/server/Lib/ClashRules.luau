@@ -13,12 +13,12 @@ local ClashRules = {}
 -- abilities never clash.
 ClashRules.CLASHABLE = {
 	["Goku.ultimate"] = true, -- Energy Wave
-	["Luffy.ultimate"] = true, -- Gatling Barrage
-	["Vegeta.ultimate"] = true, -- Big Bang Blast
-	["Zoro.ultimate"] = true, -- Tornado Slash
-	["Naruto.ultimate"] = true, -- Spiral Sphere
-	["Ichigo.mild"] = true, -- Flash Step
-	["Ichigo.ultimate"] = true, -- Moon Fang Wave
+	["Luffy.ultimate"] = true, -- Blitz Barrage
+	["Vegeta.ultimate"] = true, -- Nova Blast
+	["Zoro.ultimate"] = true, -- Cyclone Cut
+	["Naruto.ultimate"] = true, -- Vortex Orb
+	["Ichigo.mild"] = true, -- Blur Step
+	["Ichigo.ultimate"] = true, -- Crescent Wave
 	["Sasuke.mild"] = true, -- Lightning Dash
 }
 

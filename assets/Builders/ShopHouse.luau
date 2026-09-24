@@ -13,6 +13,9 @@
 --   ShopHouse/ShopCamera    hidden part: where the menu's camera sits, looking at the stage
 --   ShopHouse/ShopStage     hidden part on the projector pad: where the preview character stands, facing -Z
 -- Everything is anchored static scenery. Purely decorative pieces don't collide or take raycasts.
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Currency = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Modules"):WaitForChild("Currency"))
+
 local ShopHouse = {}
 
 -- Dimensions (studs)
@@ -415,7 +418,7 @@ local function buildInterior(model: Model)
 	for _, sx in { -1, 1 } do
 		local x = sx * (innerW / 2 - 0.3)
 		local at = CFrame.lookAt(Vector3.new(x, FLOOR + 5.5, innerFront + 3), Vector3.new(x - sx * 5, FLOOR + 5.5, innerFront + 3))
-		screen(room, at, if sx < 0 then "ショップ" else "YEN", if sx < 0 then "FIGHTER EXCHANGE" else "¥ ONLY // NO REFUNDS")
+		screen(room, at, if sx < 0 then "ショップ" else "CREDITS", if sx < 0 then "FIGHTER EXCHANGE" else Currency.SHORT .. " ONLY // NO REFUNDS")
 	end
 
 	-- The hologram projector pad, with its ring light above.
@@ -495,7 +498,7 @@ local function buildSign(model: Model)
 	kana.TextScaled = true
 	kana.TextColor3 = PALETTE.HoloPink
 	kana.TextStrokeTransparency = 0.4
-	kana.Text = "ショップ · ¥"
+	kana.Text = "ショップ · " .. Currency.SHORT
 	kana.Parent = sign
 end
 
@@ -518,7 +521,7 @@ function ShopHouse.build(parent: Instance): Model
 	local door = hide(decor(block(model, "ShopDoor", Vector3.new(DOOR_W - 0.5, DOOR_H - 1, 1), CFrame.new(0, FLOOR + (DOOR_H - 1) / 2, FRONT_Z + WALL_T / 2), PALETTE.Blue, Enum.Material.SmoothPlastic)))
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.ActionText = "Enter Shop"
-	prompt.ObjectText = "Yen Shop"
+	prompt.ObjectText = Currency.SHOP
 	prompt.HoldDuration = 0
 	prompt.MaxActivationDistance = 10
 	prompt.RequiresLineOfSight = false

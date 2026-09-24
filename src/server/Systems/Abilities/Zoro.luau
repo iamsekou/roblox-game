@@ -1,7 +1,7 @@
 -- Roronoa Zoro (approved sheet, docs/ABILITIES.md).
 --   Mild  — Iron Guard: a 2 s stance, immune to ability knockback, drags and locks, projectiles bounce
 --           off; you move 50 % slower.
---   Ult   — Tornado Slash: 1 s wind-up, then a tornado travels 40 studs forward (stopping at walls),
+--   Ult   — Cyclone Cut: 1 s wind-up, then a tornado travels 40 studs forward (stopping at walls),
 --           dragging opponents it touches along with it, bunching them together.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 

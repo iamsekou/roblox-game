@@ -34,7 +34,7 @@ local MESSAGES: { [string]: { string } } = {
 	no_target = { "No target", "info" },
 	nothing_to_grab = { "Nothing in reach to grab", "info" }, -- Stretch Grapple
 	no_opponent = { "No opponent in sight where you're aiming", "info" }, -- Hunter's Eye
-	no_point = { "Aim at the ground within range", "info" }, -- Big Bang Blast
+	no_point = { "Aim at the ground within range", "info" }, -- Nova Blast
 	no_room = { "No open ground nearby to land on", "info" },
 	protected = { "Spawn protection: abilities in a moment", "info" },
 	not_available = { "This fighter's abilities are still being built", "info" },
@@ -166,7 +166,7 @@ local function grapple(target: Vector3, speed: number)
 	end)
 end
 
--- Solar Flare: the screen whites out, then clears.
+-- Blinding Burst: the screen whites out, then clears.
 local function whiteOut(untilTime: number)
 	NumberPlateController.blind(untilTime)
 	local seconds = math.max(0.2, untilTime - now())
@@ -299,7 +299,7 @@ local function onEffect(effect: any)
 		grapple(effect.target, effect.speed)
 	elseif effect.kind == "clearCode" then
 		if SubmissionController.clearTyped() then
-			HUDController.toast("GATLING BARRAGE: your code was knocked away", "bad")
+			HUDController.toast("BLITZ BARRAGE: your code was knocked away", "bad")
 		end
 	elseif effect.kind == "lock" and type(effect.untilTime) == "number" then
 		SubmissionController.lockUntil(effect.untilTime)
@@ -539,7 +539,7 @@ local function build()
 	end
 	buildPicker()
 
-	-- Solar Flare white-out and L's radar arrows live on their own full-screen layer.
+	-- Blinding Burst white-out and L's radar arrows live on their own full-screen layer.
 	local overlay = UI.screen("NAU_AbilityOverlay", 8, true)
 	refs.gui = overlay
 	refs.flash = UI.new("Frame", {

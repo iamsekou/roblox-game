@@ -119,7 +119,7 @@ test("[ABIL] Hunter's Eye ignores camera pitch (the bug: a level target was neve
 	T.eq(AbilityRules.pickByAim(eyes, Vector3.new(0, -1, 0), 15, level), nil, "straight down has no heading")
 end)
 
-test("[ABIL] Spiral Sphere hits the first opponent along the lunge", function()
+test("[ABIL] Vortex Orb hits the first opponent along the lunge", function()
 	local origin, dir = Vector3.zero, Vector3.new(0, 0, -1)
 	local candidates = {
 		{ id = 1, position = Vector3.new(1, 0, -15) },

@@ -1,5 +1,5 @@
 -- Krillin (approved sheet, docs/ABILITIES.md).
---   Mild  — Solar Flare: 0.4 s tell, then every opponent within 25 studs who is facing Krillin (and can
+--   Mild  — Blinding Burst: 0.4 s tell, then every opponent within 25 studs who is facing Krillin (and can
 --           see him) is whited out for 1.5 s: their screen flashes white and they learn no numbers.
 --   Ult   — Tracking Disc: after a tell, a slow disc flies 60 studs along the aim (stops at walls and at
 --           Gojo's barrier). Opponents it passes are marked for 5 s: Krillin can read their plates out to

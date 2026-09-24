@@ -355,7 +355,7 @@ test("[LOCK] spawn-protected and dead fighters can't be locked; a new life start
 	T.eq(m.participants[1].inputLockedUntil, -math.huge, "fresh life, no lock")
 end)
 
-test("[CLONE] a Shadow Clone gets its own code for every other active fighter, not its owner", function()
+test("[CLONE] a Mirror Decoy gets its own code for every other active fighter, not its owner", function()
 	local m = newMatch("FFA", { 1, 2, 3 }, { random = true })
 	local decoy = m:addDecoy(1, 1)
 	T.truthy(decoy and decoy <= -1000000000, "far from any user id (Studio test players are -1, -2, ...)")

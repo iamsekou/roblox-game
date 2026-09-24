@@ -1,6 +1,6 @@
 -- Vegeta (approved sheet, docs/ABILITIES.md).
---   Mild  — Saiyan Pride: +30 % move speed for 4 s, golden aura.
---   Ult   — Big Bang Blast: pick a point within 50 studs (where you aim); a ground ring warns for 1 s,
+--   Mild  — Rising Fury: +30 % move speed for 4 s, golden aura.
+--   Ult   — Nova Blast: pick a point within 50 studs (where you aim); a ground ring warns for 1 s,
 --           then a blast launches every opponent inside and locks their typing for 1.5 s.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 

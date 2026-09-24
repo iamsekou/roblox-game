@@ -37,7 +37,7 @@ local DEFINITIONS: { [string]: string } = {
 
 	-- Economy (names kept from the original scaffold)
 	UpdateCurrency = "RemoteEvent", -- S->one player { yen }
-	IncomeNotice = "RemoteEvent", -- S->one player { source = "passive" | "friends", amount, friends? }
+	IncomeNotice = "RemoteEvent", -- S->one player { source = "passive" | "friends" | "purchase", amount, friends? }
 	PurchaseItem = "RemoteFunction", -- C->S (characterId) -> { status = bought|insufficient|owned|not_for_yen|unknown, granted?, price?, yen }
 
 	-- Saved progress

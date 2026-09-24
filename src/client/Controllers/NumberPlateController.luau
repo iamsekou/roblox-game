@@ -66,8 +66,8 @@ local receivedPush = false
 
 -- Ability effects on what this client may read (the server enforces the same through its disclosure gate):
 local grants: { [string]: PlateVisibility.Grant } = {} -- reading exceptions for us (Krillin / Sasuke / Gojo)
-local hiddenUntil: { [number]: number } = {} -- Flash Step: that fighter's plate is gone until then
-local blindUntil = -math.huge -- Solar Flare: we can't read any plate until then
+local hiddenUntil: { [number]: number } = {} -- Blur Step: that fighter's plate is gone until then
+local blindUntil = -math.huge -- Blinding Burst: we can't read any plate until then
 
 -- World-space height of the tallest visible part of the avatar, accessories included.
 local function avatarTop(character: Model): number?
@@ -179,7 +179,7 @@ local function applyTeam(plate: Plate, userId: number, decoy: Model?)
 	plate.tag.Enabled = plate.ally and plate.mode ~= "hidden"
 end
 
--- Naruto's Shadow Clones (server models tagged DecoyId / Owner), except our own.
+-- Naruto's Mirror Decoys (server models tagged DecoyId / Owner), except our own.
 local function decoyModels(): { [number]: Model }
 	local found = {}
 	local world = workspace:FindFirstChild("NAUWorld")
@@ -303,7 +303,7 @@ local function updateVisibility()
 	local myCharacter = localPlayer.Character
 	local myRoot = myCharacter and myCharacter:FindFirstChild("HumanoidRootPart")
 	local t = workspace:GetServerTimeNow()
-	-- You: in the round, alive, not protected, and not whited out by a Solar Flare.
+	-- You: in the round, alive, not protected, and not whited out by a Blinding Burst.
 	local canSee = myRoot ~= nil and ClientState.canSubmit() and t >= blindUntil
 	for userId, plate in plates do
 		local mode: Mode = "hidden"

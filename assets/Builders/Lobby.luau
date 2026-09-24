@@ -16,9 +16,11 @@
 --   Lobby/FightPortal     part "PortalGlow" holds a ProximityPrompt (attribute Action = "Fight")
 --   Lobby/ShopGarden/ShopHouse   the yen shop (see ShopHouse.luau for its ShopDoor / ShopCamera / ShopStage)
 -- Everything is anchored static scenery. Purely decorative pieces don't collide or take raycasts.
+local MarketplaceService = game:GetService("MarketplaceService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CharacterDefs =
 	require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Modules"):WaitForChild("CharacterDefs"))
+local Currency = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Modules"):WaitForChild("Currency"))
 local ShopHouse = require(script.Parent:WaitForChild("ShopHouse"))
 
 local Lobby = {}
@@ -550,9 +552,19 @@ local function buildBubble(anchor: BasePart, def: any)
 	price.TextStrokeTransparency = 0.35
 	price.Text = if def.tier == "Free"
 		then "FREE"
-		elseif def.tier == "Robux" then "ROBUX"
-		else formatNumber(def.yenPrice) .. " ¥"
+		elseif def.tier == "Robux" then if def.robuxPrice then "R$ " .. formatNumber(def.robuxPrice) else "ROBUX"
+		else Currency.amount(formatNumber(def.yenPrice))
 	price.Parent = gui
+	-- Robux characters (owner, 2026-09-24: show the price, not "ROBUX"): the live Game Pass price replaces the
+	-- stored one once Roblox answers, so a price changed on Roblox shows without a code change.
+	if def.tier == "Robux" and def.gamePassId then
+		task.spawn(function()
+			local ok, info = pcall(MarketplaceService.GetProductInfo, MarketplaceService, def.gamePassId, Enum.InfoType.GamePass)
+			if ok and type(info) == "table" and type(info.PriceInRobux) == "number" and price.Parent then
+				price.Text = "R$ " .. formatNumber(info.PriceInRobux)
+			end
+		end)
+	end
 end
 
 -- Limestone pedestal on a basalt plinth, with a thin tier-coloured inlay line, a marble dais,

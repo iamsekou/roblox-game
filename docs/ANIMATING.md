@@ -26,19 +26,19 @@ Suggested order: Gokai and Luffo first (4 abilities, 8 clips). Test those in gam
 | Gokai | Phase Shift (mild) | 0.3 s | 0.35 s | Two fingers to the forehead, head bowed → lands in a ready crouch |
 | Gokai | Energy Wave (ult) | 1.2 s (charge) | 0.6 s | Cupped hands drawn back to the right hip, torso wound right, eyes on target → both arms thrust straight out, palms together |
 | Luffo | Stretch Grapple (mild) | 0.3 s | 0.6 s | Right arm cocked back → arm shot straight out and held for the pull |
-| Luffo | Gatling Barrage (ult) | 1.0 s | **2.6 s, Looped** | Both fists drawn back, leaning back → rapid alternating straight punches, torso rocking |
-| Krillo | Solar Flare (mild) | 0.4 s | 0.5 s | Open hands framing the face → arms flung wide with the flash, chin up |
+| Luffo | Blitz Barrage (ult) | 1.0 s | **2.6 s, Looped** | Both fists drawn back, leaning back → rapid alternating straight punches, torso rocking |
+| Krillo | Blinding Burst (mild) | 0.4 s | 0.5 s | Open hands framing the face → arms flung wide with the flash, chin up |
 | Krillo | Tracking Disc (ult) | 0.8 s | 0.45 s | Right arm straight up, disc on the palm, looking up → side-arm throw across the body |
-| Vejaro | Saiyan Pride (mild) | 0.3 s | 0.7 s | Crouched power-up, fists clenched → chest out, head back, roar |
-| Vejaro | Big Bang Blast (ult) | 1.0 s | 0.5 s | Right arm straight out, open palm, left hand bracing it → recoil |
+| Vejaro | Rising Fury (mild) | 0.3 s | 0.7 s | Crouched power-up, fists clenched → chest out, head back, roar |
+| Vejaro | Nova Blast (ult) | 1.0 s | 0.5 s | Right arm straight out, open palm, left hand bracing it → recoil |
 | Zorin | Iron Guard (mild) | 0.3 s | **3.5 s, Looped** | Blades crossed in front, braced forward, held the whole stance |
-| Zorin | Tornado Slash (ult) | 1.0 s | 0.55 s | Blades raised over the left shoulder, torso wound left → one full spin, arms flung wide |
+| Zorin | Cyclone Cut (ult) | 1.0 s | 0.55 s | Blades raised over the left shoulder, torso wound left → one full spin, arms flung wide |
 | Eli | Surveillance Camera (mild) | 0.3 s | 0.6 s | Deep stoop to set the camera down → hunched, thumb at the lip |
 | Eli | Deduction (ult) | 0.8 s | 0.9 s | Thinking slouch: hunched, head tilted, thumb at the lip, other arm folded → head comes up |
-| Nariko | Shadow Clone (mild) | 0.3 s | 0.3 s | Crossed-fingers hand seal in front of the chest |
-| Nariko | Spiral Sphere (ult) | 0.6 s | 0.5 s | Right palm out low with the sphere, left hand shaping it → lunge, right palm driven forward |
-| Ichiro | Flash Step (mild) | 0.3 s | 0.35 s | Low forward crouch, arms trailing → arrives with the blade arm out to the side |
-| Ichiro | Moon Fang Wave (ult) | 1.0 s | 0.5 s | Two-handed grip raised over the right shoulder → one big diagonal slash down across the body |
+| Nariko | Mirror Decoy (mild) | 0.3 s | 0.3 s | Crossed-fingers hand seal in front of the chest |
+| Nariko | Vortex Orb (ult) | 0.6 s | 0.5 s | Right palm out low with the sphere, left hand shaping it → lunge, right palm driven forward |
+| Ichiro | Blur Step (mild) | 0.3 s | 0.35 s | Low forward crouch, arms trailing → arrives with the blade arm out to the side |
+| Ichiro | Crescent Wave (ult) | 1.0 s | 0.5 s | Two-handed grip raised over the right shoulder → one big diagonal slash down across the body |
 | Sazuki | Lightning Dash (mild) | 0.3 s | 0.3 s | Crouched, crackling blade held low and back in the right hand, left hand forward → blade driven ahead in a thrust |
 | Sazuki | Hunter's Eye (ult) | 0.8 s | 0.6 s | Head bowed, hand raised over one eye → head snaps up, arm points at the target |
 | Gozen | Blink (mild) | 0.3 s | 0.25 s | Relaxed and upright, two fingers raised in front of the chest |
@@ -66,8 +66,8 @@ the strike, so **never key a sword into a clip**. These moves draw swords:
 
 | Character | Moves | Sword(s) |
 |---|---|---|
-| Zorin | Iron Guard, Tornado Slash | `KatanaRed` (right hand) + `KatanaDark` (left hand) + `Katana` (in the mouth, blade out past the right cheek) |
-| Ichiro | Flash Step, Moon Fang Wave | `Cleaver` (right hand) |
+| Zorin | Iron Guard, Cyclone Cut | `KatanaRed` (right hand) + `KatanaDark` (left hand) + `Katana` (in the mouth, blade out past the right cheek) |
+| Ichiro | Blur Step, Crescent Wave | `Cleaver` (right hand) |
 | Sazuki | Lightning Dash | `Blade` (right hand) |
 
 The blade comes out of the thumb side of the fist, so it points forward from a hanging arm and straight up from an

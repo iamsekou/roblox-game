@@ -58,6 +58,7 @@ type Entry = {
 }
 
 local equipped: { [Player]: string } = {}
+local pendingEquip: { [Player]: string } = {} -- a saved Robux character, waiting for Roblox to confirm its pass
 local entries: { [Player]: Entry } = {}
 local speedMods: { [Player]: { { mult: number, untilTime: number, key: string? } } } = {}
 local guardUntil: { [number]: number } = {}
@@ -107,7 +108,8 @@ local function isGuarded(userId: number): boolean
 	return g ~= nil and now() < g
 end
 
--- Owned = the free starters plus anything bought in the yen shop (Robux arrives with Game Passes, item 6).
+-- Owned = the free starters, anything bought in the yen shop, and Robux characters whose Game Pass the player
+-- owns (Phase 3 item 6; checked with Roblox by RobuxService).
 -- In Studio everything is unlocked for testing (owner request; live servers ignore this) unless
 -- ServerScriptService's NAU_DevUnlockAll attribute is set false, which shows the real inventory.
 local function owns(player: Player, def: any): boolean
@@ -118,7 +120,9 @@ local function owns(player: Player, def: any): boolean
 	then
 		return true
 	end
-	return def.tier == "Free" or EconomyService.hasBought(player, def.id)
+	return def.tier == "Free"
+		or EconomyService.hasBought(player, def.id)
+		or (def.tier == "Robux" and EconomyService.hasPass(player, def.id))
 end
 
 local function ownedList(player: Player): { string }
@@ -172,7 +176,7 @@ local function applySpeed(player: Player)
 end
 
 -- Returns a function that ends this modifier early (clashes that finish before their time).
--- `key` marks an effect that re-applies itself while it lasts (Moon Fang's trail ticks every 0.25 s): a
+-- `key` marks an effect that re-applies itself while it lasts (Crescent Wave's trail ticks every 0.25 s): a
 -- modifier with the same key is extended instead of stacked, so a 40 % slow stays 40 % (stacked overlaps
 -- measured 64 %).
 local function addSpeed(player: Player, mult: number, seconds: number, key: string?): () -> ()
@@ -333,7 +337,7 @@ local function makeContext(player: Player, entry: Entry, aim: any, eye: any)
 		return nil, nil
 	end
 
-	-- Where the player is looking (owner: Flash Step and Blink go where you look): the point the ray through
+	-- Where the player is looking (owner: Blur Step and Blink go where you look): the point the ray through
 	-- the centre of their screen hits, capped at `range` from their chest. Returns (point, hit) where
 	-- `hit` is the surface under the point, or nil if the point was capped in mid-air.
 	function ctx.lookTarget(range: number): (Vector3?, RaycastResult?)
@@ -402,7 +406,7 @@ local function makeContext(player: Player, entry: Entry, aim: any, eye: any)
 		pushState(target)
 	end
 
-	-- Solar Flare: no new numbers for `seconds`, and the target's screen whites out.
+	-- Blinding Burst: no new numbers for `seconds`, and the target's screen whites out.
 	function ctx.blind(target: Player, seconds: number)
 		local untilTime = now() + seconds
 		NumberAssignmentService.blind(target.UserId, untilTime)
@@ -430,7 +434,7 @@ local function makeContext(player: Player, entry: Entry, aim: any, eye: any)
 		end
 	end
 
-	-- Flash Step: nobody learns this fighter's number, and every client hides their plate, for `seconds`.
+	-- Blur Step: nobody learns this fighter's number, and every client hides their plate, for `seconds`.
 	function ctx.hidePlate(seconds: number)
 		local untilTime = now() + seconds
 		NumberAssignmentService.hide(player.UserId, untilTime)
@@ -508,7 +512,7 @@ local function makeContext(player: Player, entry: Entry, aim: any, eye: any)
 		return insideForeignBarrier(point, player.UserId)
 	end
 
-	-- Naruto's Shadow Clone: a copy of the caster that runs along `direction` for `seconds` with its own
+	-- Naruto's Mirror Decoy: a copy of the caster that runs along `direction` for `seconds` with its own
 	-- plate (a unique code per observer). Popped by a correct code, or gone when time runs out.
 	function ctx.spawnClone(direction: Vector3, speed: number, seconds: number): boolean
 		local character = player.Character
@@ -825,14 +829,36 @@ function AbilityService.onEquipped(listener: (Player, string) -> ())
 end
 
 -- The saved equipped character arrived: use it unless the player already picked one this session.
--- Returns the character now equipped.
+-- Returns the character now equipped. A saved Robux character whose pass Roblox hasn't confirmed yet is
+-- equipped when it does (onInventoryChanged below), unless the player picked someone else by then.
 function AbilityService.applySavedEquip(player: Player, id: string): string
 	local def = CharacterDefs.byId[id]
-	if equipped[player] == nil and def and owns(player, def) then
-		equipped[player] = def.id
-		pushState(player)
+	if equipped[player] == nil and def then
+		if owns(player, def) then
+			equipped[player] = def.id
+			pushState(player)
+		elseif def.tier == "Robux" then
+			pendingEquip[player] = def.id
+		end
 	end
 	return equipped[player] or Constants.DEFAULT_CHARACTER
+end
+
+local function equipPending(player: Player)
+	local id = pendingEquip[player]
+	local def = id and CharacterDefs.byId[id]
+	if not def or equipped[player] ~= nil then
+		pendingEquip[player] = nil
+		return
+	end
+	if owns(player, def) then
+		pendingEquip[player] = nil
+		equipped[player] = def.id
+		pushState(player)
+		for _, listener in equipListeners do
+			task.spawn(listener, player, def.id)
+		end
+	end
 end
 
 local function onLifeStarted(player: Player, match: any, lifeId: number)
@@ -863,8 +889,9 @@ function AbilityService.Init()
 	Remotes.EquipCharacter.OnServerInvoke = handleEquip
 	RoundManager.onLifeStarted(onLifeStarted)
 	EconomyService.onInventoryChanged(pushState) -- a purchase: re-send the owned list
+	EconomyService.onInventoryChanged(equipPending) -- a confirmed pass: equip the saved Robux character
 	EliminationService.onClonePopped(function(_popper: Player, decoyId: number)
-		removeDecoy(decoyId) -- the popper's code box already says "It was a clone!"
+		removeDecoy(decoyId) -- the popper's code box already says "It was a decoy!"
 	end)
 	EliminationService.onElimination(function(attacker: Player, victimId: number)
 		for _, listener in eliminationListeners do
@@ -879,6 +906,7 @@ function AbilityService.Init()
 	end
 	Players.PlayerRemoving:Connect(function(player)
 		equipped[player] = nil
+		pendingEquip[player] = nil
 		entries[player] = nil
 		speedMods[player] = nil
 		guardUntil[player.UserId] = nil

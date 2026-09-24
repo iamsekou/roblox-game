@@ -95,7 +95,8 @@ local function load(player: Player)
 			entry.profile.owned = EconomyService.boughtList(player)
 			entry.profile.equipped = AbilityService.applySavedEquip(player, profile.equipped)
 			entry.profile.settings = profile.settings
-			log(string.format("loaded %s: ¥%d, %d bought, equipped %s%s", player.Name, profile.yen, #profile.owned, profile.equipped, if force then " (lock taken over)" else ""))
+			entry.profile.receipts = profile.receipts
+			log(string.format("loaded %s: %d YC, %d bought, equipped %s%s", player.Name, profile.yen, #profile.owned, profile.equipped, if force then " (lock taken over)" else ""))
 			tell(player, "loaded", entry.profile.settings)
 			return
 		end
@@ -153,6 +154,36 @@ local function saveAll(release: boolean)
 	for player, entry in entries do
 		task.spawn(save, player, entry, release)
 	end
+end
+
+-- Robux credit bundles (RobuxService's ProcessReceipt). The credit and its receipt id go into the profile together
+-- and are saved in one write before Roblox is told the purchase was granted, so a bundle is never paid twice
+-- and never lost:
+--   "granted"    credited and saved
+--   "duplicate"  this receipt was credited before (Roblox retried it) and is saved: grant it, pay nothing
+--   "retry"      couldn't be saved (profile not loaded, no DataStores, the write failed, or the player left):
+--                Roblox calls again later. Anything credited this session is saved with the receipt id, so a
+--                later retry recognises it
+function ProfileService.creditPurchase(player: Player, purchaseId: string, amount: number): string
+	local entry = entries[player]
+	local deadline = os.clock() + Constants.PURCHASE_PROFILE_WAIT_SECONDS
+	while entry and entries[player] == entry and not entry.loaded and os.clock() < deadline do
+		task.wait(0.5)
+	end
+	if not entry or entries[player] ~= entry or not entry.loaded then
+		return "retry"
+	end
+	-- The check, the credit and the receipt happen with no yield in between: a second call for the same
+	-- receipt always sees the first one's id.
+	if ProfileData.hasReceipt(entry.profile, purchaseId) then
+		return if save(player, entry, false) then "duplicate" else "retry"
+	end
+	EconomyService.award(player, amount, "robux bundle")
+	entry.profile.yen = EconomyService.getBalance(player)
+	ProfileData.addReceipt(entry.profile, purchaseId, Constants.PURCHASE_RECEIPTS_KEPT)
+	local saved = save(player, entry, false)
+	log(string.format("%s bought %d YC (receipt %s): %s", player.Name, amount, purchaseId, if saved then "saved" else "not saved yet"))
+	return if saved then "granted" else "retry"
 end
 
 -- Settings (Phase 4): the client asks, the schema decides. Kept in the profile, so they're saved with it

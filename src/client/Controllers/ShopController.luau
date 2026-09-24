@@ -8,13 +8,18 @@
 --
 --   left   ROSTER: all ten characters (portrait, name, price or state)
 --   right  DETAIL: name, identity, both abilities with preview buttons, price, what a purchase includes,
---          and the action: HOLD TO BUY (1 s charge) / EQUIP / EQUIPPED / Robux coming soon
---   top    title and the yen balance (animated counter)
+--          and the action: HOLD TO BUY (1 s charge) / EQUIP / EQUIPPED / BUY WITH ROBUX (Game Pass) /
+--          NEED X YC · GET CREDITS (opens the credit bundles)
+--   top    title and the balance (animated counter); tapping the balance opens the credit bundles
+--   CREDITS overlay: the four Robux credit bundles (Phase 3 item 6, Modules/RobuxCatalog)
 --
 -- The client only asks: PurchaseItem and EquipCharacter are decided by the server (ShopService /
 -- AbilityService); the menu redraws from what the server sends back (balance, owned list, equipped).
+-- Robux purchases open Roblox's own prompts; the server (RobuxService) grants only what Roblox reports.
+-- Robux prices shown are read live from Roblox (the catalog's numbers are only a fallback).
 -- EXIT or [X] closes it and reverses everything; it also closes itself if the player leaves the lobby.
 local GuiService = game:GetService("GuiService")
+local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
 local ProximityPromptService = game:GetService("ProximityPromptService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -26,6 +31,8 @@ local UserInputService = game:GetService("UserInputService")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Remotes = require(Shared:WaitForChild("Remotes"))
 local CharacterDefs = require(Shared:WaitForChild("Modules"):WaitForChild("CharacterDefs"))
+local Currency = require(Shared:WaitForChild("Modules"):WaitForChild("Currency"))
+local RobuxCatalog = require(Shared:WaitForChild("Modules"):WaitForChild("RobuxCatalog"))
 local AnimControllers = ReplicatedStorage:WaitForChild("Animations"):WaitForChild("Controllers")
 local AbilityAnim = require(AnimControllers:WaitForChild("AbilityAnim"))
 local CameraShake = require(AnimControllers:WaitForChild("CameraShake"))
@@ -44,6 +51,7 @@ local PINK = Color3.fromRGB(255, 90, 200)
 local GOLD = Color3.fromRGB(255, 208, 110)
 local GLASS = Color3.fromRGB(8, 14, 22)
 local WHITE = Color3.new(1, 1, 1)
+local ROBUX_COLOR = Color3.fromRGB(190, 160, 255)
 local HEAVY = UI.FontHeavy
 local BODY = UI.FontBody
 local DESKTOP_CANVAS = Vector2.new(1920, 1080) -- the menu is laid out on this canvas and scaled to the screen
@@ -57,9 +65,11 @@ local phoneLayout = false
 local HOLD_TO_BUY = 1 -- seconds the BUY button must be held
 local PREVIEW_EVERY = 3.4 -- seconds between the hologram's ability previews
 local EXIT_KEY = Enum.KeyCode.X
+local PASS_GRANT_TIMEOUT = 20 -- seconds to wait for the server to confirm a Game Pass Roblox says was bought
+local UNLOCKED_STAMP = "UNLOCKED  解放"
 
 type Refs = { [string]: any }
-local refs: Refs = { cards = {}, gradients = {} }
+local refs: Refs = { cards = {}, gradients = {}, bundleButtons = {} }
 local state = {
 	open = false,
 	busy = false,
@@ -68,15 +78,28 @@ local state = {
 	nextPreview = 0,
 	yenShown = 0,
 	holdStarted = nil :: number?,
+	pendingPass = nil :: string?, -- a character whose Game Pass prompt is open or whose grant is on its way
 }
+-- Live Robux prices read from Roblox, keyed "pass:<id>" / "product:<id>" (nil until read; the catalog is the
+-- fallback).
+local livePrices: { [string]: number } = {}
 local scene: { [string]: any } = {}
 
 -- Small helpers ----------------------------------------------------------------------------------
 
 local function yen(): number
 	local stats = localPlayer:FindFirstChild("leaderstats")
-	local value = stats and stats:FindFirstChild("Yen")
+	local value = stats and stats:FindFirstChild(Currency.STAT)
 	return if value and value:IsA("IntValue") then value.Value else 0
+end
+
+local function robuxText(key: string, fallback: number?): string
+	local price = livePrices[key] or fallback
+	return if price then "R$ " .. UI.formatNumber(price) else "ROBUX"
+end
+
+local function passPrice(def: any): string
+	return robuxText("pass:" .. tostring(def.gamePassId), def.robuxPrice)
 end
 
 local function owned(id: string): boolean
@@ -340,11 +363,11 @@ local function refreshCards()
 			entry.badge.Text = "OWNED"
 			entry.badge.TextColor3 = UI.Colors.Good
 		elseif def.tier == "Yen" then
-			entry.badge.Text = "¥" .. UI.formatNumber(def.yenPrice or 0)
+			entry.badge.Text = Currency.amount(UI.formatNumber(def.yenPrice or 0))
 			entry.badge.TextColor3 = if yen() >= (def.yenPrice or 0) then GOLD else UI.Colors.Muted
 		else
-			entry.badge.Text = "ROBUX"
-			entry.badge.TextColor3 = Color3.fromRGB(190, 160, 255)
+			entry.badge.Text = passPrice(def)
+			entry.badge.TextColor3 = ROBUX_COLOR
 		end
 	end
 end
@@ -409,7 +432,7 @@ local function refreshDetail()
 	refs.identity.Text = def.identity
 	fitText(refs.mild, def.abilities.mild)
 	fitText(refs.ultimate, def.abilities.ultimate)
-	refs.tier.Text = if def.tier == "Free" then "STARTER" elseif def.tier == "Yen" then string.format("TIER %d  ·  YEN", def.yenTier or 0) else "PREMIUM  ·  ROBUX"
+	refs.tier.Text = if def.tier == "Free" then "STARTER" elseif def.tier == "Yen" then string.format("TIER %d  ·  %s", def.yenTier or 0, string.upper(Currency.NAME)) else "PREMIUM  ·  ROBUX"
 	refs.accentBar.BackgroundColor3 = def.accent
 	local extra = includes(def)
 	refs.includes.Text = if #extra > 0 and not owned(def.id) then "ALSO UNLOCKS  " .. string.upper(table.concat(extra, " · ")) else ""
@@ -424,17 +447,24 @@ local function refreshDetail()
 	elseif def.tier == "Yen" then
 		local price = def.yenPrice or 0
 		local affordable = yen() >= price
-		refs.price.Text = "¥" .. UI.formatNumber(price)
+		refs.price.Text = Currency.richAmount(UI.formatNumber(price), math.floor(refs.price.TextSize * 0.55))
 		refs.price.TextColor3 = if affordable then GOLD else UI.Colors.Muted
 		if affordable then
 			setAction("HOLD TO BUY", Color3.fromRGB(150, 30, 110), true)
 		else
-			setAction(string.format("NEED ¥%s MORE", UI.formatNumber(price - yen())), Color3.fromRGB(50, 40, 50), false)
+			-- Opens the credit bundles (approved: a "get more" button with the shortfall).
+			setAction(string.format("NEED %s  ·  GET MORE", Currency.amount(UI.formatNumber(price - yen()))), Color3.fromRGB(120, 70, 20), true)
 		end
 	else
-		refs.price.Text = "ROBUX"
-		refs.price.TextColor3 = Color3.fromRGB(190, 160, 255)
-		setAction("ROBUX · COMING SOON", Color3.fromRGB(50, 40, 70), false)
+		refs.price.Text = passPrice(def)
+		refs.price.TextColor3 = ROBUX_COLOR
+		if state.pendingPass == def.id then
+			setAction("UNLOCKING...", Color3.fromRGB(70, 40, 120), false)
+		elseif def.gamePassId then
+			setAction("BUY WITH ROBUX", Color3.fromRGB(90, 50, 170), true)
+		else
+			setAction("ROBUX · COMING SOON", Color3.fromRGB(50, 40, 70), false)
+		end
 	end
 end
 
@@ -510,6 +540,33 @@ local function abilityRow(detail: Frame, style: RowStyle, y: number, key: string
 	return name
 end
 
+-- The whole balance panel is a button that opens the credit bundles, with a "+ GET CREDITS" hint in its top
+-- right corner (the panel is at least 86 units tall: a full touch target on phones).
+local function walletButton(wallet: Frame, hintSize: number, inset: number)
+	text({
+		Name = "GetCredits",
+		Text = "+ GET CREDITS",
+		TextSize = hintSize,
+		TextColor3 = HOLO,
+		TextXAlignment = Enum.TextXAlignment.Right,
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -inset, 0, inset - 4),
+		Size = UDim2.fromOffset(170, hintSize + 4),
+		Parent = wallet,
+	})
+	local button = UI.new("TextButton", {
+		Name = "WalletButton",
+		Text = "",
+		BackgroundTransparency = 1,
+		Size = UDim2.fromScale(1, 1),
+		ZIndex = 4,
+		Parent = wallet,
+	})
+	button.Activated:Connect(function()
+		ShopController.openBundles()
+	end)
+end
+
 -- The hold-to-buy / equip button at the bottom of the fighter file.
 local function actionButton(detail: Frame, height: number, bottom: number, textSize: number): TextButton
 	local action = UI.new("TextButton", {
@@ -536,7 +593,7 @@ local function buildDesktopPanels(canvas: Frame)
 	-- Header: title on the left, balance and exit on the right.
 	local header = UI.new("Frame", { Name = "Header", Position = UDim2.fromOffset(70, 36), Size = UDim2.fromOffset(CANVAS.X - 140, 110), BackgroundTransparency = 1, Parent = canvas })
 	refs.header = header
-	text({ Text = "ショップ  //  YEN EXCHANGE  //  販売中", TextSize = 20, TextColor3 = PINK, Size = UDim2.fromOffset(700, 24), Parent = header })
+	text({ Text = "ショップ  //  " .. string.upper(Currency.NAME) .. "  //  販売中", TextSize = 20, TextColor3 = PINK, Size = UDim2.fromOffset(700, 24), Parent = header })
 	local title = text({ Text = "FIGHTER EXCHANGE", TextSize = 72, Position = UDim2.fromOffset(0, 22), Size = UDim2.fromOffset(900, 80), Parent = header })
 	UI.new("UIGradient", {
 		Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, WHITE), ColorSequenceKeypoint.new(1, HOLO) }),
@@ -544,8 +601,9 @@ local function buildDesktopPanels(canvas: Frame)
 	})
 	refs.title = title
 	local wallet = glassPanel({ Name = "Wallet", AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 6), Size = UDim2.fromOffset(360, 96), Parent = header })
-	text({ Text = "BALANCE  ·  残高", TextSize = 16, TextColor3 = UI.Colors.Muted, Position = UDim2.fromOffset(22, 10), Size = UDim2.fromOffset(300, 20), Parent = wallet })
-	refs.balance = text({ Text = "¥0", TextSize = 50, TextColor3 = GOLD, Position = UDim2.fromOffset(20, 30), Size = UDim2.fromOffset(320, 58), Parent = wallet })
+	text({ Text = "BALANCE  ·  残高", TextSize = 16, TextColor3 = UI.Colors.Muted, Position = UDim2.fromOffset(22, 10), Size = UDim2.fromOffset(160, 20), Parent = wallet })
+	refs.balance = text({ Text = "", RichText = true, TextSize = 50, TextColor3 = GOLD, Position = UDim2.fromOffset(20, 30), Size = UDim2.fromOffset(320, 58), Parent = wallet })
+	walletButton(wallet, 16, 14)
 	refs.exit = UI.new("TextButton", {
 		Name = "Exit",
 		AnchorPoint = Vector2.new(1, 0),
@@ -596,7 +654,7 @@ local function buildDesktopPanels(canvas: Frame)
 	refs.mild = abilityRow(detail, DESKTOP_ROW, 276, "Q", "mild")
 	refs.ultimate = abilityRow(detail, DESKTOP_ROW, 352, "E", "ultimate")
 	text({ Text = "PRICE  ·  価格", TextSize = 16, TextColor3 = UI.Colors.Muted, Position = UDim2.fromOffset(30, 456), Size = UDim2.fromOffset(300, 20), Parent = detail })
-	refs.price = text({ Text = "", TextSize = 60, TextColor3 = GOLD, Position = UDim2.fromOffset(28, 474), Size = UDim2.fromOffset(520, 70), Parent = detail })
+	refs.price = text({ Text = "", RichText = true, TextSize = 60, TextColor3 = GOLD, Position = UDim2.fromOffset(28, 474), Size = UDim2.fromOffset(520, 70), Parent = detail })
 	refs.includes = text({ Text = "", Font = BODY, TextSize = 16, TextWrapped = true, TextColor3 = HOLO, Position = UDim2.fromOffset(30, 548), Size = UDim2.fromOffset(520, 44), Parent = detail })
 	actionButton(detail, 92, 34, 36)
 
@@ -627,8 +685,9 @@ local function buildPhonePanels(canvas: Frame)
 	})
 	refs.title = title
 	local wallet = glassPanel({ Name = "Wallet", AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 0), Size = UDim2.fromOffset(300, 86), Parent = header })
-	text({ Text = "BALANCE", TextSize = 20, TextColor3 = UI.Colors.Muted, Position = UDim2.fromOffset(18, 6), Size = UDim2.fromOffset(260, 24), Parent = wallet })
-	refs.balance = text({ Text = "¥0", TextSize = 44, TextColor3 = GOLD, Position = UDim2.fromOffset(16, 30), Size = UDim2.fromOffset(270, 50), Parent = wallet })
+	text({ Text = "BALANCE", TextSize = 20, TextColor3 = UI.Colors.Muted, Position = UDim2.fromOffset(18, 6), Size = UDim2.fromOffset(100, 24), Parent = wallet })
+	refs.balance = text({ Text = "", RichText = true, TextSize = 44, TextColor3 = GOLD, Position = UDim2.fromOffset(16, 30), Size = UDim2.fromOffset(270, 50), Parent = wallet })
+	walletButton(wallet, 20, 12)
 	refs.exit = UI.new("TextButton", {
 		Name = "Exit",
 		AnchorPoint = Vector2.new(1, 0),
@@ -691,7 +750,7 @@ local function buildPhonePanels(canvas: Frame)
 	refs.mild = abilityRow(detail, PHONE_ROW, 158, "Q", "mild")
 	refs.ultimate = abilityRow(detail, PHONE_ROW, 256, "E", "ultimate")
 	text({ Text = "PRICE", TextSize = 20, TextColor3 = UI.Colors.Muted, Position = UDim2.fromOffset(24, 352), Size = UDim2.fromOffset(300, 24), Parent = detail })
-	refs.price = text({ Text = "", TextSize = 44, TextColor3 = GOLD, Position = UDim2.fromOffset(22, 374), Size = UDim2.fromOffset(510, 50), Parent = detail })
+	refs.price = text({ Text = "", RichText = true, TextSize = 44, TextColor3 = GOLD, Position = UDim2.fromOffset(22, 374), Size = UDim2.fromOffset(510, 50), Parent = detail })
 	refs.includes = text({ Text = "", Font = BODY, TextSize = 20, TextWrapped = true, TextColor3 = HOLO, Position = UDim2.fromOffset(24, 424), Size = UDim2.fromOffset(512, 46), Parent = detail })
 	actionButton(detail, 84, 14, 32)
 
@@ -704,6 +763,149 @@ local function buildPhonePanels(canvas: Frame)
 	refs.focus = focus
 	refs.stampSize = Vector2.new(900, 110)
 	refs.stampText = 90
+end
+
+local function bundlePriceText(bundle: RobuxCatalog.Bundle): string
+	return robuxText("product:" .. bundle.productId, bundle.robux)
+end
+
+-- The credit bundles (Phase 3 item 6): the four Robux Developer Products over the dimmed menu. A tile opens
+-- Roblox's purchase prompt; the credits come from the server (RobuxService) and the menu celebrates them.
+-- Tapping outside the panel or [X] closes it.
+local function buildBundles(canvas: Frame)
+	local phone = phoneLayout
+	local backdrop = UI.new("TextButton", {
+		Name = "Bundles",
+		Text = "",
+		AutoButtonColor = false,
+		BackgroundColor3 = Color3.new(0, 0, 0),
+		BackgroundTransparency = 0.35,
+		BorderSizePixel = 0,
+		Size = UDim2.fromScale(1, 1),
+		ZIndex = 16,
+		Visible = false,
+		Parent = canvas,
+	})
+	backdrop.Activated:Connect(function()
+		ShopController.closeBundles()
+	end)
+	local panel = glassPanel({
+		Name = "Panel",
+		Active = true, -- taps on the panel don't fall through to the backdrop
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = if phone then UDim2.new(1, -48, 0, 590) else UDim2.fromOffset(1320, 500),
+		Parent = backdrop,
+	})
+	refs.bundleScale = UI.new("UIScale", { Parent = panel })
+	text({ Text = "クレジット  //  " .. string.upper(Currency.NAME), TextSize = if phone then 22 else 18, TextColor3 = PINK, Position = UDim2.fromOffset(28, 22), Size = UDim2.fromOffset(600, 26), Parent = panel })
+	local title = text({ Text = "GET CREDITS", TextSize = if phone then 50 else 56, Position = UDim2.fromOffset(26, 46), Size = UDim2.fromOffset(700, 64), Parent = panel })
+	UI.new("UIGradient", {
+		Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, WHITE), ColorSequenceKeypoint.new(1, GOLD) }),
+		Parent = title,
+	})
+	text({
+		Text = "Paid with Robux through Roblox. Credits land in your balance straight away.",
+		Font = BODY,
+		TextSize = if phone then 22 else 20,
+		TextColor3 = Color3.fromRGB(200, 214, 226),
+		Position = UDim2.fromOffset(28, if phone then 106 else 112),
+		Size = UDim2.new(1, -150, 0, 28),
+		Parent = panel,
+	})
+	local closeSize = if phone then 80 else 60
+	local close = UI.new("TextButton", {
+		Name = "Close",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -18, 0, 18),
+		Size = UDim2.fromOffset(closeSize, closeSize),
+		BackgroundColor3 = GLASS,
+		BackgroundTransparency = 0.2,
+		AutoButtonColor = true,
+		FontFace = HEAVY,
+		TextSize = if phone then 34 else 28,
+		TextColor3 = WHITE,
+		Text = "X",
+		Parent = panel,
+	})
+	neonEdge(close, 2, 0.2)
+	close.Activated:Connect(function()
+		ShopController.closeBundles()
+	end)
+
+	local top = if phone then 150 else 160
+	local tileHeight = if phone then 410 else 300
+	local row = UI.new("Frame", { Name = "Tiles", Position = UDim2.fromOffset(28, top), Size = UDim2.new(1, -56, 0, tileHeight), BackgroundTransparency = 1, Parent = panel })
+	local gap = 20
+	UI.new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, gap), SortOrder = Enum.SortOrder.LayoutOrder, Parent = row })
+	local count = #RobuxCatalog.bundles
+	local amountSize = if phone then 50 else 48
+	local buttonHeight = if phone then 84 else 64
+	for i, bundle in RobuxCatalog.bundles do
+		local tile = UI.new("Frame", {
+			Name = "Bundle" .. i,
+			LayoutOrder = i,
+			Size = UDim2.new(1 / count, -gap * (count - 1) / count, 1, 0),
+			BackgroundColor3 = GLASS,
+			BackgroundTransparency = 0.3,
+			BorderSizePixel = 0,
+			Parent = row,
+		})
+		UI.stroke(GOLD, 1, 0.45).Parent = tile
+		text({
+			RichText = true,
+			Text = Currency.richAmount(UI.formatNumber(bundle.yen), math.floor(amountSize * 0.55)),
+			TextSize = amountSize,
+			TextColor3 = GOLD,
+			TextXAlignment = Enum.TextXAlignment.Center,
+			Position = UDim2.fromOffset(0, if phone then 36 else 30),
+			Size = UDim2.new(1, 0, 0, amountSize + 12),
+			Parent = tile,
+		})
+		text({
+			Text = string.upper(Currency.NAME),
+			TextSize = if phone then 20 else 16,
+			TextColor3 = UI.Colors.Muted,
+			TextXAlignment = Enum.TextXAlignment.Center,
+			Position = UDim2.fromOffset(0, if phone then 104 else 94),
+			Size = UDim2.new(1, 0, 0, 26),
+			Parent = tile,
+		})
+		-- A coin pile that grows with the bundle: one bar per step up.
+		local barHeight, barGap = if phone then 18 else 14, if phone then 8 else 6
+		local pileBottom = tileHeight - buttonHeight - (if phone then 30 else 22)
+		for k = 1, i do
+			local bar = UI.new("Frame", {
+				AnchorPoint = Vector2.new(0.5, 1),
+				Position = UDim2.new(0.5, 0, 0, pileBottom - (k - 1) * (barHeight + barGap)),
+				Size = UDim2.fromOffset((if phone then 130 else 110) - (k - 1) * 14, barHeight),
+				BackgroundColor3 = GOLD,
+				BackgroundTransparency = 0.15,
+				BorderSizePixel = 0,
+				Parent = tile,
+			})
+			UI.new("UICorner", { CornerRadius = UDim.new(0.5, 0), Parent = bar })
+		end
+		local buy = UI.new("TextButton", {
+			Name = "Buy",
+			AnchorPoint = Vector2.new(0.5, 1),
+			Position = UDim2.new(0.5, 0, 1, -16),
+			Size = UDim2.new(1, -32, 0, buttonHeight),
+			BackgroundColor3 = Color3.fromRGB(150, 30, 110),
+			AutoButtonColor = true,
+			FontFace = HEAVY,
+			TextSize = if phone then 32 else 30,
+			TextColor3 = WHITE,
+			Text = bundlePriceText(bundle),
+			Parent = tile,
+		})
+		neonEdge(buy, 2, 0.1)
+		buy.Activated:Connect(function()
+			ShopController.buyBundle(bundle)
+		end)
+		refs.bundleButtons[bundle.productId] = { button = buy, bundle = bundle }
+	end
+	refs.bundles = backdrop
 end
 
 local function buildGui()
@@ -744,6 +946,7 @@ local function buildGui()
 	else
 		buildDesktopPanels(canvas)
 	end
+	buildBundles(canvas)
 
 	-- Effects layer on top of everything, and a full-screen flash for purchases.
 	refs.fx = UI.new("Frame", { Name = "FX", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, ZIndex = 18, Parent = canvas })
@@ -940,6 +1143,20 @@ function ShopController.pressAction()
 		end
 		return
 	end
+	-- Robux characters: Roblox's own Game Pass prompt (it confirms the purchase itself, so no hold).
+	if def.tier == "Robux" then
+		if def.gamePassId and state.pendingPass == nil then
+			state.pendingPass = def.id
+			refreshDetail()
+			MarketplaceService:PromptGamePassPurchase(localPlayer, def.gamePassId)
+		end
+		return
+	end
+	-- Not enough credits: the button offers the bundles.
+	if def.tier == "Yen" and yen() < (def.yenPrice or 0) then
+		ShopController.openBundles()
+		return
+	end
 	-- BUY: charge up for HOLD_TO_BUY seconds; letting go early cancels.
 	state.holdStarted = os.clock()
 	sound("charge")
@@ -953,6 +1170,31 @@ function ShopController.releaseAction()
 		state.holdStarted = nil
 		refreshDetail() -- cancelled: empty the bar, restore the label
 	end
+end
+
+-- The purchase fanfare: flash, speed lines, the stamp (`stamp` is its text), a camera jolt, and the hologram
+-- shows off the ultimate.
+local function celebrate(stamp: string)
+	sound("purchase")
+	refs.flash.BackgroundTransparency = 0.15
+	tween(refs.flash, 0.6, { BackgroundTransparency = 1 })
+	speedBurst(Vector2.new(CANVAS.X / 2, CANVAS.Y / 2), WHITE, 28)
+	speedBurst(Vector2.new(CANVAS.X / 2, CANVAS.Y / 2), PINK, 14)
+	refs.stamp.Text = stamp
+	refs.stamp.Visible = true
+	refs.stamp.TextTransparency = 0
+	refs.stamp.TextStrokeTransparency = 0
+	refs.stamp.Size = UDim2.fromOffset(refs.stampSize.X * 1.5, refs.stampSize.Y * 1.43)
+	tween(refs.stamp, 0.35, { Size = UDim2.fromOffset(refs.stampSize.X, refs.stampSize.Y) }, Enum.EasingStyle.Back)
+	task.delay(1.1, function()
+		local fade = tween(refs.stamp, 0.35, { TextTransparency = 1, TextStrokeTransparency = 1 })
+		fade.Completed:Connect(function()
+			refs.stamp.Visible = false
+		end)
+	end)
+	CameraShake.shake(0.35, 0.3)
+	state.previewSlot = "ultimate"
+	state.nextPreview = 0
 end
 
 local function completePurchase(def: any)
@@ -978,25 +1220,7 @@ local function completePurchase(def: any)
 			end
 		end
 		ClientState.ability.owned = list
-		sound("purchase")
-		refs.flash.BackgroundTransparency = 0.15
-		tween(refs.flash, 0.6, { BackgroundTransparency = 1 })
-		speedBurst(Vector2.new(CANVAS.X / 2, CANVAS.Y / 2), WHITE, 28)
-		speedBurst(Vector2.new(CANVAS.X / 2, CANVAS.Y / 2), PINK, 14)
-		refs.stamp.Visible = true
-		refs.stamp.TextTransparency = 0
-		refs.stamp.TextStrokeTransparency = 0
-		refs.stamp.Size = UDim2.fromOffset(refs.stampSize.X * 1.5, refs.stampSize.Y * 1.43)
-		tween(refs.stamp, 0.35, { Size = UDim2.fromOffset(refs.stampSize.X, refs.stampSize.Y) }, Enum.EasingStyle.Back)
-		task.delay(1.1, function()
-			local fade = tween(refs.stamp, 0.35, { TextTransparency = 1, TextStrokeTransparency = 1 })
-			fade.Completed:Connect(function()
-				refs.stamp.Visible = false
-			end)
-		end)
-		CameraShake.shake(0.35, 0.3)
-		state.previewSlot = "ultimate"
-		state.nextPreview = 0 -- celebrate with the ultimate
+		celebrate(UNLOCKED_STAMP)
 	elseif result.status == "insufficient" then
 		sound("denied")
 		glitch(refs.price, 8)
@@ -1024,7 +1248,7 @@ local function animate(dt: number)
 			state.yenShown = target
 		end
 	end
-	refs.balance.Text = "¥" .. UI.formatNumber(state.yenShown)
+	refs.balance.Text = Currency.richAmount(UI.formatNumber(state.yenShown), math.floor(refs.balance.TextSize * 0.55))
 	-- Hold-to-buy completes.
 	if state.holdStarted and now - state.holdStarted >= HOLD_TO_BUY and not state.busy and state.selected then
 		task.spawn(completePurchase, state.selected)
@@ -1045,6 +1269,29 @@ local function animate(dt: number)
 	end
 end
 
+function ShopController.openBundles()
+	if not state.open or not refs.bundles or refs.bundles.Visible then
+		return
+	end
+	state.holdStarted = nil
+	refs.bundles.Visible = true
+	sound("select")
+	refs.bundleScale.Scale = 0.88
+	tween(refs.bundleScale, 0.3, { Scale = 1 }, Enum.EasingStyle.Back)
+	speedBurst(Vector2.new(CANVAS.X / 2, CANVAS.Y / 2), GOLD, 14)
+end
+
+function ShopController.closeBundles()
+	if refs.bundles then
+		refs.bundles.Visible = false
+	end
+end
+
+-- Roblox's purchase prompt for a bundle; the credits arrive from the server (IncomeNotice "purchase").
+function ShopController.buyBundle(bundle: RobuxCatalog.Bundle)
+	MarketplaceService:PromptProductPurchase(localPlayer, bundle.productId)
+end
+
 function ShopController.open()
 	if state.open or state.busy then
 		return
@@ -1059,6 +1306,7 @@ function ShopController.open()
 	state.open = true
 	state.holdStarted = nil
 	state.yenShown = yen()
+	ShopController.closeBundles()
 	setControls(false)
 
 	-- Hide the rest of the HUD while shopping.
@@ -1110,6 +1358,7 @@ function ShopController.close()
 	end
 	state.open = false
 	state.holdStarted = nil
+	ShopController.closeBundles()
 	refs.gui.Enabled = false
 	local camera = workspace.CurrentCamera
 	local function finish()
@@ -1163,8 +1412,69 @@ function ShopController.Start()
 			ShopController.close()
 		end
 	end)
+	-- Live Robux prices (what players actually pay); the catalog's numbers show until these arrive.
+	task.spawn(function()
+		local function read(key: string, id: number, infoType: Enum.InfoType)
+			local ok, info = pcall(MarketplaceService.GetProductInfo, MarketplaceService, id, infoType)
+			if ok and type(info) == "table" and type(info.PriceInRobux) == "number" then
+				livePrices[key] = info.PriceInRobux
+			end
+		end
+		for _, bundle in RobuxCatalog.bundles do
+			read("product:" .. bundle.productId, bundle.productId, Enum.InfoType.Product)
+		end
+		for _, def in CharacterDefs.list do
+			if def.gamePassId then
+				read("pass:" .. def.gamePassId, def.gamePassId, Enum.InfoType.GamePass)
+			end
+		end
+		for _, entry in refs.bundleButtons do
+			entry.button.Text = bundlePriceText(entry.bundle)
+		end
+		if state.open then
+			refreshCards()
+			refreshDetail()
+		end
+	end)
+	-- A Game Pass prompt closed. Bought: wait for the server to grant it (ClientState below); otherwise reset.
+	MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player, _passId, purchased)
+		if player ~= localPlayer or not state.pendingPass then
+			return
+		end
+		local id = state.pendingPass
+		if not purchased then
+			state.pendingPass = nil
+		else
+			task.delay(PASS_GRANT_TIMEOUT, function()
+				if state.pendingPass == id then
+					state.pendingPass = nil
+					if state.open then
+						refreshDetail()
+					end
+				end
+			end)
+		end
+		if state.open then
+			refreshDetail()
+		end
+	end)
+	-- Credits from a bundle arrived (the HUD shows its own popup when the shop is closed).
+	Remotes.IncomeNotice.OnClientEvent:Connect(function(notice)
+		if state.open and type(notice) == "table" and notice.source == "purchase" and type(notice.amount) == "number" then
+			ShopController.closeBundles()
+			celebrate("+" .. Currency.amount(UI.formatNumber(notice.amount)))
+			refreshCards()
+			refreshDetail()
+		end
+	end)
 	-- Redraw when the server's view changes (a purchase, an equip); close if we leave the lobby.
 	ClientState.Changed:Connect(function(kind)
+		if kind == "ability" and state.pendingPass and owned(state.pendingPass) then
+			state.pendingPass = nil -- the pass was granted
+			if state.open then
+				celebrate(UNLOCKED_STAMP)
+			end
+		end
 		if state.open and kind == "ability" then
 			refreshCards()
 			refreshDetail()

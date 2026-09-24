@@ -46,7 +46,10 @@ you eliminate someone by typing the number *you* see on them. Studio place: "InD
   run on stopping Play (BindToClose), so a stop → start cycle tests a rejoin.
   Leaderboards: `NAU_DevFakeKills = "userId:count,..."` (ServerScriptService) injects kills. Round end:
   `NAU_DevRoundSeconds = <n>` (ServerScriptService) shortens rounds that start after it's set (tests the 30 s alert
-  and sudden death). Friend booster: `NAU_DevFriends = <n>` (on a Player) fakes that many friends in the server. Mode:
+  and sudden death). Friend booster: `NAU_DevFriends = <n>` (on a Player) fakes that many friends in the server.
+  Credit bundles: `NAU_DevReceipt = "<productId>"` or `"<productId>:<purchaseId>"` (on a Player) runs a fake receipt
+  through the real ProcessReceipt path; the decision appears in `NAU_DevReceiptResult` (Studio's test automation can't
+  click Roblox's purchase dialog; a person can). Test purchases change the Studio profile, so restore it afterwards. Mode:
   `NAU_DevMode = "Team6v6"` or `"FFA"` (ServerScriptService) forces the mode of the next rounds (team battle solo).
   Phone layouts on a PC: before pressing Play set `NAU_DevTouchUI = true` (touch controls) and
   `NAU_DevViewport = "844x390"` (layout size) on **StarterPlayer**, in Edit mode; remove both afterwards.

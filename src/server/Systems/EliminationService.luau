@@ -12,7 +12,7 @@ local RoundManager = require(script.Parent.RoundManager)
 
 local EliminationService = {}
 
--- Hooks for AbilityService: a popped Shadow Clone (remove its model) and every elimination (Gojo's
+-- Hooks for AbilityService: a popped Mirror Decoy (remove its model) and every elimination (Gojo's
 -- Boundless ends after 3). Handlers run after the rules have already decided; they never change them.
 local clonePoppedHandlers: { (popper: Player, decoyId: number) -> () } = {}
 local eliminationHandlers: { (attacker: Player, victimId: number) -> () } = {}
@@ -57,7 +57,7 @@ local function handleSubmit(player: Player, code: any)
 		for _, handler in clonePoppedHandlers do
 			task.spawn(handler, player, result.targetId)
 		end
-		return { status = status } -- "It was a clone!": no strike, no kill
+		return { status = status } -- "It was a decoy!": no strike, no kill
 	elseif status == "self_eliminated" then
 		RoundManager.onLifeLost(player.UserId, { cause = "strikes" })
 		return { status = status, strikesLeft = 0 }

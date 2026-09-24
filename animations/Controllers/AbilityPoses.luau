@@ -91,7 +91,7 @@ AbilityPoses.Luffy = {
 		},
 		hold = 0.6,
 	},
-	-- Gatling Barrage: both fists drawn back, leaning into it; then a blur of alternating straight
+	-- Blitz Barrage: both fists drawn back, leaning into it; then a blur of alternating straight
 	-- punches for the whole flurry, the torso rocking with each one.
 	ultimate = {
 		windupSeconds = Constants.LUFFY_GATLING_WINDUP,
@@ -122,7 +122,7 @@ AbilityPoses.Luffy = {
 -- Krillo -----------------------------------------------------------------------------------------
 
 AbilityPoses.Krillin = {
-	-- Solar Flare: open hands raised either side of the face, then flung wide with the flash.
+	-- Blinding Burst: open hands raised either side of the face, then flung wide with the flash.
 	mild = {
 		windup = {
 			Neck = { 5, 0, 0 },
@@ -165,7 +165,7 @@ AbilityPoses.Krillin = {
 -- Vejaro -----------------------------------------------------------------------------------------
 
 AbilityPoses.Vegeta = {
-	-- Saiyan Pride: crouched, fists clenched and arms flexed as the power builds, then the chest-out,
+	-- Rising Fury: crouched, fists clenched and arms flexed as the power builds, then the chest-out,
 	-- head-back roar as the aura flares.
 	mild = {
 		windup = {
@@ -186,7 +186,7 @@ AbilityPoses.Vegeta = {
 		},
 		hold = 0.7,
 	},
-	-- Big Bang Blast: one arm thrust straight out at the target, open palm, the other hand bracing the
+	-- Nova Blast: one arm thrust straight out at the target, open palm, the other hand bracing the
 	-- forearm; the release is the recoil of the blast.
 	ultimate = {
 		windup = {
@@ -228,7 +228,7 @@ AbilityPoses.Zoro = {
 		release = ZORIN_GUARD,
 		hold = Constants.ZORO_GUARD_SECONDS,
 	},
-	-- Tornado Slash: blades raised crossed over the left shoulder, torso wound to the left; then a full
+	-- Cyclone Cut: blades raised crossed over the left shoulder, torso wound to the left; then a full
 	-- spin with both arms flung wide that throws the tornado.
 	ultimate = {
 		swords = { right = "KatanaRed", left = "KatanaDark", mouth = "Katana" },
@@ -312,13 +312,13 @@ local NARIKO_SEAL = {
 }
 
 AbilityPoses.Naruto = {
-	-- Shadow Clone: the crossed-fingers hand seal in front of the chest, held as the clone appears.
+	-- Mirror Decoy: the crossed-fingers hand seal in front of the chest, held as the clone appears.
 	mild = {
 		windup = NARIKO_SEAL,
 		release = NARIKO_SEAL,
 		hold = 0.3,
 	},
-	-- Spiral Sphere: the right palm held out low with the sphere forming, the left hand hovering over it
+	-- Vortex Orb: the right palm held out low with the sphere forming, the left hand hovering over it
 	-- shaping it; then the lunge, driving the right palm forward, left arm swept back.
 	ultimate = {
 		windup = {
@@ -344,7 +344,7 @@ AbilityPoses.Naruto = {
 -- Ichiro -----------------------------------------------------------------------------------------
 
 AbilityPoses.Ichigo = {
-	-- Flash Step: a low forward crouch, arms trailing; arrives with the blade arm out to the side.
+	-- Blur Step: a low forward crouch, arms trailing; arrives with the blade arm out to the side.
 	mild = {
 		swords = { right = "Cleaver" },
 		trails = true,
@@ -365,7 +365,7 @@ AbilityPoses.Ichigo = {
 		},
 		hold = 0.35,
 	},
-	-- Moon Fang Wave: the huge blade raised two-handed over the right shoulder while it charges, then
+	-- Crescent Wave: the huge blade raised two-handed over the right shoulder while it charges, then
 	-- one diagonal downward slash across the body that releases the wave.
 	ultimate = {
 		swords = { right = "Cleaver" },

@@ -7,6 +7,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Remotes = require(Shared:WaitForChild("Remotes"))
 local CharacterDefs = require(Shared:WaitForChild("Modules"):WaitForChild("CharacterDefs"))
+local Currency = require(Shared:WaitForChild("Modules"):WaitForChild("Currency"))
 local UIMotion = require(ReplicatedStorage:WaitForChild("Animations"):WaitForChild("Controllers"):WaitForChild("UIMotion"))
 local Client = script.Parent.Parent
 local ClientState = require(Client:WaitForChild("ClientState"))
@@ -122,9 +123,11 @@ local function showCard(def: any)
 	if def.tier == "Free" then
 		refs.cardTier.Text = "FREE STARTER · already yours"
 	elseif def.tier == "Yen" then
-		refs.cardTier.Text = string.format("¥ %s · yen tier %d", UI.formatNumber(def.yenPrice), def.yenTier)
+		refs.cardTier.Text = string.format("%s · tier %d", Currency.amount(UI.formatNumber(def.yenPrice)), def.yenTier)
 	else
-		refs.cardTier.Text = "Robux pass · price announced later"
+		refs.cardTier.Text = if def.robuxPrice
+			then string.format("Robux pass · R$ %s · in the shop", UI.formatNumber(def.robuxPrice))
+			else "Robux pass · coming soon"
 	end
 	refs.cardIdentity.Text = def.identity
 	refs.cardAbilities.Text = string.format("Q  %s    E  %s", string.upper(def.abilities.mild), string.upper(def.abilities.ultimate))

@@ -1,7 +1,7 @@
 -- Monkey D. Luffy (approved sheet, docs/ABILITIES.md).
 --   Mild  — Stretch Grapple: aim at a surface up to 45 studs away; after a short tell the arm latches
 --           on and Luffy is pulled there. Nothing to grab = nothing happens and no cooldown is spent.
---   Ult   — Gatling Barrage: 1 s wind-up (slowed), then a 1.5 s punch flurry in a 15-stud cone. Every
+--   Ult   — Blitz Barrage: 1 s wind-up (slowed), then a 1.5 s punch flurry in a 15-stud cone. Every
 --           pulse pushes opponents in the cone back; the first time each is hit, their half-typed code
 --           is cleared.
 -- The server picks the grapple point with its own raycast; the pull itself runs on Luffy's client

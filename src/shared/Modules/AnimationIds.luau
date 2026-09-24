@@ -18,31 +18,31 @@ AnimationIds.ids = {
 	},
 	Luffy = { -- Luffo
 		mild = { windup = "", release = "" }, -- Stretch Grapple
-		ultimate = { windup = "", release = "" }, -- Gatling Barrage (release should be a Looped flurry)
+		ultimate = { windup = "", release = "" }, -- Blitz Barrage (release should be a Looped flurry)
 	},
 	Krillin = { -- Krillo
-		mild = { windup = "", release = "" }, -- Solar Flare
+		mild = { windup = "", release = "" }, -- Blinding Burst
 		ultimate = { windup = "", release = "" }, -- Tracking Disc
 	},
 	Vegeta = { -- Vejaro
-		mild = { windup = "", release = "" }, -- Saiyan Pride
-		ultimate = { windup = "", release = "" }, -- Big Bang Blast
+		mild = { windup = "", release = "" }, -- Rising Fury
+		ultimate = { windup = "", release = "" }, -- Nova Blast
 	},
 	Zoro = { -- Zorin
 		mild = { windup = "", release = "" }, -- Iron Guard (release should be a Looped stance)
-		ultimate = { windup = "", release = "" }, -- Tornado Slash
+		ultimate = { windup = "", release = "" }, -- Cyclone Cut
 	},
 	L = { -- Eli
 		mild = { windup = "", release = "" }, -- Surveillance Camera
 		ultimate = { windup = "", release = "" }, -- Deduction
 	},
 	Naruto = { -- Nariko
-		mild = { windup = "", release = "" }, -- Shadow Clone
-		ultimate = { windup = "", release = "" }, -- Spiral Sphere
+		mild = { windup = "", release = "" }, -- Mirror Decoy
+		ultimate = { windup = "", release = "" }, -- Vortex Orb
 	},
 	Ichigo = { -- Ichiro
-		mild = { windup = "", release = "" }, -- Flash Step
-		ultimate = { windup = "", release = "" }, -- Moon Fang Wave
+		mild = { windup = "", release = "" }, -- Blur Step
+		ultimate = { windup = "", release = "" }, -- Crescent Wave
 	},
 	Sasuke = { -- Sazuki
 		mild = { windup = "", release = "" }, -- Lightning Dash

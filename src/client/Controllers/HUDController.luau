@@ -11,6 +11,7 @@ local TweenService = game:GetService("TweenService")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Remotes = require(Shared:WaitForChild("Remotes"))
 local Constants = require(Shared:WaitForChild("Modules"):WaitForChild("Constants"))
+local Currency = require(Shared:WaitForChild("Modules"):WaitForChild("Currency"))
 local UIMotion = require(ReplicatedStorage:WaitForChild("Animations"):WaitForChild("Controllers"):WaitForChild("UIMotion"))
 local Client = script.Parent.Parent
 local ClientState = require(Client:WaitForChild("ClientState"))
@@ -225,7 +226,7 @@ local function build()
 		Font = UI.FontHeavy,
 		TextSize = 18,
 		TextColor3 = UI.Colors.Gold,
-		Text = "¥ 0",
+		Text = Currency.amount(0),
 		Parent = yenContent,
 	})
 
@@ -770,7 +771,7 @@ local function refresh()
 end
 
 local function setYen(amount: number)
-	refs.yen.Text = "¥ " .. UI.formatNumber(amount)
+	refs.yen.Text = Currency.amount(UI.formatNumber(amount))
 end
 
 -- Owner, 2026-09-23: everyone in the match is told when 30 seconds are left (and again in sudden death).
@@ -791,7 +792,7 @@ local function onRoundAlert(alert: any)
 	UIMotion.pop(refs.timer)
 end
 
--- Passive yen: a "+¥50" that slides out to the left of the yen counter (the kill feed sits below it), with
+-- Passive yen: a "+50 YC" that slides out to the left of the yen counter (the kill feed sits below it), with
 -- what it was for. Payouts that land together (playtime and the friend boost every 10 minutes) show one
 -- after the other. Yields until the popup is gone.
 local incomeQueue: { any } = {}
@@ -799,7 +800,9 @@ local showingIncome = false
 
 local function showIncome(notice: any)
 	local caption = "PLAYTIME"
-	if notice.source == "friends" then
+	if notice.source == "purchase" then
+		caption = "PURCHASED · THANK YOU!"
+	elseif notice.source == "friends" then
 		local friends = if type(notice.friends) == "number" then notice.friends else 0
 		caption = string.format("FRIEND BOOST · %d %s HERE", friends, if friends == 1 then "FRIEND" else "FRIENDS")
 	end
@@ -822,7 +825,7 @@ local function showIncome(notice: any)
 		TextSize = 17,
 		TextColor3 = UI.Colors.Gold,
 		RichText = true,
-		Text = string.format('+¥%s  <font size="13" color="%s">%s</font>', UI.formatNumber(notice.amount), hex(UI.Colors.Muted), caption),
+		Text = string.format('+%s  <font size="13" color="%s">%s</font>', Currency.amount(UI.formatNumber(notice.amount)), hex(UI.Colors.Muted), caption),
 		Parent = content,
 	})
 	UIMotion.pop(refs.yen)
@@ -883,7 +886,7 @@ function HUDController.Start()
 	onProfile()
 	task.spawn(function()
 		local stats = localPlayer:WaitForChild("leaderstats", 15)
-		local yen = stats and stats:WaitForChild("Yen", 15)
+		local yen = stats and stats:WaitForChild(Currency.STAT, 15)
 		if yen then
 			setYen(yen.Value)
 		end

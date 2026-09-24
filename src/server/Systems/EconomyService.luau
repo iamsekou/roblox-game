@@ -7,12 +7,14 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local Constants = require(ReplicatedStorage.Shared.Modules.Constants)
+local Currency = require(ReplicatedStorage.Shared.Modules.Currency)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 
 local EconomyService = {}
 
 local balances: { [Player]: number } = {}
 local inventories: { [Player]: { [string]: boolean } } = {}
+local passes: { [Player]: { [string]: boolean } } = {} -- Game Pass characters (never saved: Roblox is the record)
 local inventoryListeners: { (Player) -> () } = {}
 local balanceListeners: { (Player, number) -> () } = {}
 
@@ -35,7 +37,7 @@ end
 
 local function push(player: Player)
 	local amount = balances[player] or 0
-	EconomyService.leaderstat(player, "Yen").Value = amount
+	EconomyService.leaderstat(player, Currency.STAT).Value = amount
 	Remotes.UpdateCurrency:FireClient(player, { yen = amount })
 	for _, listener in balanceListeners do
 		task.spawn(listener, player, amount)
@@ -112,6 +114,24 @@ function EconomyService.grant(player: Player, ids: { string })
 	end
 end
 
+-- A Robux character's Game Pass (RobuxService: owned when they joined, or just bought). Kept for the session
+-- only and never saved; Roblox is asked again on every join.
+function EconomyService.grantPass(player: Player, id: string)
+	local owned = passes[player]
+	if not owned or owned[id] then
+		return
+	end
+	owned[id] = true
+	for _, listener in inventoryListeners do
+		task.spawn(listener, player)
+	end
+end
+
+function EconomyService.hasPass(player: Player, id: string): boolean
+	local owned = passes[player]
+	return owned ~= nil and owned[id] == true
+end
+
 -- Called with the player whenever their inventory changes (AbilityService re-sends their owned list).
 function EconomyService.onInventoryChanged(listener: (Player) -> ())
 	table.insert(inventoryListeners, listener)
@@ -123,6 +143,7 @@ local function onPlayerAdded(player: Player)
 	end
 	balances[player] = 0
 	inventories[player] = {}
+	passes[player] = {}
 	EconomyService.leaderstat(player, "Elims")
 	push(player)
 	-- Studio-only test hook: set this number attribute on a Player to grant that much yen. Ignored live.
@@ -146,6 +167,7 @@ function EconomyService.Init()
 	Players.PlayerRemoving:Connect(function(player)
 		balances[player] = nil
 		inventories[player] = nil
+		passes[player] = nil
 	end)
 end
 

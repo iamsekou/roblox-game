@@ -29,8 +29,8 @@ local flushScheduled = false
 
 -- Ability hooks (approved sheet, docs/ABILITIES.md), all set by AbilityService:
 local grants: { [number]: { PlateVisibility.Grant } } = {} -- observer -> reading exceptions (Krillin/Sasuke/Gojo)
-local blindUntil: { [number]: number } = {} -- observer -> Solar Flare: learns no numbers until then
-local hiddenUntil: { [number]: number } = {} -- target -> Flash Step: nobody learns its number until then
+local blindUntil: { [number]: number } = {} -- observer -> Blinding Burst: learns no numbers until then
+local hiddenUntil: { [number]: number } = {} -- target -> Blur Step: nobody learns its number until then
 local decoyRoots: { [number]: BasePart } = {} -- Naruto's clones: decoy id -> the clone's root part
 
 local function flush()

@@ -272,7 +272,7 @@ local function updateCharacters(dt: number, config: Config)
 					rig.factor = approach(rig.factor, target, if target > rig.factor then 8 else 5, dt)
 				end
 				for _, trail in rig.trails do
-					trail.Enabled = rig.factor > 0.45
+					trail.Enabled = options.speedLines and rig.factor > 0.45
 				end
 				if rig.dust then
 					rig.dust.Rate = if humanoid.FloorMaterial ~= Enum.Material.Air then 45 * rig.factor else 0
@@ -346,8 +346,9 @@ local function updateCamera(dt: number, config: Config)
 	end
 end
 
--- Player settings: `speedLines` (streaks + vignette) and `cameraSway` (lean + stride bob). The run pose,
--- trails and dust are on other fighters too, so they stay.
+-- Player settings: `speedLines` (screen streaks, vignette and the hand wind trails on every fighter this
+-- client draws; owner 2026-09-24: the trails read as speed lines too) and `cameraSway` (lean + stride bob).
+-- The run pose and dust stay.
 function SprintFX.setOptions(new: { speedLines: boolean?, cameraSway: boolean? })
 	if new.speedLines ~= nil then
 		options.speedLines = new.speedLines

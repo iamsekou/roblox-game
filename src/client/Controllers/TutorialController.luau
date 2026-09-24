@@ -9,6 +9,7 @@ local UserInputService = game:GetService("UserInputService")
 local AnimControllers = ReplicatedStorage:WaitForChild("Animations"):WaitForChild("Controllers")
 local UIMotion = require(AnimControllers:WaitForChild("UIMotion"))
 local Constants = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Modules"):WaitForChild("Constants"))
+local Currency = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Modules"):WaitForChild("Currency"))
 local Client = script.Parent.Parent
 local UI = require(Client:WaitForChild("UI"))
 local ClientState = require(Client:WaitForChild("ClientState"))
@@ -133,9 +134,10 @@ local function steps(): { Step }
 		{
 			title = "TYPE IT TO TAKE THEM OUT",
 			body = string.format(
-				"%s, type the 4 digits you saw and confirm. The right code eliminates them and pays ¥%d. They respawn a few seconds later.",
+				"%s, type the 4 digits you saw and confirm. The right code eliminates them and pays %d %s. They respawn a few seconds later.",
 				if touch then "Tap CODE" else "Press F",
-				Constants.YEN_PER_ELIMINATION
+				Constants.YEN_PER_ELIMINATION,
+				Currency.NAME
 			),
 			draw = function(art)
 				for i, digit in { "4", "8", "2", "1" } do
@@ -148,7 +150,7 @@ local function steps(): { Step }
 					}, { UI.stroke(UI.Colors.Accent, 1, 0) })
 					UI.label({ Size = UDim2.fromScale(1, 1), Font = UI.FontHeavy, TextSize = 30, Text = digit, Parent = slot })
 				end
-				caption(art, UDim2.new(0.5, 0, 0, 92), string.format("ELIMINATED  +¥%d", Constants.YEN_PER_ELIMINATION), UI.Colors.Gold)
+				caption(art, UDim2.new(0.5, 0, 0, 92), "ELIMINATED  +" .. Currency.amount(Constants.YEN_PER_ELIMINATION), UI.Colors.Gold)
 			end,
 		},
 		{

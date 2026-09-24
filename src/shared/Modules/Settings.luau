@@ -22,7 +22,7 @@ export type Def = {
 Settings.SECTIONS = { "MOTION", "VISUALS", "AUDIO" }
 
 Settings.DEFS = {
-	{ key = "speedLines", kind = "toggle", label = "Speed lines", section = "MOTION", default = true, hint = "Streaks and vignette while running" },
+	{ key = "speedLines", kind = "toggle", label = "Speed lines", section = "MOTION", default = true, hint = "Streaks, hand trails and vignette while running" },
 	{ key = "cameraSway", kind = "toggle", label = "Camera sway", section = "MOTION", default = true, hint = "Camera leans into turns and bobs with your stride" },
 	{ key = "runFov", kind = "toggle", label = "Wide running view", section = "MOTION", default = true, hint = "The view widens while you run" },
 	{ key = "screenShake", kind = "toggle", label = "Screen shake", section = "MOTION", default = true, hint = "Off: a red edge flash instead" },

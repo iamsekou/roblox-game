@@ -1,7 +1,7 @@
 -- Naruto (approved sheet, docs/ABILITIES.md).
---   Mild  — Shadow Clone: a clone of you runs forward for 4 s with its own fake plate (a unique code in
---           each observer's table). Typing a clone's code pops it: no strike, no kill, "It was a clone!".
---   Ult   — Spiral Sphere: 0.6 s glowing wind-up, then a 20-stud lunge (stops short of walls). The first
+--   Mild  — Mirror Decoy: a clone of you runs forward for 4 s with its own fake plate (a unique code in
+--           each observer's table). Typing a clone's code pops it: no strike, no kill, "It was a decoy!".
+--   Ult   — Vortex Orb: 0.6 s glowing wind-up, then a 20-stud lunge (stops short of walls). The first
 --           opponent in the path is launched ~25 studs and can't type codes for 2 s.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 

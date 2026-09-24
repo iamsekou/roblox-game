@@ -36,7 +36,7 @@ export type SubmitResult = {
 	strikes: number?,
 	strikesLeft: number?,
 	winner: Winner?,
-	decoyOwner: number?, -- set with "clone": whose Shadow Clone was popped
+	decoyOwner: number?, -- set with "clone": whose Mirror Decoy was popped
 }
 
 export type Config = {
@@ -191,7 +191,7 @@ function MatchCore:_endLife(id: number, now: number)
 	self.codes:retireView(id, now)
 end
 
--- Decoys (Naruto's Shadow Clone, approved): a clone is a target with its own code for every active
+-- Decoys (Naruto's Mirror Decoy, approved): a clone is a target with its own code for every active
 -- observer except its owner. Typing a clone's code pops it: no strike, no kill, no credit.
 -- Returns the decoy's id, or nil if the owner isn't active. Decoy ids live far below any user id:
 -- live user ids are positive, but Studio's local test players are -1, -2, ... so small negatives are taken.

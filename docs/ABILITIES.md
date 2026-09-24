@@ -46,6 +46,12 @@ changes for anyone else.
 - Attack names: all generic. "Instant Transmission" (the one franchise attack name) was renamed **Phase Shift**
   by the owner on 2026-09-23. Gojo's ultimate "Infinity" (the franchise's technique name) was renamed
   **Boundless** by the owner on 2026-09-24, everywhere including internal ids (`gojo_boundless`, `GOJO_BOUNDLESS_TELL`).
+  Owner, 2026-09-24: every other name borrowed from the shows was replaced with an original one: Gatling Barrage →
+  **Blitz Barrage**, Solar Flare → **Blinding Burst**, Saiyan Pride → **Rising Fury**, Big Bang Blast → **Nova Blast**,
+  Tornado Slash → **Cyclone Cut**, Shadow Clone → **Mirror Decoy** (toast "It was a decoy!"), Spiral Sphere →
+  **Vortex Orb**, Flash Step → **Blur Step**, Moon Fang Wave → **Crescent Wave**. Shown text, comments and test names
+  use the new names; internal ids keep the old keys (`luffy_gatling`, `LUFFY_GATLING_*`, the `ShadowClone` model
+  name). The sheet above keeps the original names as the design record.
 - Naruto's clone: popping it is not a strike.
 
 ## Build scope per ability (Phase 3)

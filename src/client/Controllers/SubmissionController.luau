@@ -11,6 +11,7 @@ local UserInputService = game:GetService("UserInputService")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Remotes = require(Shared:WaitForChild("Remotes"))
 local Constants = require(Shared:WaitForChild("Modules"):WaitForChild("Constants"))
+local Currency = require(Shared:WaitForChild("Modules"):WaitForChild("Currency"))
 local AnimControllers = ReplicatedStorage:WaitForChild("Animations"):WaitForChild("Controllers")
 local UIMotion = require(AnimControllers:WaitForChild("UIMotion"))
 local CameraShake = require(AnimControllers:WaitForChild("CameraShake"))
@@ -149,7 +150,7 @@ local function onResult(result: any)
 	if status == "eliminated" then
 		Audio.play("elimination")
 		HUDController.toast(
-			string.format("ELIMINATED %s   +¥%s", tostring(result.targetName), UI.formatNumber(result.yen or Constants.YEN_PER_ELIMINATION)),
+			string.format("ELIMINATED %s   +%s", tostring(result.targetName), Currency.amount(UI.formatNumber(result.yen or Constants.YEN_PER_ELIMINATION))),
 			"good"
 		)
 	elseif status == "wrong" then
@@ -167,7 +168,7 @@ local function onResult(result: any)
 	elseif status == "protected" then
 		HUDController.toast("Still spawn-protected: you can strike in a moment", "info")
 	elseif status == "clone" then
-		HUDController.toast("It was a clone!", "info") -- Naruto's Shadow Clone popped: no strike, no kill
+		HUDController.toast("It was a decoy!", "info") -- Naruto's Mirror Decoy popped: no strike, no kill
 	elseif status == "locked" then
 		HUDController.toast("JAMMED: you can't type codes yet", "bad")
 	elseif status == "rate_limited" then
@@ -465,7 +466,7 @@ local function refreshAvailability()
 	render()
 end
 
--- Luffy's Gatling Barrage: wipes a half-typed code (the box stays open). Returns whether anything was
+-- Luffy's Blitz Barrage: wipes a half-typed code (the box stays open). Returns whether anything was
 -- wiped, so the caller can say why the digits vanished.
 function SubmissionController.clearTyped(): boolean
 	if #digits > 0 then
