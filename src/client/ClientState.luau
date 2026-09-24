@@ -4,6 +4,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Remotes = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Remotes"))
+local Constants = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Modules"):WaitForChild("Constants"))
 
 local ClientState = {}
 
@@ -34,6 +35,39 @@ function ClientState.isParticipant(): boolean
 		return false
 	end
 	return table.find(r.participants or {}, localPlayer.UserId) ~= nil
+end
+
+-- Team battle: is the current round a team round, and which team is a fighter on (nil in FFA)?
+function ClientState.isTeamRound(): boolean
+	local r = ClientState.round
+	return r ~= nil and r.mode == "Team6v6" and (r.phase == "InRound" or r.phase == "RoundEnd")
+end
+
+function ClientState.teamOf(userId: number?): string?
+	local r = ClientState.round
+	if not ClientState.isTeamRound() or userId == nil then
+		return nil
+	end
+	for _, entry in r.scores or {} do
+		if type(entry) == "table" and entry.userId == userId then
+			return if type(entry.team) == "string" then entry.team else nil
+		end
+	end
+	return nil
+end
+
+function ClientState.myTeam(): string?
+	return ClientState.teamOf(localPlayer.UserId)
+end
+
+-- A team's colour (Constants.TEAMS), or nil for an unknown team.
+function ClientState.teamColor(team: string?): Color3?
+	for _, def in Constants.TEAMS do
+		if def.name == team then
+			return def.color
+		end
+	end
+	return nil
 end
 
 function ClientState.isQueued(): boolean

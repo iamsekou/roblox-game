@@ -5,7 +5,7 @@
 -- Tests tagged [ATn] map to the engineering acceptance scenarios in docs/DESIGN.md.
 local TestRunner = {}
 
-local SPECS = { "CodeBook.spec", "MatchCore.spec", "PlateVisibility.spec", "AbilityRules.spec", "AnimTimeline.spec", "ClashRules.spec", "Spring.spec", "ShopRules.spec", "Leaderboard.spec", "ProfileData.spec", "Income.spec" }
+local SPECS = { "CodeBook.spec", "MatchCore.spec", "PlateVisibility.spec", "AbilityRules.spec", "AnimTimeline.spec", "ClashRules.spec", "Spring.spec", "ShopRules.spec", "Leaderboard.spec", "ProfileData.spec", "Income.spec", "TeamRules.spec" }
 
 function TestRunner.run(): string
 	local lines = {}

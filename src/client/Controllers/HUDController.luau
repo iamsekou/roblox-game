@@ -64,7 +64,10 @@ local function resultText(result: any): string
 		end
 		return string.upper(string.format("%s wins", result.name or "A fighter"))
 	elseif result.kind == "team" then
-		return string.upper(string.format("%s team wins", tostring(result.team)))
+		if result.team ~= nil and result.team == ClientState.myTeam() then
+			return "YOUR TEAM WINS"
+		end
+		return string.upper(string.format("%s wins", tostring(result.team)))
 	elseif result.reason == "not_enough_players" then
 		return "NOT ENOUGH FIGHTERS"
 	end
@@ -126,6 +129,11 @@ local function build()
 	})
 	refs.you = statSlab(board, "You", "YOU", 1)
 	refs.lead = statSlab(board, "Lead", "LEAD", 3)
+	-- Team battle: the same slabs read YOUR TEAM / ENEMY with team-coloured bars.
+	refs.youCaption = refs.you.Parent:FindFirstChild("Caption")
+	refs.leadCaption = refs.lead.Parent:FindFirstChild("Caption")
+	refs.youBar = UI.accentBar(refs.you.Parent, "bottom", UI.Colors.Line, 2)
+	refs.leadBar = UI.accentBar(refs.lead.Parent, "bottom", UI.Colors.Line, 2)
 
 	local clockPanel, clock = UI.slab({
 		Name = "Clock",
@@ -254,6 +262,15 @@ local function build()
 			Visible = false,
 			Parent = boardContent,
 		})
+		local stripe = UI.new("Frame", {
+			Name = "Team",
+			AnchorPoint = Vector2.new(1, 0),
+			Position = UDim2.fromOffset(-3, 2),
+			Size = UDim2.new(0, 3, 1, -4),
+			BorderSizePixel = 0,
+			Visible = false,
+			Parent = row,
+		})
 		local rank = UI.label({
 			Name = "Rank",
 			Size = UDim2.new(0, 22, 1, 0),
@@ -283,7 +300,7 @@ local function build()
 			TextXAlignment = Enum.TextXAlignment.Right,
 			Parent = row,
 		})
-		refs.leaderRows[i] = { frame = row, rank = rank, name = name, kills = kills }
+		refs.leaderRows[i] = { frame = row, rank = rank, name = name, kills = kills, stripe = stripe }
 	end
 
 	refs.feed = UI.new("Frame", {
@@ -490,7 +507,13 @@ local function onFeed(event: any)
 	if type(event) ~= "table" or event.kind ~= "eliminated" or not ClientState.isParticipant() then
 		return
 	end
-	local victim = escape(string.upper(nameOf(event.victim)))
+	-- Team battle: names take their team's colour.
+	local function named(userId: number?): string
+		local text = escape(string.upper(nameOf(userId)))
+		local color = ClientState.teamColor(ClientState.teamOf(userId))
+		return if color then string.format('<font color="%s">%s</font>', hex(color), text) else text
+	end
+	local victim = named(event.victim)
 	local muted = hex(UI.Colors.Muted)
 	if event.cause == "code" then
 		local bar = UI.Colors.Line
@@ -499,7 +522,7 @@ local function onFeed(event: any)
 		elseif event.victim == localPlayer.UserId then
 			bar = UI.Colors.Accent
 		end
-		local attacker = escape(string.upper(nameOf(event.attacker)))
+		local attacker = named(event.attacker)
 		pushFeed(string.format('%s  <font color="%s">ELIMINATED</font>  %s', attacker, muted, victim), bar)
 	elseif event.cause == "strikes" then
 		pushFeed(string.format('%s  <font color="%s">MISFIRED TWICE</font>', victim, muted), UI.Colors.Line)
@@ -515,13 +538,14 @@ local function onRoundChanged()
 	end
 	if r.phase ~= lastPhase then
 		if r.phase == "RoundEnd" and lastPhase == "InRound" and ClientState.isParticipant() then
-			local won = r.result and r.result.userId == localPlayer.UserId
+			local won = r.result
+				and (r.result.userId == localPlayer.UserId or (r.result.team ~= nil and r.result.team == ClientState.myTeam()))
 			showBanner(resultText(r.result), "ROUND OVER", if won then UI.Colors.Gold else UI.Colors.Text, 5)
 		end
 		lastPhase = r.phase
 	end
 	if r.phase == "InRound" and r.suddenDeath and not lastSuddenDeath and ClientState.isParticipant() then
-		showBanner("SUDDEN DEATH", "NEXT SOLE LEADER WINS", UI.Colors.Bad, 3)
+		showBanner("SUDDEN DEATH", if ClientState.myTeam() then "NEXT TEAM TO TAKE THE LEAD WINS" else "NEXT SOLE LEADER WINS", UI.Colors.Bad, 3)
 	end
 	lastSuddenDeath = r.suddenDeath == true
 end
@@ -541,7 +565,12 @@ local function onLifeChanged()
 		end
 	end
 	if life.inMatch and life.alive and not wasInMatch then
-		showBanner("FIGHT", "MOST ELIMINATIONS WINS", UI.Colors.Text, 2)
+		local team = ClientState.myTeam()
+		if team then
+			showBanner("FIGHT", string.format("YOU'RE %s · MOST TEAM ELIMINATIONS WINS", string.upper(team)), ClientState.teamColor(team), 3)
+		else
+			showBanner("FIGHT", "MOST ELIMINATIONS WINS", UI.Colors.Text, 2)
+		end
 	end
 	wasInMatch = life.inMatch == true
 end
@@ -602,7 +631,26 @@ local function refresh()
 	local showScores = (r.phase == "InRound" or r.phase == "RoundEnd") and r.scores ~= nil and #r.scores > 0
 	refs.you.Parent.Visible = showScores
 	refs.lead.Parent.Visible = showScores
-	if showScores then
+	local myTeam = ClientState.myTeam()
+	local teamRound = showScores and myTeam ~= nil
+	if teamRound then
+		-- Team battle: YOUR TEAM · clock · ENEMY (the other team's total).
+		local teamScores = if type(r.teamScores) == "table" then r.teamScores else {}
+		local ours, theirs, enemy = teamScores[myTeam] or 0, 0, nil
+		for _, def in Constants.TEAMS do
+			if def.name ~= myTeam then
+				enemy = def.name
+				theirs = math.max(theirs, teamScores[def.name] or 0)
+			end
+		end
+		refs.youCaption.Text = "YOUR TEAM"
+		refs.leadCaption.Text = if enemy then string.upper(enemy) else "ENEMY"
+		refs.you.Text = tostring(ours)
+		refs.lead.Text = tostring(theirs)
+		refs.you.TextColor3 = if ours > theirs then UI.Colors.Gold else UI.Colors.Text
+		refs.youBar.BackgroundColor3 = ClientState.teamColor(myTeam) or UI.Colors.Line
+		refs.leadBar.BackgroundColor3 = ClientState.teamColor(enemy) or UI.Colors.Line
+	elseif showScores then
 		local mine, best = 0, 0
 		for _, entry in r.scores do
 			best = math.max(best, entry.score)
@@ -610,20 +658,33 @@ local function refresh()
 				mine = entry.score
 			end
 		end
+		refs.youCaption.Text = "YOU"
+		refs.leadCaption.Text = "LEAD"
 		refs.you.Text = tostring(mine)
 		refs.lead.Text = tostring(best)
 		refs.you.TextColor3 = if mine > 0 and mine >= best then UI.Colors.Gold else UI.Colors.Text
 	end
+	refs.youBar.Visible = teamRound
+	refs.leadBar.Visible = teamRound
 
-	-- Leaderboard: most eliminations first; ties keep a stable order by name.
+	-- Leaderboard: most eliminations first; ties keep a stable order by name. Team battle: your team's
+	-- fighters first, each row marked with its team colour.
 	refs.leaderboard.Visible = showScores
 	if showScores then
 		local rows = {}
 		for _, entry in r.scores do
 			local player = Players:GetPlayerByUserId(entry.userId)
-			table.insert(rows, { userId = entry.userId, score = entry.score, name = if player then player.DisplayName else "Fighter" })
+			table.insert(rows, {
+				userId = entry.userId,
+				score = entry.score,
+				name = if player then player.DisplayName else "Fighter",
+				team = if teamRound then entry.team else nil,
+			})
 		end
 		table.sort(rows, function(a, b)
+			if a.team ~= b.team then
+				return a.team == myTeam
+			end
 			if a.score ~= b.score then
 				return a.score > b.score
 			end
@@ -639,7 +700,12 @@ local function refresh()
 				ref.kills.Text = tostring(row.score)
 				ref.frame.BackgroundTransparency = if mine then 0.2 else 1
 				ref.name.TextColor3 = if mine then UI.Colors.Gold else UI.Colors.Text
-				ref.kills.TextColor3 = if i == 1 and row.score > 0 then UI.Colors.Gold else UI.Colors.Text
+				ref.kills.TextColor3 = if i == 1 and row.score > 0 and not teamRound then UI.Colors.Gold else UI.Colors.Text
+				local color = ClientState.teamColor(row.team)
+				ref.stripe.Visible = color ~= nil
+				if color then
+					ref.stripe.BackgroundColor3 = color
+				end
 			end
 		end
 	end
@@ -674,7 +740,13 @@ local function onRoundAlert(alert: any)
 		return
 	end
 	local title = string.format("%d SECONDS LEFT", alert.seconds)
-	local subtitle = if alert.suddenDeath then "SOLE LEADER WINS · OTHERWISE A DRAW" else "MOST ELIMINATIONS WINS"
+	local team = ClientState.myTeam()
+	local subtitle
+	if alert.suddenDeath then
+		subtitle = if team then "A TEAM IN THE LEAD WINS · OTHERWISE A DRAW" else "SOLE LEADER WINS · OTHERWISE A DRAW"
+	else
+		subtitle = if team then "MOST TEAM ELIMINATIONS WINS" else "MOST ELIMINATIONS WINS"
+	end
 	showBanner(title, subtitle, UI.Colors.Bad, 3)
 	UIMotion.pop(refs.timer)
 end

@@ -18,8 +18,8 @@ Phase 3 (plan approved 2026-09-23, 8 items), worked in the owner's order:
 | 3 Choose character at the pedestal / respawn screen | Done |
 | 4 Saved progress (yen, owned characters, equipped) | Done 2026-09-23 (section 2), committed |
 | 5 Yen shop | Done (shop cottage in the lobby garden); purchases now saved |
-| 6 Robux characters via Game Passes | Waiting: the owner must create the passes and supply their ids (never invent ids) |
-| 7 Team 6v6 mode alongside FFA | Not started (rules exist in `MatchCore`, disabled) |
+| 6 Robux characters via Game Passes | Approved; waiting for the owner to create the two passes and send their ids (steps given 2026-09-23; never invent ids). To be built together with Robux yen bundles (Developer Products; bundle list approved 2026-09-23, see `docs/DESIGN.md`). Owner will supply both sets of ids later |
+| 7 Team 6v6 mode alongside FFA | Built 2026-09-23, all 8 decisions approved (section 2); committed; needs a multi-player test |
 | 8 Hand-keyframed animations | Playback + fluid placeholders done; clips pending from the owner (`docs/ANIMATING.md`) |
 
 Extras added at the owner's request this session: swords and slash effects, clashes, kill leaderboards,
@@ -32,7 +32,7 @@ colosseum crowd, passive yen + friend booster, 30-second alert (the four open ch
 | Round flow: queue → 15 s intermission → 8-min timed round, uncapped eliminations (tie → 60 s sudden death, starting instantly → draw) → 6 s results → lobby + auto-requeue; leave queue; mid-round join; 15 s under-population grace | `Systems/RoundManager`, `Lib/MatchCore` | Unit-tested [Verified]; solo round start [Verified]; with `NAU_DevRoundSeconds = 40`, solo: round end at 0 kills → sudden death at the same instant → draw 60 s later, twice in a row [Verified]; a full 8-min round end [Not tested] |
 | **30-second alert** (owner, 2026-09-23): every fighter in the match gets a "30 SECONDS LEFT" banner (subtitle "MOST ELIMINATIONS WINS"), the clock pops; again 30 s before sudden death ends ("SOLE LEADER WINS · OTHERWISE A DRAW") | `Lib/RoundTimer`, `RoundManager` (alertTimeLeft), `RoundAlert` remote, `HUDController` | 1 unit test; solo shortened rounds: alert at 30 s left in regular time and in sudden death, banner on screen [Verified]. Several fighters [Not tested] |
 | **Passive yen** (owner, 2026-09-23): ¥50 every 2 min to every player in the server; friend booster ¥100 per Roblox friend in the server every 5 min; clocks from join; "+¥50 PLAYTIME" / "+¥200 FRIEND BOOST · 2 FRIENDS HERE" popup beside the yen counter (queued when both land together) | `Lib/IncomeRules`, `Systems/IncomeService`, `IncomeNotice` remote, `HUDController` | 5 unit tests; solo Play: +¥50 at 2:00 and 4:00, +¥200 at 5:00 with `NAU_DevFriends = 2`, balance saved [Verified]. Real friendships (`IsFriendsWith`) [Not tested — needs two friend accounts on a live server] |
-| FFA only (Team6v6 rules exist, disabled) | `Constants.ENABLED_MODES` | FFA [Verified]; team rules unit-tested only |
+| Modes: FFA + **Team battle 6v6** (picked uniformly, team only with ≥4 queued; auto-balanced Crimson vs Azure; joiners to the smaller team; no friendly fire, teammates never clash; team-coloured plate borders, teammate name tags, YOUR TEAM · clock · enemy scoreboard, kill list/feed in team colours; team ties → sudden death) | `Lib/TeamRules`, `MatchCore`, `RoundManager`, `ClashRules`, `ClientState` (team helpers), `NumberPlateController`, `HUDController` | 6 team unit tests + 1 clash test [Verified]. Solo with `NAU_DevMode = "Team6v6"`: team round starts, I'm Crimson, scores {Crimson 0, Azure 0}, FIGHT banner "YOU'RE CRIMSON…", scoreboard YOUR TEAM/AZURE with team bars, 30 s alert, 0-0 → sudden death → draw [Verified]; 1 queued without the switch → FFA, HUD unchanged [Verified]. **Not tested (needs several players):** team split, joiners, teammate plates/tags, no friendly fire in play, team kill scoring live |
 | Per-observer 4-digit codes; server disclosure gate (11 studs + facing ±60° + line of sight, small slack) | `Lib/CodeBook`, `Systems/NumberAssignmentService`, `Modules/PlateVisibility` | Unit-tested [Verified]; multi-client [Owner-reported] |
 | Number plates: blank "••••" within 60 studs, digits within 11 studs when faced; 2 × 0.8; depth-tested | `Controllers/NumberPlateController` | [Owner-reported] |
 | Code entry: F / CODE button; confirming closes the box; HUD toasts | `Controllers/SubmissionController` | [Verified] solo; touch keypad [Not tested] |
@@ -92,13 +92,13 @@ colosseum crowd, passive yen + friend booster, 30-second alert (the four open ch
 - Heavy visuals are client-built (crowd, sword models, poses, board screens); the server sends events, not parts.
 - Every tunable in `Constants`; every remote in `Remotes`; UI and maps built in code; maps follow the map contract.
 - Studio-only test switches (ignored live): `NAU_DevMinPlayers`, `NAU_DevSelfTarget`, `NAU_DevUnlockAll`,
-  `NAU_DevGrantYen`, `NAU_DevFakeKills`, `NAU_DevRoundSeconds`, `NAU_DevFriends` (see CLAUDE.md).
+  `NAU_DevGrantYen`, `NAU_DevFakeKills`, `NAU_DevRoundSeconds`, `NAU_DevFriends`, `NAU_DevMode` (see CLAUDE.md).
 
 ## 6. Tests
 
-- Unit tests (`TestRunner`, in Play on the Server): **107/107** [Verified, 2026-09-23]. Specs: CodeBook 11, MatchCore 28,
-  PlateVisibility 10, AbilityRules 13, AnimTimeline 8, ClashRules 9, Spring 6, ShopRules 6, Leaderboard 5, ProfileData 5,
-  Income 6.
+- Unit tests (`TestRunner`, in Play on the Server): **114/114** [Verified, 2026-09-23]. Specs: CodeBook 11, MatchCore 28,
+  PlateVisibility 10, AbilityRules 13, AnimTimeline 8, ClashRules 10, Spring 6, ShopRules 6, Leaderboard 5, ProfileData 5,
+  Income 6, TeamRules 6.
 - Owner-reported: 3-player check, multi-client ability test and 2-player clash test passed.
 - **Not tested**: saves on live servers and real server hops; phones/touch layouts (shop, crowd density);
   12-player performance; the 2-player ability cases listed in section 2; authored animation clips.
@@ -122,8 +122,11 @@ colosseum crowd, passive yen + friend booster, 30-second alert (the four open ch
 
 ## 8. Single next task
 
-**Phase 3 item 7: Team 6v6 mode**, once the owner approves its decision list (item 6 is blocked on the owner's
-Game Pass ids). Owner still to do: test saved progress in Test → Clients and Servers (leave, rejoin).
+**Owner: multi-player test of team battle** in Test → Clients and Servers (4+ clients, `NAU_DevMode = "Team6v6"` or
+just 4 queued): team split, teammate plates/tags, "That's a teammate", no friendly fire, team scoring; plus saved
+progress (leave, rejoin).
+**Next build:** Phase 4 (polish, more maps, 12-player stress test), plan to be approved by the owner. Item 6 + Robux yen
+bundles (approved) are built as soon as the owner sends the pass and product ids.
 
 Owner items in parallel: review the placeholder animations and shop/leaderboard/crowd look; author the first
 animation clips (Gokai + Luffo); create the two Game Passes when ready (item 6).

@@ -256,8 +256,16 @@ local Constants = {
 	-- Input
 	ENTRY_KEY = Enum.KeyCode.F,
 
-	-- Modes the random picker may choose from (uniform, repeats allowed). Team6v6 arrives in Phase 3.
-	ENABLED_MODES = { "FFA" },
+	-- Modes the random picker may choose from (uniform, repeats allowed; rules in Lib/TeamRules).
+	ENABLED_MODES = { "FFA", "Team6v6" },
+	-- Team battle (Phase 3 item 7, owner-approved 2026-09-23): only picked with at least this many queued
+	-- fighters (fewer is always FFA). Teams are auto-balanced (sizes never differ by more than one); joiners go to
+	-- the smaller team; nobody is moved mid-round. Names are shown to players.
+	TEAM_MODE_MIN_PLAYERS = 4,
+	TEAMS = {
+		{ name = "Crimson", color = Color3.fromRGB(214, 70, 64) },
+		{ name = "Azure", color = Color3.fromRGB(72, 148, 232) },
+	},
 
 	-- Studio-only: set this attribute (a number) on ServerScriptService to lower the minimum
 	-- player count for solo testing. Ignored in live servers.
@@ -277,6 +285,9 @@ local Constants = {
 	-- Studio-only: a number on ServerScriptService replaces the round length (seconds) for rounds that start
 	-- after it's set, so the 30-second alert and sudden death can be tested without waiting 8 minutes. Ignored live.
 	DEV_ROUND_SECONDS_ATTRIBUTE = "NAU_DevRoundSeconds",
+	-- Studio-only: "FFA" or "Team6v6" on ServerScriptService forces the mode of rounds that start after it's set
+	-- (team mode then ignores TEAM_MODE_MIN_PLAYERS, so it can be tested solo). Ignored live.
+	DEV_MODE_ATTRIBUTE = "NAU_DevMode",
 }
 
 return Constants

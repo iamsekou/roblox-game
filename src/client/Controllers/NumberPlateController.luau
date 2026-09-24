@@ -9,6 +9,9 @@
 --
 -- Placement rule (animator spec): the plate floats just above the tallest visible point of the avatar
 -- (hats, hair and every other accessory included), re-measured continuously.
+--
+-- Team battle (owner-approved 2026-09-23): every plate's border takes its fighter's team colour, and teammates
+-- also get a small name tag above their plate (arena names are otherwise hidden).
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -27,6 +30,9 @@ local RECONCILE_SECONDS = 0.25
 local MASK_TEXT = string.rep("•", Constants.CODE_LENGTH)
 local MASK_TEXT_COLOR = Color3.fromRGB(150, 156, 172)
 local CODE_TEXT_COLOR = Color3.fromRGB(255, 255, 255)
+local TEAM_STROKE_THICKNESS = 2 -- pixels; the neutral (FFA) border is 1
+local TAG_SIZE = Vector2.new(4, 0.55) -- studs: a teammate's name tag
+local TAG_GAP = 0.3 -- studs between the plate's top edge and the tag
 local RULES: PlateVisibility.PlateRules = {
 	drawDistance = Constants.PLATE_BLANK_DRAW_DISTANCE,
 	viewDistance = Constants.PLATE_VIEW_DISTANCE,
@@ -39,7 +45,19 @@ local localPlayer = Players.LocalPlayer
 local playerGui = localPlayer:WaitForChild("PlayerGui")
 
 type Mode = "hidden" | "masked" | "revealed"
-type Plate = { gui: BillboardGui, frame: Frame, label: TextLabel, root: BasePart?, humanoid: Humanoid?, mode: Mode, scale: number }
+type Plate = {
+	gui: BillboardGui,
+	frame: Frame,
+	label: TextLabel,
+	stroke: UIStroke,
+	tag: BillboardGui, -- teammate name tag (team battle only)
+	tagLabel: TextLabel,
+	ally: boolean,
+	root: BasePart?,
+	humanoid: Humanoid?,
+	mode: Mode,
+	scale: number,
+}
 
 local codes: { [number]: string } = {} -- target userId -> the code THIS client was shown
 local plates: { [number]: Plate } = {} -- one per opponent in the round, whether or not we know their code
@@ -110,8 +128,55 @@ local function createPlate(userId: number): Plate
 	label.Text = MASK_TEXT
 	label.Parent = frame
 
+	local tag = Instance.new("BillboardGui")
+	tag.Name = "NAU_TeamTag_" .. userId
+	tag.ResetOnSpawn = false
+	tag.AlwaysOnTop = false
+	tag.LightInfluence = 0
+	tag.Size = UDim2.fromScale(TAG_SIZE.X, TAG_SIZE.Y)
+	tag.Enabled = false
+	local tagLabel = Instance.new("TextLabel")
+	tagLabel.Name = "Name"
+	tagLabel.BackgroundTransparency = 1
+	tagLabel.Size = UDim2.fromScale(1, 1)
+	tagLabel.Font = Enum.Font.GothamBold
+	tagLabel.TextScaled = true
+	tagLabel.TextStrokeTransparency = 0.4
+	tagLabel.Parent = tag
+
 	gui.Parent = playerGui
-	return { gui = gui, frame = frame, label = label, root = nil, humanoid = nil, mode = "hidden", scale = 1 }
+	tag.Parent = playerGui
+	return {
+		gui = gui,
+		frame = frame,
+		label = label,
+		stroke = stroke,
+		tag = tag,
+		tagLabel = tagLabel,
+		ally = false,
+		root = nil,
+		humanoid = nil,
+		mode = "hidden",
+		scale = 1,
+	}
+end
+
+-- Team colours: the border shows the fighter's team; a teammate (or a teammate's clone) also gets a name tag.
+local function applyTeam(plate: Plate, userId: number, decoy: Model?)
+	local owner = if decoy then decoy:GetAttribute("Owner") else userId
+	local team = ClientState.teamOf(if type(owner) == "number" then owner else nil)
+	local color = ClientState.teamColor(team)
+	plate.stroke.Color = color or Color3.fromRGB(255, 255, 255)
+	plate.stroke.Transparency = if color then 0 else 0.4
+	plate.stroke.Thickness = if color then TEAM_STROKE_THICKNESS else 1
+	local myTeam = ClientState.myTeam()
+	plate.ally = team ~= nil and team == myTeam
+	if plate.ally then
+		local player = Players:GetPlayerByUserId(owner :: number)
+		plate.tagLabel.Text = string.upper(if player then player.DisplayName else "Ally")
+		plate.tagLabel.TextColor3 = color :: Color3
+	end
+	plate.tag.Enabled = plate.ally and plate.mode ~= "hidden"
 end
 
 -- Naruto's Shadow Clones (server models tagged DecoyId / Owner), except our own.
@@ -165,6 +230,7 @@ local function reconcile()
 	for userId, plate in plates do
 		if not opponents[userId] then
 			plate.gui:Destroy()
+			plate.tag:Destroy()
 			plates[userId] = nil
 		end
 	end
@@ -184,7 +250,11 @@ local function reconcile()
 			plate.gui.Adornee = head
 			plate.root = root
 			plate.humanoid = character:FindFirstChildOfClass("Humanoid")
-			plate.gui.StudsOffsetWorldSpace = Vector3.new(0, plateOffset(character, head), 0)
+			local offset = plateOffset(character, head)
+			plate.gui.StudsOffsetWorldSpace = Vector3.new(0, offset, 0)
+			plate.tag.Adornee = head
+			plate.tag.StudsOffsetWorldSpace = Vector3.new(0, offset + (Constants.PLATE_SIZE.Y + TAG_SIZE.Y) / 2 + TAG_GAP, 0)
+			applyTeam(plate, userId, decoys[userId])
 		elseif plate then
 			plate.root = nil -- character not loaded or streamed in yet
 		end
@@ -197,6 +267,7 @@ local function setMode(plate: Plate, userId: number, mode: Mode)
 	end
 	plate.mode = mode
 	plate.gui.Enabled = mode ~= "hidden"
+	plate.tag.Enabled = plate.ally and mode ~= "hidden"
 	if mode == "revealed" then
 		plate.label.Text = codes[userId] or MASK_TEXT
 		plate.label.TextColor3 = CODE_TEXT_COLOR

@@ -4,7 +4,7 @@
 --        ^------(queue drops below MIN)------'
 --
 -- The rules of a round live in Lib/MatchCore (pure, unit-tested). This module turns them into spawns,
--- timers and broadcasts. Only FFA is enabled in Phase 2; Team6v6 arrives in Phase 3.
+-- timers and broadcasts. Modes: FFA and Team6v6 (team rules in Lib/TeamRules).
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -15,6 +15,7 @@ local MapRegistry = require(ReplicatedStorage.Shared.Modules.MapRegistry)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local MatchCore = require(script.Parent.Parent.Lib.MatchCore)
 local RoundTimer = require(script.Parent.Parent.Lib.RoundTimer)
+local TeamRules = require(script.Parent.Parent.Lib.TeamRules)
 local EconomyService = require(script.Parent.EconomyService)
 local MapService = require(script.Parent.MapService)
 local NumberAssignmentService = require(script.Parent.NumberAssignmentService)
@@ -63,6 +64,33 @@ local function minPlayers(): number
 		end
 	end
 	return Constants.MIN_PLAYERS_TO_START
+end
+
+local TEAM_NAMES = {}
+for _, team in Constants.TEAMS do
+	table.insert(TEAM_NAMES, team.name)
+end
+
+-- Uniform random among the enabled modes; team battle only with enough fighters queued (Lib/TeamRules).
+local function pickMode(queuedCount: number): string
+	if RunService:IsStudio() then
+		local forced = ServerScriptService:GetAttribute(Constants.DEV_MODE_ATTRIBUTE)
+		if forced == "FFA" or forced == "Team6v6" then
+			return forced
+		end
+	end
+	return TeamRules.pickMode(Constants.ENABLED_MODES, queuedCount, Constants.TEAM_MODE_MIN_PLAYERS, math.random())
+end
+
+-- Team battle: the team a mid-round joiner goes to (the smaller one; on a tie, the one behind).
+local function teamForJoiner(match: any): string
+	local sizes = {}
+	for _, p in match.participants do
+		if p.team then
+			sizes[p.team] = (sizes[p.team] or 0) + 1
+		end
+	end
+	return TeamRules.teamForJoiner(TEAM_NAMES, sizes, match.teamScores)
 end
 
 local function roundTimeCap(): number
@@ -117,7 +145,7 @@ local function buildState()
 		for id, p in match.participants do
 			table.insert(participants, id)
 			-- protected: public (it only hides a blank plate), lets clients drop that fighter's plate
-			table.insert(scores, { userId = id, score = p.score, alive = p.alive, protected = p.protectedUntil ~= nil })
+			table.insert(scores, { userId = id, score = p.score, alive = p.alive, protected = p.protectedUntil ~= nil, team = p.team })
 		end
 	end
 	local queue = {}
@@ -138,6 +166,7 @@ local function buildState()
 		participants = participants,
 		queued = queue,
 		scores = scores,
+		teamScores = if match and match.mode == "Team6v6" then match.teamScores else nil, -- team name -> eliminations
 		result = state.result,
 	}
 end
@@ -243,7 +272,8 @@ end
 
 local function joinMidRound(player: Player): boolean
 	local match = state.match
-	if not match:addParticipant(player.UserId, nil, now()) then
+	local team = if match.mode == "Team6v6" then teamForJoiner(match) else nil
+	if not match:addParticipant(player.UserId, team, now()) then
 		return false
 	end
 	queued[player] = nil
@@ -337,13 +367,14 @@ function RoundManager.finish(winner: any)
 			queued[player] = t
 		end
 	end
-	devLog("round finished:", result.kind, result.reason, result.name or "")
+	devLog("round finished:", result.kind, result.reason, result.name or result.team or "")
 	broadcast()
 end
 
 local function startRound()
-	-- Uniform random mode and map every round; back-to-back repeats are allowed (approved).
-	local mode = Constants.ENABLED_MODES[math.random(1, #Constants.ENABLED_MODES)]
+	-- Uniform random mode and map every round; back-to-back repeats are allowed (approved). Team battle needs
+	-- TEAM_MODE_MIN_PLAYERS queued.
+	local mode = pickMode(#queuedPlayers())
 	local maps = MapRegistry.enabled()
 	local mapDef = maps[math.random(1, #maps)]
 	MapService.loadMap(mapDef.id)
@@ -368,9 +399,28 @@ local function startRound()
 	NumberAssignmentService.attach(match)
 
 	local t = now()
+	-- Team battle: the first MAX_PLAYERS queued are shuffled and dealt onto the teams in turn.
+	local teams: { [number]: string } = {}
+	if mode == "Team6v6" then
+		local ids = {}
+		for i, player in queuedPlayers() do
+			if i > Constants.MAX_PLAYERS then
+				break
+			end
+			table.insert(ids, player.UserId)
+		end
+		for i = #ids, 2, -1 do
+			local j = math.random(1, i)
+			ids[i], ids[j] = ids[j], ids[i]
+		end
+		teams = TeamRules.split(ids, TEAM_NAMES)
+		for _, name in TEAM_NAMES do
+			match:addTeam(name)
+		end
+	end
 	local roster = {}
 	for _, player in queuedPlayers() do
-		if match:addParticipant(player.UserId, nil, t) then
+		if match:addParticipant(player.UserId, teams[player.UserId], t) then
 			queued[player] = nil
 			setElims(player, 0)
 			table.insert(roster, player)
@@ -380,6 +430,12 @@ local function startRound()
 	state.endsAt = t + roundTimeCap()
 	state.warnedFor = nil
 	devLog(string.format("round started: %s on %s with %d fighters", mode, mapDef.id, #roster))
+	for _, player in roster do
+		local p = match.participants[player.UserId]
+		if p and p.team then
+			devLog(string.format("  %s is on %s", player.Name, p.team))
+		end
+	end
 	broadcast()
 
 	-- Opening wave: random spots across the map, each kept away from the spots already handed out.

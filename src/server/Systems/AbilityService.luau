@@ -769,6 +769,7 @@ local function handleUse(player: Player, slot: any, aim: any, eye: any)
 			windup = plan.castSeconds or 0,
 			position = root.Position,
 			aim = ctx.flatAim(),
+			team = p and p.team,
 		}, CLASH_PARAMS)
 		local other = partner and Players:GetPlayerByUserId(partner.id)
 		if other and startClash(other, player, entry.character, slot, ctx) then

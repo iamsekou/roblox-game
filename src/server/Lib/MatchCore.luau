@@ -122,6 +122,13 @@ function MatchCore:addParticipant(id: number, team: string?, _now: number): bool
 	return true
 end
 
+-- Team battle: a team scores (and can lead or tie) from the start, even before anyone joins it.
+function MatchCore:addTeam(team: string)
+	if self.teamScores[team] == nil then
+		self.teamScores[team] = 0
+	end
+end
+
 function MatchCore:removeParticipant(id: number, now: number)
 	if not self.participants[id] then
 		return

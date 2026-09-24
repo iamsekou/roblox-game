@@ -29,6 +29,7 @@ export type Cast = {
 	windup: number, -- seconds until it fires
 	position: Vector3, -- the caster's root when accepted
 	aim: Vector3, -- flat aim direction (unit)
+	team: string?, -- team battle: teammates never clash
 }
 
 export type Params = {
@@ -99,6 +100,7 @@ function ClashRules.offer(state: State, cast: Cast, params: Params): Cast?
 		local distance = (other.position - cast.position).Magnitude
 		if
 			other.key == cast.key
+			and (cast.team == nil or other.team ~= cast.team)
 			and not state.clashing[other.id]
 			and distance <= params.range
 			and distance < bestDistance

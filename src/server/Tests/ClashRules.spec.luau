@@ -22,6 +22,20 @@ test("[CLASH] same ability, aimed at each other, close in time and space: clash"
 	T.eq(#s.pending, 0, "both leave the pending list")
 end)
 
+test("[CLASH] teammates never clash; opposing teams do", function()
+	local s = ClashRules.new()
+	local a = cast(1, "Goku.ultimate", 0, 0, EAST)
+	a.team = "Crimson"
+	ClashRules.offer(s, a, PARAMS)
+	local b = cast(2, "Goku.ultimate", 0.3, 20, WEST)
+	b.team = "Crimson"
+	T.eq(ClashRules.offer(s, b, PARAMS), nil, "same team: no clash")
+	local c = cast(3, "Goku.ultimate", 0.35, 20, WEST)
+	c.team = "Azure"
+	local partner = ClashRules.offer(s, c, PARAMS)
+	T.truthy(partner and partner.team == "Crimson", "the enemy clashes with a Crimson caster (the nearest)")
+end)
+
 test("[CLASH] different abilities never clash", function()
 	local s = ClashRules.new()
 	ClashRules.offer(s, cast(1, "Goku.ultimate", 0, 0, EAST), PARAMS)
