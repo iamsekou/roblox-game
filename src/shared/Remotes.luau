@@ -30,6 +30,7 @@ local DEFINITIONS: { [string]: string } = {
 	AbilityState = "RemoteEvent", -- S->one { equipped, character?, mild = { name, readyAt }?, ultimate = {...}? }
 	AbilityFX = "RemoteEvent", -- S->all { kind, caster, ... } visuals only; every client draws the tell ("cast" drives animations)
 	AbilityEffect = "RemoteEvent", -- S->one { kind = "knockback" | "grapple" | "clearCode" | "lock", ... }
+	M1 = "RemoteEvent", -- C->S () throw the next punch of the click combo (Systems/MeleeService decides the rest)
 
 	-- Kill leaderboards (all-time + weekly)
 	Leaderboards = "RemoteEvent", -- S->all { serverTime, offline, boards = { AllTime|Weekly = { rows, you, syncedAt, resetAt? } } }

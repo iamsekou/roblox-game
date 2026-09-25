@@ -108,6 +108,28 @@ local function isGuarded(userId: number): boolean
 	return g ~= nil and now() < g
 end
 
+-- Nothing solid between two points (fighters and clones don't block).
+local function lineOfSight(from: Vector3, to: Vector3): boolean
+	local params = RaycastParams.new()
+	params.FilterDescendantsInstances = characterModels()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	return workspace:Raycast(from, to - from, params) == nil
+end
+
+-- A shove on `target`, unless Zoro's Iron Guard turns it away (sparks off the blades instead).
+local function knockbackTarget(target: Player, velocity: Vector3)
+	if not isGuarded(target.UserId) then
+		sendEffect(target, { kind = "knockback", velocity = velocity })
+		return
+	end
+	-- Drags repeat every tick, so the spark is rate-limited per guarded fighter.
+	local t = now()
+	if t - (lastGuardSpark[target.UserId] or -math.huge) >= Constants.GUARD_SPARK_INTERVAL then
+		lastGuardSpark[target.UserId] = t
+		Remotes.AbilityFX:FireAllClients({ kind = "guard_block", target = target.UserId, direction = velocity })
+	end
+end
+
 -- Owned = the free starters, anything bought in the yen shop, and Robux characters whose Game Pass the player
 -- owns (Phase 3 item 6; checked with Roblox by RobuxService).
 -- In Studio everything is unlocked for testing (owner request; live servers ignore this) unless
@@ -313,9 +335,7 @@ local function makeContext(player: Player, entry: Entry, aim: any, eye: any)
 		return if hit then (hit.Position - origin).Magnitude else maxDistance
 	end
 
-	function ctx.lineOfSight(from: Vector3, to: Vector3): boolean
-		return ctx.raycast(from, to - from) == nil
-	end
+	ctx.lineOfSight = lineOfSight
 
 	-- Where the caster is aiming, up to `range`: the first surface hit along the 3D aim; if the aim
 	-- hits nothing, the ground below its end point. nil if there's no ground there.
@@ -362,19 +382,7 @@ local function makeContext(player: Player, entry: Entry, aim: any, eye: any)
 		return isGuarded(target.UserId)
 	end
 
-	function ctx.knockback(target: Player, velocity: Vector3)
-		if not isGuarded(target.UserId) then
-			sendEffect(target, { kind = "knockback", velocity = velocity })
-			return
-		end
-		-- Iron Guard turned it away: everyone sees sparks off the blades. Drags repeat every tick, so this
-		-- is rate-limited per guarded fighter.
-		local t = now()
-		if t - (lastGuardSpark[target.UserId] or -math.huge) >= Constants.GUARD_SPARK_INTERVAL then
-			lastGuardSpark[target.UserId] = t
-			Remotes.AbilityFX:FireAllClients({ kind = "guard_block", target = target.UserId, direction = velocity })
-		end
-	end
+	ctx.knockback = knockbackTarget
 
 	-- Records the lock where submissions are judged; tells the target's client so its entry box greys out.
 	function ctx.lockInput(target: Player, seconds: number)
@@ -651,15 +659,19 @@ local function lifeOf(player: Player): number?
 	return if p and p.alive then p.lifeId else nil
 end
 
--- Lock `a` and `b` into a clash over `key` (the ability `character`.`slot`). `ctxB` is b's context, used for
--- the line-of-sight check. Returns false (nothing changed) if the pair can't clash right now.
-local function startClash(a: Player, b: Player, character: string, slot: string, ctxB: any): boolean
+-- Lock `a` and `b` into a clash over `key` (the ability `character`.`slot`) for `seconds` (default
+-- Constants.CLASH_SECONDS). `cinematic`: the two fighters get the cutscene camera (M1 trade clashes).
+-- Returns false (nothing changed) if the pair can't clash right now.
+local function startClash(a: Player, b: Player, character: string, slot: string, seconds: number?, cinematic: boolean?): boolean
 	local rootA, rootB = rootOf(a), rootOf(b)
 	local lifeA, lifeB = lifeOf(a), lifeOf(b)
 	if not rootA or not rootB or not lifeA or not lifeB or not a.Character or not b.Character then
 		return false
 	end
-	if not ctxB.lineOfSight(rootB.Position + CHEST, rootA.Position + CHEST) then
+	if ClashRules.isClashing(clashState, a.UserId) or ClashRules.isClashing(clashState, b.UserId) then
+		return false
+	end
+	if not lineOfSight(rootB.Position + CHEST, rootA.Position + CHEST) then
 		return false -- facing each other through a wall isn't a clash
 	end
 	ClashRules.begin(clashState, a.UserId, b.UserId)
@@ -677,12 +689,12 @@ local function startClash(a: Player, b: Player, character: string, slot: string,
 	b.Character:PivotTo(CFrame.lookAt(standB, Vector3.new(standA.X, standB.Y, standA.Z)))
 	MovementGuard.reset(a)
 	MovementGuard.reset(b)
-	local seconds = Constants.CLASH_SECONDS
+	seconds = seconds or Constants.CLASH_SECONDS
 	local freeA = addSpeed(a, 0, seconds)
 	local freeB = addSpeed(b, 0, seconds)
 	local untilTime = now() + seconds
-	sendEffect(a, { kind = "clash", untilTime = untilTime, face = standB, partner = b.UserId })
-	sendEffect(b, { kind = "clash", untilTime = untilTime, face = standA, partner = a.UserId })
+	sendEffect(a, { kind = "clash", untilTime = untilTime, face = standB, partner = b.UserId, cinematic = cinematic == true })
+	sendEffect(b, { kind = "clash", untilTime = untilTime, face = standA, partner = a.UserId, cinematic = cinematic == true })
 	local midpoint = (standA + standB) / 2
 	Remotes.AbilityFX:FireAllClients({
 		kind = "clash",
@@ -787,7 +799,7 @@ local function handleUse(player: Player, slot: any, aim: any, eye: any)
 			team = p and p.team,
 		}, CLASH_PARAMS)
 		local other = partner and Players:GetPlayerByUserId(partner.id)
-		if other and startClash(other, player, entry.character, slot, ctx) then
+		if other and startClash(other, player, entry.character, slot) then
 			return { status = "ok", readyAt = entry.rules.readyAt[slot] } -- this cast never runs
 		end
 		clashCasts[player.UserId] = ctx
@@ -876,6 +888,31 @@ local function onLifeStarted(player: Player, match: any, lifeId: number)
 	guardUntil[player.UserId] = nil
 	mildBlockedUntil[player.UserId] = nil
 	pushState(player)
+end
+
+-- For Systems/MeleeService (M1, owner request 2026-09-25) ---------------------------------------------
+
+-- A shove, respecting Iron Guard (and heard by the movement check first).
+function AbilityService.knockback(target: Player, velocity: Vector3)
+	knockbackTarget(target, velocity)
+end
+
+-- A walk-speed multiplier for `seconds` (stacks with every other slow and boost).
+function AbilityService.slow(target: Player, multiplier: number, seconds: number)
+	addSpeed(target, multiplier, seconds, "m1_stagger")
+end
+
+function AbilityService.isClashing(player: Player): boolean
+	return ClashRules.isClashing(clashState, player.UserId)
+end
+
+function AbilityService.lineOfSight(from: Vector3, to: Vector3): boolean
+	return lineOfSight(from, to)
+end
+
+-- Three M1 trades in a row: the pair locks into a fist-exchange clash with the cutscene camera.
+function AbilityService.meleeClash(a: Player, b: Player): boolean
+	return startClash(a, b, "Melee", "m1", Constants.M1_CLASH_SECONDS, true)
 end
 
 -- Does the player own this character (free, bought, or unlocked for Studio testing)? Used by ShopService.

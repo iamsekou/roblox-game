@@ -12,6 +12,7 @@ local ORDER = {
 	"RoundManager",
 	"EliminationService",
 	"AbilityService",
+	"MeleeService", -- M1 punches; clashes go through AbilityService
 	"ShopService",
 	"IncomeService",
 	"LeaderboardService",

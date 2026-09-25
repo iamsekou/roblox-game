@@ -475,6 +475,107 @@ AbilityPoses.Gojo = {
 	},
 }
 
+-- M1 (everyone, owner request 2026-09-25) ---------------------------------------------------------
+-- The click combo every fighter shares: right jab, left cross, right hook, then a crouched uppercut that
+-- launches. Both hands stay in a boxing guard when not punching. A right-hand punch loads by twisting the
+-- torso right (-Y, right shoulder back) and lands twisting left (+Y); the left hand mirrors it.
+-- `hit` is the flinch the fighter who got punched plays (no wind-up).
+
+local GUARD_RIGHT = { 50, 0, 10 }
+local GUARD_LEFT = { 50, 0, -10 }
+local GUARD_ELBOW = { 105, 0, 0 }
+
+AbilityPoses.Melee = {
+	m1_1 = { -- right jab
+		stiffness = 2.4,
+		windup = {
+			Waist = { -5, -15, 0 },
+			RightShoulder = { 40, 0, 15 },
+			RightElbow = { 100, 0, 0 },
+			LeftShoulder = GUARD_LEFT,
+			LeftElbow = GUARD_ELBOW,
+		},
+		release = {
+			Waist = { -10, 22, 0 },
+			RightShoulder = { 92, 0, -10 },
+			RightElbow = { 5, 0, 0 },
+			LeftShoulder = GUARD_LEFT,
+			LeftElbow = GUARD_ELBOW,
+		},
+		hold = 0.16,
+	},
+	m1_2 = { -- left cross
+		stiffness = 2.4,
+		windup = {
+			Waist = { -5, 15, 0 },
+			LeftShoulder = { 40, 0, -15 },
+			LeftElbow = { 100, 0, 0 },
+			RightShoulder = GUARD_RIGHT,
+			RightElbow = GUARD_ELBOW,
+		},
+		release = {
+			Waist = { -10, -25, 0 },
+			LeftShoulder = { 92, 0, 10 },
+			LeftElbow = { 5, 0, 0 },
+			RightShoulder = GUARD_RIGHT,
+			RightElbow = GUARD_ELBOW,
+		},
+		hold = 0.16,
+	},
+	m1_3 = { -- right hook: the bent arm sweeps across in front of the chest
+		stiffness = 2.2,
+		windup = {
+			Waist = { -5, -28, 0 },
+			RightShoulder = { 70, 0, 70 },
+			RightElbow = { 85, 0, 0 },
+			LeftShoulder = GUARD_LEFT,
+			LeftElbow = GUARD_ELBOW,
+		},
+		release = {
+			Waist = { -12, 32, 0 },
+			Neck = { 0, -10, 0 },
+			RightShoulder = { 88, 0, -45 },
+			RightElbow = { 80, 0, 0 },
+			LeftShoulder = GUARD_LEFT,
+			LeftElbow = GUARD_ELBOW,
+		},
+		hold = 0.2,
+	},
+	m1_4 = { -- finisher: dip and wind the right fist low, then a rising uppercut that leans back
+		stiffness = 2,
+		windup = {
+			Waist = { -22, -30, 0 },
+			Neck = { 15, 20, 0 },
+			RightShoulder = { -30, 0, 20 },
+			RightElbow = { 110, 0, 0 },
+			LeftShoulder = GUARD_LEFT,
+			LeftElbow = GUARD_ELBOW,
+		},
+		release = {
+			Waist = { 12, 25, 0 },
+			Neck = { 12, 0, 0 },
+			RightShoulder = { 155, 0, -10 },
+			RightElbow = { 35, 0, 0 },
+			LeftShoulder = { -25, 0, -15 },
+			LeftElbow = { 30, 0, 0 },
+		},
+		hold = 0.32,
+	},
+	hit = { -- flinch: snapped back at the waist, head knocked up, arms flung loose
+		windupSeconds = 0,
+		stiffness = 2.5,
+		release = {
+			Waist = { 18, 0, 0 },
+			Neck = { 18, 0, 0 },
+			RightShoulder = { -20, 0, 25 },
+			RightElbow = { 30, 0, 0 },
+			LeftShoulder = { -20, 0, -25 },
+			LeftElbow = { 30, 0, 0 },
+		},
+		hold = 0.14,
+	},
+}
+
 -- Clashes (owner-approved 2026-09-23) -------------------------------------------------------------
 -- When two fighters clash with the same attack, both play that attack's exchange for the whole clash
 -- (no wind-up): sword fighters trade parries, beam users strain against each other, the Gatling pair
@@ -553,6 +654,20 @@ local CLASH_POSES: { [string]: (number) -> { [string]: { number } } } = {
 	["Ichigo.mild"] = oneBladeExchange,
 	["Ichigo.ultimate"] = oneBladeExchange,
 	["Sasuke.mild"] = oneBladeExchange,
+	-- M1 trade clash (owner request 2026-09-25): both fighters leaning in, trading straight punches at a
+	-- blur, the torso rocking with every blow. Faster than the Gatling, like a one-on-one fist exchange.
+	["Melee.m1"] = function(t)
+		local s = math.sin(t * math.pi * 2 * 8) -- 8 punches a second per arm
+		local right, left = math.max(s, 0), math.max(-s, 0)
+		return {
+			Waist = { -15, 18 * s, 0 },
+			Neck = { 10, -8 * s, 0 },
+			RightShoulder = { 40 + 55 * right, 0, 10 - 20 * right },
+			RightElbow = { 105 - 100 * right, 0, 0 },
+			LeftShoulder = { 40 + 55 * left, 0, -10 + 20 * left },
+			LeftElbow = { 105 - 100 * left, 0, 0 },
+		}
+	end,
 }
 
 -- How far the second fighter's exchange runs behind the first: half a beat, so their blows meet (one
@@ -567,6 +682,7 @@ local COUNTER_OFFSET: { [string]: number } = {
 	["Goku.ultimate"] = 0.05,
 	["Vegeta.ultimate"] = 0.05,
 	["Naruto.ultimate"] = 0.05,
+	["Melee.m1"] = 1 / 16, -- half of an 8-a-second punch
 }
 
 -- Spring stiffness for the exchanges: fast repeating blows need snappier joints (see AbilityAnim).
@@ -579,6 +695,7 @@ local CLASH_STIFFNESS: { [string]: number } = {
 	["Goku.ultimate"] = 2.5, -- enough to let the straining tremble through
 	["Vegeta.ultimate"] = 2.5,
 	["Naruto.ultimate"] = 2.5,
+	["Melee.m1"] = 3.8,
 }
 
 -- The move a fighter plays for a clash over `character`.`slot` lasting `seconds`, or nil if that

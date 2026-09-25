@@ -52,6 +52,15 @@ AnimationIds.ids = {
 		mild = { windup = "", release = "" }, -- Blink
 		ultimate = { windup = "", release = "" }, -- Boundless
 	},
+	-- M1 click combo, shared by every fighter (owner request 2026-09-25). Wind-ups are squeezed to
+	-- Constants.M1_WINDUP, so keep each windup clip short and snappy.
+	Melee = {
+		m1_1 = { windup = "", release = "" }, -- right jab
+		m1_2 = { windup = "", release = "" }, -- left cross
+		m1_3 = { windup = "", release = "" }, -- right hook
+		m1_4 = { windup = "", release = "" }, -- uppercut finisher (launches)
+		hit = { windup = "", release = "" }, -- flinch when punched (release only)
+	},
 }
 
 -- The playable asset id for one clip, or nil when it hasn't been authored yet.
