@@ -119,6 +119,27 @@ local Constants = {
 	CLASH_KNOCKBACK = 45, -- studs/second each is thrown back when it ends (placeholder)
 	CLASH_LAUNCH = 18, -- upward studs/second on that throw (placeholder)
 
+	-- M1 click combo (owner request 2026-09-25; rules in Lib/MeleeRules, run by Systems/MeleeService).
+	-- Punches never eliminate (codes do that): they shove, stagger and launch. All placeholder.
+	M1_WINDUP = 0.13, -- seconds from the click to the punch landing
+	M1_INTERVAL = 0.32, -- minimum seconds between punches
+	M1_COMBO_LENGTH = 4, -- jab, cross, hook, uppercut finisher
+	M1_COMBO_RESET = 1, -- a punch this long after the last starts the combo over
+	M1_ENDLAG = 0.8, -- extra rest after the finisher before the next combo
+	M1_RANGE = 6, -- studs from our root to theirs
+	M1_CONE_DEGREES = 55, -- they must be within this angle of where we face
+	M1_KNOCKBACK = 16, -- studs/second shove from punches 1-3...
+	M1_KNOCKBACK_LIFT = 4, -- ...plus this much upward, so the shove isn't swallowed by ground friction
+	M1_FINISHER_KNOCKBACK = 60, -- studs/second from the finisher...
+	M1_FINISHER_LAUNCH = 24, -- ...plus this much upward
+	M1_STAGGER_SLOW = 0.35, -- walk-speed multiplier on whoever gets punched...
+	M1_STAGGER_SECONDS = 0.35, -- ...for this long
+	-- Trades: two fighters punching each other at the same moment. Enough trades in a row = a clash.
+	M1_TRADE_WINDOW = 0.35, -- both punches land within this many seconds = one trade
+	M1_TRADE_CHAIN_GAP = 1.6, -- trades further apart than this start the count over
+	M1_TRADES_TO_CLASH = 3,
+	M1_CLASH_SECONDS = 3, -- the fist-exchange clash, with the cutscene camera for the two fighters
+
 	-- Ability cast animations (Phase 3 item 8). Poses: animations/Controllers/AbilityPoses; hand-keyframed clip
 	-- ids: Modules/AnimationIds. The wind-up lasts the server's cast time; these shape the blends around it.
 	ANIM_BLEND_IN = 0.15, -- seconds to blend from the normal animation into a wind-up (eased)

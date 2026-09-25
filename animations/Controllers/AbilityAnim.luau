@@ -320,6 +320,32 @@ local function onCast(event: any)
 	startCast(casterId, characterId, slot, type(byCharacter) == "table" and byCharacter[slot] or nil, castSeconds, true)
 end
 
+-- M1 (owner request 2026-09-25): a punch of the shared click combo ("melee", move = "m1_1".."m1_4"),
+-- or the flinch of someone who got hit ("melee_hit"). Authored clips go in AnimationIds under "Melee".
+local function onMelee(event: any)
+	local who, moveName, castSeconds = event.caster, event.move, event.castSeconds
+	if type(who) ~= "number" or type(moveName) ~= "string" or type(castSeconds) ~= "number" then
+		return
+	end
+	local move = AbilityPoses.Melee and AbilityPoses.Melee[moveName]
+	startCast(who, "Melee", moveName, move, castSeconds, true)
+end
+
+local function onMeleeHit(event: any)
+	if type(event.target) ~= "number" then
+		return
+	end
+	local _, character = fighterOf(event.target)
+	-- Someone still winding up (an ability, or a punch about to trade) keeps their pose: the flinch never
+	-- swallows a blow that's on its way.
+	local current = character and casts[character]
+	if current and os.clock() - current.started < current.timing.windup + 0.05 then
+		return
+	end
+	local move = AbilityPoses.Melee and AbilityPoses.Melee.hit
+	startCast(event.target, "Melee", "hit", move, 0, true)
+end
+
 -- A clash: both fighters drop their cast and play that attack's exchange for the clash's length. The
 -- second runs half a beat behind the first, so their blows meet (one cuts high as the other cuts low)
 -- instead of mirroring each other in lockstep.
@@ -468,6 +494,10 @@ function AbilityAnim.handle(event: any)
 		onCast(event)
 	elseif event.kind == "clash" then
 		onClash(event)
+	elseif event.kind == "melee" then
+		onMelee(event)
+	elseif event.kind == "melee_hit" then
+		onMeleeHit(event)
 	end
 end
 

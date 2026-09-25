@@ -1176,8 +1176,31 @@ handlers.clash = function(event)
 		beamClash(event, seconds, BEAM_CLASHES[key])
 	elseif key == "Naruto.ultimate" then
 		sphereClash(event, seconds)
-	elseif key == "Luffy.ultimate" then
+	elseif key == "Luffy.ultimate" or key == "Melee.m1" then
 		fistClash(event, seconds)
+	end
+end
+
+-- M1 (owner request 2026-09-25) ------------------------------------------------------------------
+-- A punch landing: a quick white pop where the fist met the body. The launching finisher gets a bigger
+-- flash, a burst and a ring on the ground. Two punches landing together (a trade) spark between them.
+local M1_POP = Color3.fromRGB(255, 244, 225)
+
+handlers.melee_hit = function(event)
+	if typeof(event.position) ~= "Vector3" then
+		return
+	end
+	if event.finisher then
+		glint(event.position, M1_POP, 3.6)
+		burst(event.position, M1_POP)
+		groundRing(event.position - Vector3.new(0, 3, 0), 3.5, M1_POP, 0.4, true)
+	else
+		glint(event.position, M1_POP, 1.8)
+		local pop = part(Enum.PartType.Ball, Vector3.one * 0.8, CFrame.new(event.position), M1_POP, 0.3)
+		fadeOut(pop, 0.12, { Size = Vector3.one * 2.4 })
+	end
+	if event.traded and typeof(event.direction) == "Vector3" then
+		sparks(event.position, event.direction)
 	end
 end
 

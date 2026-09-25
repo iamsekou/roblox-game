@@ -19,6 +19,7 @@ local UIMotion = require(AnimControllers:WaitForChild("UIMotion"))
 local AbilityFX = require(AnimControllers:WaitForChild("AbilityFX"))
 local AbilityAnim = require(AnimControllers:WaitForChild("AbilityAnim"))
 local CameraShake = require(AnimControllers:WaitForChild("CameraShake"))
+local ClashCamera = require(AnimControllers:WaitForChild("ClashCamera"))
 local Client = script.Parent.Parent
 local ClientState = require(Client:WaitForChild("ClientState"))
 local UI = require(Client:WaitForChild("UI"))
@@ -101,6 +102,22 @@ local function request(slot: string)
 			HUDController.toast(message[1], message[2])
 		end
 	end
+end
+
+-- M1 (owner request 2026-09-25): a click throws the next punch of the combo. The server decides
+-- everything (combo step, hit, knockback); this only asks, with a light local throttle so a held
+-- autoclicker doesn't flood the remote.
+local lastM1 = 0
+local function requestM1()
+	if not inFight() or ClashCamera.isPlaying() then
+		return
+	end
+	local t = os.clock()
+	if t - lastM1 < Constants.M1_INTERVAL * 0.8 then
+		return
+	end
+	lastM1 = t
+	Remotes.M1:FireServer()
 end
 
 -- Effects on our own character --------------------------------------------------------------------
@@ -227,12 +244,13 @@ local clashRelease: (() -> ())? = nil
 local function endClash()
 	local release = clashRelease
 	clashRelease = nil
+	ClashCamera.stop()
 	if release then
 		release()
 	end
 end
 
-local function beginClash(untilTime: number, face: any)
+local function beginClash(untilTime: number, face: any, cinematic: boolean?, partner: any)
 	endClash()
 	local root, humanoid = myRootAndHumanoid()
 	if not root or not humanoid or humanoid.Health <= 0 then
@@ -247,6 +265,9 @@ local function beginClash(untilTime: number, face: any)
 	end
 	HUDController.toast("CLASH! Press F and type their number!", "good")
 	CameraShake.shake(0.5, 0.35)
+	if cinematic and type(partner) == "number" then
+		ClashCamera.play(partner, math.max(0, untilTime - now()))
+	end
 	clashRelease = function()
 		if humanoid.Parent then
 			humanoid.AutoRotate = autoRotate
@@ -267,7 +288,7 @@ local function onEffect(effect: any)
 		return
 	end
 	if effect.kind == "clash" and type(effect.untilTime) == "number" then
-		beginClash(effect.untilTime, effect.face)
+		beginClash(effect.untilTime, effect.face, effect.cinematic == true, effect.partner)
 		return
 	elseif effect.kind == "clash_end" then
 		endClash()
@@ -586,7 +607,9 @@ function AbilityController.Start()
 		if gameProcessed or UserInputService:GetFocusedTextBox() then
 			return
 		end
-		if input.KeyCode == Constants.ABILITY_MILD_KEY then
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			requestM1()
+		elseif input.KeyCode == Constants.ABILITY_MILD_KEY then
 			task.spawn(request, "mild")
 		elseif input.KeyCode == Constants.ABILITY_ULTIMATE_KEY then
 			task.spawn(request, "ultimate")
