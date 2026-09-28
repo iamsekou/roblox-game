@@ -1,3 +1,6 @@
+-- NOTE (2026-09-28): these ids belong to the OLD experience (universe 10767444751). Since the move to "Numbers
+-- Assassin Universe" (universe 10768509193) they must be recreated there and replaced here; until then Roblox
+-- won't deliver these purchases to the new experience.
 -- Robux credit bundles (Developer Products; owner's ids, 2026-09-24). Never invent ids: they come from the
 -- owner's Creator Dashboard. `yen` is what the server credits (Yern Credits; the internal name stays "yen").
 -- `robux` is only a fallback label: the menu shows the live price read from Roblox, which is what players pay.

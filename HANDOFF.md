@@ -101,6 +101,19 @@ colosseum crowd, passive yen + friend booster, 30-second alert (the four open ch
 
 ## 4. Outside the repo (Studio, Roblox, machine)
 
+- **Moved to a new experience (2026-09-28):** "Numbers Assassin Universe", placeId 98704863055759, universe
+  10768509193, owned by the owner's account (user 286159463). Rojo synced the repo into it; all 115 scripts match
+  the repo (length + hash) with no duplicates [Verified]. In the new place: 148/148 unit tests, the lobby builds,
+  DataStores reachable (Studio API access already on), R15 avatar with AnimationConstraint joints as before, and a
+  full solo round (queue → round → Gokai's Q and E) with no errors [Verified]. Recreated by hand: the
+  `NAU_DevUnlockAll = false` attribute and the 51 KeyframeSequences in `ServerStorage.AnimationWork.Clips`. Not
+  recreated: `ServerStorage.AnimationWork.Swords` (authoring copies for the old Animation Editor route, superseded
+  by Blender). DataStores are per experience: saves, leaderboards and the Studio test profile start empty here.
+  **Still on the old experience and must be recreated in the new one: both Game Passes and all 4 Developer
+  Products** (checked: product 3714587165 reports UniverseId 10767444751). The ids in `CharacterDefs` and
+  `RobuxCatalog` are the old ones until the owner sends new ones. Owner settings to check in the new experience:
+  Avatar type R15 (not readable from scripts), collaborators (the teammate), name/description/genre/icon.
+
 - Uploaded to Roblox under the owner's account (each approved): portraits (ids in `CharacterDefs.luau`; colour-set
   rollback ids: Goku 122903496846585, Luffy 79671763279611, Krillin 91771744627475, Vegeta 72069376256964,
   Zoro 70883204029177, L 102258380243632, Naruto 104230049635730, Ichigo 70771063323340, Sasuke 132657356363462,

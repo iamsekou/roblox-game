@@ -6,8 +6,9 @@ approved design decisions and contracts live in `docs/DESIGN.md` (read it before
 ## What this is
 
 A 12-player Roblox PvP arena game. Every player sees a *different* 4-digit number above each opponent;
-you eliminate someone by typing the number *you* see on them. Studio place: "InDeveopmentPart2"
-(placeId 125676427996909, Team Create).
+you eliminate someone by typing the number *you* see on them. Studio place: **"Numbers Assassin Universe"**
+(placeId 98704863055759, universe 10768509193; moved here 2026-09-28). The old place "InDeveopmentPart2" (placeId
+125676427996909, universe 10767444751) is retired; its DataStores, Game Passes and Developer Products stay there.
 
 ## How to work with the owner
 
