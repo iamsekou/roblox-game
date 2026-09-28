@@ -153,6 +153,21 @@ function AbilityRules.flatAim(aim: any, fallback: Vector3): Vector3
 	return fallback
 end
 
+-- Mouse aiming (owner, 2026-09-26): the unit direction from `from` (the attacker's chest) to `point` (what
+-- the cursor is on). The camera sits behind and above the character, so this is not the camera ray's own
+-- direction. nil when the point is unusable or too close to the chest to give a direction.
+function AbilityRules.aimToward(from: Vector3, point: any): Vector3?
+	if typeof(point) ~= "Vector3" then
+		return nil
+	end
+	local offset = point - from
+	local distance = offset.Magnitude
+	if distance ~= distance or distance < 1 or distance > 1e5 then -- NaN, on top of us, or absurd
+		return nil
+	end
+	return offset.Unit
+end
+
 -- A full 3D unit aim from a client-supplied look vector, or nil when it's unusable.
 function AbilityRules.unitAim(aim: any): Vector3?
 	if typeof(aim) == "Vector3" and aim.Magnitude == aim.Magnitude and aim.Magnitude > 0.1 and aim.Magnitude < 10 then

@@ -26,6 +26,11 @@ function CameraShake.setEnabled(on: boolean)
 	enabled = on
 end
 
+-- The Screen shake setting (ImpactFX also skips its black-and-white impact frames when it's off).
+function CameraShake.isEnabled(): boolean
+	return enabled
+end
+
 local function ensureFlash()
 	if #flashBands > 0 and flashBands[1].Parent then
 		return

@@ -6,3 +6,8 @@ sourcemap.json
 # Third-party reference artwork and portraits derived from it (see docs/DESIGN.md "IP decision").
 # Regenerate portraits with tools/portraits/make-portraits.ps1.
 art/
+
+# Blender review renders (tools/blender/export.py makes them for every clip) and Blender's own backups.
+tools/blender/renders/
+*.blend1
+__pycache__/

@@ -92,6 +92,19 @@ test("[ABIL] client aim is sanitised: junk falls back, NaN is rejected", functio
 	T.eq(AbilityRules.isSlot("super"), false)
 end)
 
+test("[ABIL] mouse aim points from the attacker to what the cursor is on, not along the camera ray", function()
+	-- Camera 10 studs behind and 5 above a chest at the origin; the cursor is on an enemy 10 studs to the right.
+	local chest, camera, enemy = Vector3.zero, Vector3.new(0, 5, 10), Vector3.new(10, 0, 0)
+	local cameraRay = (enemy - camera).Unit
+	local aim = AbilityRules.aimToward(chest, enemy)
+	T.truthy(aim ~= nil and aim:FuzzyEq(Vector3.new(1, 0, 0)), "straight at the enemy")
+	T.truthy(cameraRay:Dot(Vector3.new(1, 0, 0)) < 0.9, "(the camera ray itself points well off it)")
+	T.eq(AbilityRules.aimToward(chest, Vector3.new(0.3, 0, 0)), nil, "cursor on our own chest: no direction")
+	T.eq(AbilityRules.aimToward(chest, Vector3.new(0 / 0, 0, 0)), nil, "NaN")
+	T.eq(AbilityRules.aimToward(chest, Vector3.new(math.huge, 0, 0)), nil, "infinite")
+	T.eq(AbilityRules.aimToward(chest, "nope"), nil, "not a vector")
+end)
+
 test("[ABIL] Ichigo's trail: a flat strip along the wave, ignoring height", function()
 	local origin, dir = Vector3.zero, Vector3.new(0, 0, -1)
 	T.eq(AbilityRules.inStrip(origin, dir, 40, 7, Vector3.new(6, 3, -20)), true, "inside, a little above")

@@ -34,6 +34,9 @@ you eliminate someone by typing the number *you* see on them. Studio place: "InD
   length + rolling-hash comparison (repo files hashed with CR stripped vs Studio `Source`). Never leave Studio
   and the repo out of sync.
 - Don't edit scripts in Studio directly. Change the repo file and let Rojo sync it.
+- Fight animations are made in **Blender** (5.2, installed) and exported into `animations/Clips` (generated files:
+  never hand-edit them). Workflow and commands: docs/ANIMATING.md. Run `tools/blender/selftest.py` after touching
+  `nau_rig.py`/`nau_anim.py`/`export.py`, and read the export's WARN lines (feet out of reach).
 - **Run unit tests during Play on the Server:**
   `print(require(game.ServerScriptService.Server.Tests.TestRunner).run())`. The Edit-mode command bar
   caches modules and returns stale results.
@@ -70,6 +73,8 @@ you eliminate someone by typing the number *you* see on them. Studio place: "InD
 | `animations` | ReplicatedStorage.Animations — motion/FX modules | animator |
 | `assets` | ServerStorage.Assets — `Builders/` (maps), `Init/` (edit preview) | modeler |
 | `tools/portraits` | not synced — portrait generator | — |
+| `tools/clips` | not synced — builds KeyframeSequences from `animations/Clips` for publishing (run in the Edit command bar) | animator |
+| `tools/blender` | not synced — the Blender pipeline: rig, clip authoring, `NAU_Fights.blend`, export into `animations/Clips` (docs/ANIMATING.md) | animator |
 | `art/` | not synced, **git-ignored** (third-party reference art + derived portraits) | — |
 
 ## Invariants — never break these
@@ -102,6 +107,11 @@ you eliminate someone by typing the number *you* see on them. Studio place: "InD
 - Studio's input automation refuses the number-row keys (reserved for the default hotbar). Use keypad keys
   when automating tests. This says nothing about real players.
 - `HttpService` is disabled in this experience, so the Studio tools can't fetch local files.
+- Keyframe `Pose.CFrame` equals the joint's `Transform` on these AnimationConstraint rigs (a built KeyframeSequence
+  played through `KeyframeSequenceProvider:RegisterKeyframeSequence` in Play matched the data playback to 0.0°).
+  Knees bend on **-X**; hips swing forward on +X. Full leg/root axes: header of `Modules/KeyframeClip`.
+- A script created directly in Studio (Team Create) and later pulled into the repo ends up **twice** in Studio (Rojo
+  adds its own copy). After pulling anyone's new files, check for duplicate names in the synced folders.
 - **Test → Clients and Servers gives players negative UserIds (-1, -2, ...).** Never treat an id's sign as meaning
   anything (a plate bug from exactly this hid every plate in multi-client tests, 2026-09-23). Solo Play uses the real,
   positive id, so solo tests can't catch it.

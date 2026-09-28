@@ -1,5 +1,6 @@
 -- Abilities on the client: Q / E (or the two on-screen buttons on touch) *request* the equipped
--- character's mild / ultimate from the server, sending the camera's look direction as an aim hint.
+-- character's mild / ultimate from the server, and a click throws an M1 punch, each sending the ray through
+-- the mouse cursor as an aim hint (mouse aiming, owner 2026-09-26; the screen centre without a cursor).
 -- The HUD shows both slots with their cooldowns. Effects the server sends to this player are applied
 -- here: knockbacks and the grapple pull move our own character (Roblox simulates characters on their
 -- owner's client), "clear code" and "jammed" go to the code box. While waiting to respawn, a small
@@ -20,6 +21,7 @@ local AbilityFX = require(AnimControllers:WaitForChild("AbilityFX"))
 local AbilityAnim = require(AnimControllers:WaitForChild("AbilityAnim"))
 local CameraShake = require(AnimControllers:WaitForChild("CameraShake"))
 local ClashCamera = require(AnimControllers:WaitForChild("ClashCamera"))
+local ImpactFX = require(AnimControllers:WaitForChild("ImpactFX"))
 local Client = script.Parent.Parent
 local ClientState = require(Client:WaitForChild("ClientState"))
 local UI = require(Client:WaitForChild("UI"))
@@ -70,7 +72,58 @@ local function inFight(): boolean
 	return ClientState.isParticipant() and life.inMatch == true and life.alive == true
 end
 
-local function request(slot: string)
+-- Mouse aiming (owner, 2026-09-26): attacks go toward what the cursor is on. Sent to the server: the ray
+-- from the camera through the cursor (the screen centre when there's no free cursor: touch buttons,
+-- gamepad, shift-lock, first person) and a point on that ray. The server only trusts a ray origin near our
+-- character and a zoomed-out camera can be further than that, so the origin is moved along the ray to
+-- beside the character (same ray, so the same point under the cursor). The server finds the point.
+local EYE_NEAR = 30 -- studs: a camera closer than this is sent as it is
+
+local function aimRay(useCursor: boolean): (Vector3, Vector3?)
+	local camera = workspace.CurrentCamera
+	if not camera then
+		return Vector3.zAxis, nil
+	end
+	local screen = camera.ViewportSize / 2
+	if useCursor and UserInputService.MouseEnabled and UserInputService.MouseBehavior ~= Enum.MouseBehavior.LockCenter then
+		screen = UserInputService:GetMouseLocation()
+	end
+	local ray = camera:ViewportPointToRay(screen.X, screen.Y)
+	local direction = ray.Direction.Unit
+	local origin = ray.Origin
+	local character = localPlayer.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if root and root:IsA("BasePart") and (origin - root.Position).Magnitude > EYE_NEAR then
+		origin += direction * math.max(0, (root.Position - origin):Dot(direction))
+	end
+	return direction, origin
+end
+
+-- Turn our character to face where the attack goes (horizontally), so the wind-up and the swing point the
+-- way the attack travels. Not while something else holds our facing (a clash, the shop: AutoRotate off).
+local function faceAim(direction: Vector3, origin: Vector3?)
+	local character = localPlayer.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not root or not root:IsA("BasePart") or not humanoid or not humanoid.AutoRotate or ClashCamera.isPlaying() then
+		return
+	end
+	local point = root.Position + direction * 50
+	if origin then
+		local params = RaycastParams.new()
+		params.FilterDescendantsInstances = { character }
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		local hit = workspace:Raycast(origin, direction * Constants.AIM_MAX_DISTANCE, params)
+		point = if hit then hit.Position else origin + direction * Constants.AIM_MAX_DISTANCE
+	end
+	local flat = Vector3.new(point.X - root.Position.X, 0, point.Z - root.Position.Z)
+	if flat.Magnitude > 1 then
+		root.CFrame = CFrame.lookAt(root.Position, root.Position + flat)
+	end
+end
+
+-- `fromTouch`: an on-screen button, so there's no cursor to aim with (the screen centre is used).
+local function request(slot: string, fromTouch: boolean?)
 	if busy[slot] or not inFight() or not ClientState.ability[slot] then
 		return
 	end
@@ -79,11 +132,8 @@ local function request(slot: string)
 		return
 	end
 	busy[slot] = true
-	-- Where we're looking: the camera's direction and position (the server finds the spot at the centre of
-	-- the screen from these, and only trusts a camera position near our character).
-	local camera = workspace.CurrentCamera
-	local aim = if camera then camera.CFrame.LookVector else Vector3.zAxis
-	local eye = if camera then camera.CFrame.Position else nil
+	local aim, eye = aimRay(not fromTouch)
+	faceAim(aim, eye)
 	local ok, result = pcall(function()
 		return Remotes.UseAbility:InvokeServer(slot, aim, eye)
 	end)
@@ -117,7 +167,9 @@ local function requestM1()
 		return
 	end
 	lastM1 = t
-	Remotes.M1:FireServer()
+	local aim, eye = aimRay(true)
+	faceAim(aim, eye)
+	Remotes.M1:FireServer(aim, eye)
 end
 
 -- Effects on our own character --------------------------------------------------------------------
@@ -316,6 +368,7 @@ local function onEffect(effect: any)
 	end
 	if effect.kind == "knockback" and typeof(effect.velocity) == "Vector3" then
 		knockback(effect.velocity)
+		ImpactFX.selfKnockback(effect.velocity)
 	elseif effect.kind == "grapple" and typeof(effect.target) == "Vector3" and type(effect.speed) == "number" then
 		grapple(effect.target, effect.speed)
 	elseif effect.kind == "clearCode" then
@@ -388,7 +441,7 @@ local function makeSlot(gui: ScreenGui, slot: string, keyText: string, position:
 			Parent = frame,
 		})
 		hit.Activated:Connect(function()
-			task.spawn(request, slot)
+			task.spawn(request, slot, true)
 		end)
 	end
 	return slotRef
@@ -592,6 +645,7 @@ end
 function AbilityController.Start()
 	build()
 	AbilityAnim.start()
+	ImpactFX.start()
 	Remotes.AbilityEffect.OnClientEvent:Connect(onEffect)
 	Remotes.AbilityFX.OnClientEvent:Connect(function(event)
 		if type(event) == "table" and event.kind == "plate_hide" and type(event.target) == "number" and type(event.untilTime) == "number" then
@@ -599,6 +653,7 @@ function AbilityController.Start()
 		end
 		AbilityAnim.handle(event)
 		AbilityFX.play(event)
+		ImpactFX.handle(event)
 	end)
 	ClientState.Changed:Connect(function()
 		refreshPicker()

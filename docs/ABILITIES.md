@@ -75,7 +75,7 @@ changes for anyone else.
   1.5 → 2.6 s. Wind-ups, cooldowns, ranges and speeds are unchanged.
 - **Eli's Deduction lasts 7 s** (owner; replaces the 1.75x value of 5.25 s).
 - **Flash Step and Blink go where you look** (owner): to the spot at the centre of your screen (the camera's
-  ray), capped at 22 / 30 studs. Looking at ground = land there; at a wall = stop just short; up = go up that way.
+  ray; since 2026-09-26 the spot under the mouse cursor, see "Aim follows the mouse" below), capped at 22 / 30 studs. Looking at ground = land there; at a wall = stop just short; up = go up that way.
   Blink also needs Gozen to see the landing spot. Dashes now home in and stop on their point (was ±4 studs).
 - **Shadow Clone** steers round cover so it keeps running its whole life (the arena is dense with cover).
 - **Clashes** (owner-approved 2026-09-23; `Lib/ClashRules`, numbers in `Constants.CLASH_*`). Two fighters start the
@@ -101,8 +101,12 @@ changes for anyone else.
 Placeholder numbers are marked in `Constants.luau`; these are the interpretation choices, all easy to change:
 - **Cooldowns belong to the player, not the character.** Switching character on the respawn screen doesn't reset an
   ultimate; the approved respawn rule (−10 s) applies as usual.
-- **Aim** is the camera direction. Beams, waves, the disc, the tornado and dashes use its horizontal part; the grapple,
-  Big Bang Blast's target point and Gojo's Blink use the full 3D direction.
+- **Aim follows the mouse** (owner, 2026-09-26; was the camera direction). The server finds what the cursor is on (the
+  ray from the camera through the cursor) and aims from the attacker's chest toward it (`AbilityService.cursorAim`,
+  `AbilityRules.aimToward`). Beams, waves, the disc, the tornado, dashes and M1 punches use its horizontal part; the
+  grapple, Nova Blast's target point and Hunter's Eye use the full 3D direction; Blur Step and Blink land on the
+  cursor point. With no free cursor (touch buttons, gamepad, shift-lock, first person) the screen centre is used,
+  as before. The attacker turns to face the aim when attacking, so wind-ups point the way the attack goes.
 - **Dashes and lunges stop 2 studs short of cover**; teleports only land on open ground inside the arena.
 - **Gojo's Blink** lands where you aim if that's open ground, otherwise at the farthest open spot along the aim line.
 - **Solar Flare** blinds opponents within 25 studs whose *own* view cone (±60°) contains Krillin, with line of sight.

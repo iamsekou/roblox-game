@@ -163,6 +163,22 @@ local Constants = {
 	ANIM_WRIST_DRAG_MAX = 28, -- degrees
 	ANIM_LIFE_DEGREES = 2.2, -- gentle breathing sway on posed joints, so no wind-up or hold is frozen
 	ANIM_DEFAULT_HOLD = 0.4, -- seconds a release pose is held when the move doesn't say
+	-- Keyframed clips (owner, 2026-09-27; data in Animations.Clips): crisper blends than the placeholder poses.
+	CLIP_BLEND_IN = 0.05, -- seconds from the normal animation into a clip
+	CLIP_SNAP = 0.02, -- wind-up clip -> release clip
+	CLIP_BLEND_OUT = 0.22, -- clip -> back to the normal animation
+	CLIP_WALK_SPEED = 4, -- studs/second on the ground above which a clip hands the legs back to the walk...
+	CLIP_LEG_BLEND_RATE = 12, -- ...eased at this rate (per second)
+
+	-- Impact layer (owner, 2026-09-27: "more action, high intensity"; animations/Controllers/ImpactFX). Flashes and
+	-- shakes follow the Screen shake setting. All placeholder.
+	IMPACT_HITSTOP_LIGHT = 0.06, -- seconds both fighters freeze on a punch...
+	IMPACT_HITSTOP_HEAVY = 0.13, -- ...on a finisher, a clash or a heavy ability hit
+	IMPACT_SHAKE_LIGHT = 0.35, -- studs of camera shake for the two fighters involved...
+	IMPACT_SHAKE_HEAVY = 1.1,
+	IMPACT_FLASH_SECONDS = 0.07, -- the black-and-white impact frame (heavy hits, only for the fighters involved)
+	IMPACT_AFTERIMAGES = 5, -- ghost copies left along a dash or a launch
+	IMPACT_AFTERIMAGE_FADE = 0.35, -- seconds each ghost takes to fade
 	ANIM_MAX_WINDUP = 3, -- ignore cast times above this (sanity cap on the server's number)
 
 	-- Goku (approved 2026-09-23)
@@ -259,6 +275,7 @@ local Constants = {
 	GOJO_BLINK_TELL = 0.3,
 	GOJO_BLINK_RANGE = 30, -- to where you look (the point at the centre of your screen), capped at this range
 	LOOK_EYE_MAX_OFFSET = 40, -- the client's camera position is trusted only this close to its character
+	AIM_MAX_DISTANCE = 500, -- mouse aiming: how far along the cursor's ray the server looks for what it's on
 	GOJO_BOUNDLESS_TELL = 0.8,
 	GOJO_BARRIER_SECONDS = 4 * EFFECT_TIME,
 	GOJO_BARRIER_RADIUS = 10,

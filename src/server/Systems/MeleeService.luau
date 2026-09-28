@@ -6,7 +6,9 @@
 --     a shove and a brief stagger (the 4th punch launches). Punches never eliminate; codes do that;
 --   * two fighters landing punches on each other within M1_TRADE_WINDOW is a trade; M1_TRADES_TO_CLASH
 --     trades in a row lock them into a fist-exchange clash with the cutscene camera (AbilityService).
--- The punch direction is where the puncher's character faces on the server, never a client-sent aim.
+-- The punch goes toward what the puncher's cursor is on (mouse aiming, owner 2026-09-26: the client sends
+-- the ray through its cursor and the server finds the point, AbilityService.cursorAim); without a usable
+-- ray, where the character faces on the server. Either way the server picks the target.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -52,10 +54,10 @@ local function fightingLife(player: Player): (any, number?)
 	return match, p and p.lifeId
 end
 
--- The opponent this punch connects with: nearest active enemy within reach, inside the cone in front of
--- the puncher, with nothing solid in between.
-local function findTarget(player: Player, match: any, root: BasePart): (Player?, BasePart?)
-	local facing = Vector3.new(root.CFrame.LookVector.X, 0, root.CFrame.LookVector.Z)
+-- The opponent this punch connects with: nearest active enemy within reach, inside the cone around the
+-- punch direction (`aim`, horizontal; nil = where the puncher faces), with nothing solid in between.
+local function findTarget(player: Player, match: any, root: BasePart, aim: Vector3?): (Player?, BasePart?)
+	local facing = aim or Vector3.new(root.CFrame.LookVector.X, 0, root.CFrame.LookVector.Z)
 	if facing.Magnitude < 0.1 then
 		return nil, nil
 	end
@@ -82,7 +84,7 @@ local function findTarget(player: Player, match: any, root: BasePart): (Player?,
 	return best, bestRoot
 end
 
-local function land(player: Player, combo: number, match: any, lifeId: number)
+local function land(player: Player, combo: number, match: any, lifeId: number, aim: Vector3?)
 	-- Still the same fight and the same life, and not pulled into a clash during the wind-up.
 	local liveMatch, liveLife = fightingLife(player)
 	if liveMatch ~= match or liveLife ~= lifeId or AbilityService.isClashing(player) then
@@ -92,7 +94,7 @@ local function land(player: Player, combo: number, match: any, lifeId: number)
 	if not root then
 		return
 	end
-	local target, targetRoot = findTarget(player, match, root)
+	local target, targetRoot = findTarget(player, match, root, aim)
 	if not target or not targetRoot or AbilityService.isClashing(target) then
 		return
 	end
@@ -128,7 +130,7 @@ local function land(player: Player, combo: number, match: any, lifeId: number)
 	AbilityService.slow(target, Constants.M1_STAGGER_SLOW, Constants.M1_STAGGER_SECONDS)
 end
 
-local function onM1(player: Player)
+local function onM1(player: Player, aim: any, eye: any)
 	local match, lifeId = fightingLife(player)
 	if not match or not lifeId or AbilityService.isClashing(player) or not rootOf(player) then
 		return
@@ -137,13 +139,17 @@ local function onM1(player: Player)
 	if not combo then
 		return
 	end
+	-- Toward the cursor, taken at the click (horizontal; nil falls back to where the puncher faces).
+	local toward = AbilityService.cursorAim(player, aim, eye)
+	local flat = if toward then Vector3.new(toward.X, 0, toward.Z) else nil
+	local punchAim = if flat and flat.Magnitude > 0.1 then flat.Unit else nil
 	Remotes.AbilityFX:FireAllClients({
 		kind = "melee",
 		caster = player.UserId,
 		move = "m1_" .. combo,
 		castSeconds = Constants.M1_WINDUP,
 	})
-	task.delay(Constants.M1_WINDUP, land, player, combo, match, lifeId)
+	task.delay(Constants.M1_WINDUP, land, player, combo, match, lifeId, punchAim)
 end
 
 function MeleeService.Init()

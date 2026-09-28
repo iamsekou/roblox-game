@@ -14,6 +14,12 @@
 -- torso slower than the arms, so strikes ease in, overshoot a touch and settle; the hands trail fast arm
 -- swings; and a small breathing sway keeps held poses alive.
 -- Casts end early when the fighter dies or respawns. Visual only: the server never waits on these.
+--
+-- Keyframed clips (owner, 2026-09-27: high-intensity fight animations; data in ReplicatedStorage.Animations.Clips,
+-- format in Modules/KeyframeClip): where a move has a clip, it replaces the placeholder pose for that phase and is
+-- played straight from its keys (no springs: the snaps and impact frames are the point). Clips pose the whole
+-- body; while a fighter walks on the ground the legs are handed back to the walk. A published id in AnimationIds
+-- still wins over both. A hit-stop (ImpactFX) can pause a cast for a split second.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -22,23 +28,16 @@ local Modules = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Modules")
 local Constants = require(Modules:WaitForChild("Constants"))
 local AnimationIds = require(Modules:WaitForChild("AnimationIds"))
 local AnimTimeline = require(Modules:WaitForChild("AnimTimeline"))
+local KeyframeClip = require(Modules:WaitForChild("KeyframeClip"))
 local Spring = require(Modules:WaitForChild("Spring"))
 local AbilityPoses = require(script.Parent:WaitForChild("AbilityPoses"))
 local Swords = require(script.Parent:WaitForChild("Swords"))
+local ClipsFolder = script.Parent.Parent:WaitForChild("Clips")
 
 local AbilityAnim = {}
 
--- R15 joint name -> the part it lives in.
-local JOINT_PARTS: { [string]: string } = {
-	Waist = "UpperTorso",
-	Neck = "Head",
-	RightShoulder = "RightUpperArm",
-	RightElbow = "RightLowerArm",
-	RightWrist = "RightHand",
-	LeftShoulder = "LeftUpperArm",
-	LeftElbow = "LeftLowerArm",
-	LeftWrist = "LeftHand",
-}
+-- R15 joint name -> the part it lives in (the whole body: clips pose the legs too; placeholder poses never do).
+local JOINT_PARTS: { [string]: string } = KeyframeClip.JOINT_PARTS
 
 type PoseTable = { [string]: { number } }
 type Pose = PoseTable | (number) -> PoseTable
@@ -61,6 +60,13 @@ type Cast = {
 	joints: { [string]: { angle: Vector3, velocity: Vector3 } }, -- spring state per joint, in degrees
 	lastTime: number,
 	seed: number, -- phase for the breathing sway, so two fighters never sway in lockstep
+	characterId: string,
+	slot: string,
+	windupClip: KeyframeClip.Clip?, -- keyframed clips for this cast (nil = placeholder pose or authored track)
+	releaseClip: KeyframeClip.Clip?,
+	legs: number, -- 0..1: how much of the clip the legs play (walking hands them back)
+	frozenUntil: number, -- hit-stop: the cast's clock is paused until then
+	released: boolean, -- the release has started (listeners were told)
 }
 
 local localPlayer = Players.LocalPlayer
@@ -69,6 +75,27 @@ local dirty: { [Instance]: boolean } = {}
 local nextToken = 0
 local trackCache: { [Animator]: { [string]: AnimationTrack } } = setmetatable({}, { __mode = "k" }) :: any
 local rng = Random.new()
+local releaseListeners: { (Model, string, string) -> () } = {}
+
+-- Keyframed clips by character id (one ModuleScript per character in Animations.Clips), loaded on first use.
+local clipModules: { [string]: any } = {}
+local function clipsFor(characterId: string, slot: string): { windup: KeyframeClip.Clip?, release: KeyframeClip.Clip? }?
+	local loaded = clipModules[characterId]
+	if loaded == nil then
+		local module = ClipsFolder:FindFirstChild(characterId)
+		local ok, result = false, nil
+		if module and module:IsA("ModuleScript") then
+			ok, result = pcall(require, module)
+			if not ok then
+				warn("[NAU] couldn't load clips for " .. characterId .. ": " .. tostring(result))
+			end
+		end
+		loaded = if ok and type(result) == "table" then result else false
+		clipModules[characterId] = loaded
+	end
+	local pair = loaded and loaded[slot]
+	return if type(pair) == "table" then pair else nil
+end
 
 -- Sway amount per joint, as a share of Constants.ANIM_LIFE_DEGREES.
 local LIFE_SHARE: { [string]: number } = {
@@ -266,27 +293,49 @@ end
 local function startCast(who: any, characterId: string, slot: string, move: any, castSeconds: number, authored: boolean, poseOffset: number?)
 	local player, character = fighterOf(who)
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	if not move or not character or not humanoid or humanoid.Health <= 0 then
+	local clips = clipsFor(characterId, slot)
+	if (not move and not clips) or not character or not humanoid or humanoid.Health <= 0 then
 		return
 	end
+	move = move or {}
 	local windupSeconds = tonumber(move.windupSeconds) or castSeconds
 	local windupId = if authored then AnimationIds.get(characterId, slot, "windup") else nil
 	local releaseId = if authored then AnimationIds.get(characterId, slot, "release") else nil
 	endCast(character, Constants.ANIM_RELEASE_SNAP)
 	nextToken += 1
 	local started = os.clock()
-	local windupPose = if windupId then nil else move.windup
-	local releasePose = if releaseId then nil else move.release
+	-- A clip replaces the placeholder pose for its phase; a published id replaces both.
+	local windupClip = if clips and not windupId then clips.windup else nil
+	local releaseClip = if clips and not releaseId then clips.release else nil
+	local windupPose = if windupId or windupClip then nil else move.windup
+	local releasePose = if releaseId or releaseClip then nil else move.release
+	local keyed = clips ~= nil
+	local hold = tonumber(move.hold) or Constants.ANIM_DEFAULT_HOLD
+	if releaseClip and not releaseClip.looped then
+		hold = releaseClip.length -- a one-shot clip holds exactly as long as it runs
+	end
+	local names = jointNames(windupPose, releasePose)
+	for _, clip in { windupClip, releaseClip } do
+		for _, key in clip and clip.keys or {} do
+			for joint in key.pose do
+				if not table.find(names, joint) then
+					table.insert(names, joint)
+				end
+			end
+		end
+	end
 	local cast: Cast = {
 		character = character,
 		humanoid = humanoid,
 		started = started,
 		timing = {
 			windup = math.clamp(windupSeconds, 0, Constants.ANIM_MAX_WINDUP),
-			hold = tonumber(move.hold) or Constants.ANIM_DEFAULT_HOLD,
-			blendIn = Constants.ANIM_BLEND_IN,
-			snap = Constants.ANIM_RELEASE_SNAP,
-			blendOut = Constants.ANIM_BLEND_OUT,
+			hold = hold,
+			-- A keyframed move with no wind-up (a hit reaction, a clash) *is* the impact: it snaps in at once,
+			-- so the hit-stop that freezes it on its first frame shows the full pose.
+			blendIn = if keyed then (if windupSeconds <= 0 then 0 else Constants.CLIP_BLEND_IN) else Constants.ANIM_BLEND_IN,
+			snap = if keyed then Constants.CLIP_SNAP else Constants.ANIM_RELEASE_SNAP,
+			blendOut = if keyed then Constants.CLIP_BLEND_OUT else Constants.ANIM_BLEND_OUT,
 		},
 		windup = windupPose,
 		release = releasePose,
@@ -297,10 +346,17 @@ local function startCast(who: any, characterId: string, slot: string, move: any,
 		trailsOn = false,
 		poseOffset = poseOffset or 0,
 		stiffness = tonumber(move.stiffness) or 1,
-		names = jointNames(windupPose, releasePose),
+		names = names,
 		joints = {},
 		lastTime = started,
 		seed = rng:NextNumber(0, math.pi * 2),
+		characterId = characterId,
+		slot = slot,
+		windupClip = windupClip,
+		releaseClip = releaseClip,
+		legs = 1,
+		frozenUntil = 0,
+		released = false,
 	}
 	casts[character] = cast
 	if move.swords then
@@ -332,7 +388,8 @@ local function onMelee(event: any)
 end
 
 local function onMeleeHit(event: any)
-	if type(event.target) ~= "number" then
+	-- A user id from the server; a model only in solo visual tests (see fighterOf).
+	if type(event.target) ~= "number" and not (typeof(event.target) == "Instance" and event.target:IsA("Model")) then
 		return
 	end
 	local _, character = fighterOf(event.target)
@@ -342,8 +399,10 @@ local function onMeleeHit(event: any)
 	if current and os.clock() - current.started < current.timing.windup + 0.05 then
 		return
 	end
-	local move = AbilityPoses.Melee and AbilityPoses.Melee.hit
-	startCast(event.target, "Melee", "hit", move, 0, true)
+	-- The finisher throws them: the "launched" reaction (keyframed only; a plain flinch is the fallback).
+	local slot = if event.finisher and clipsFor("Melee", "launched") then "launched" else "hit"
+	local move = AbilityPoses.Melee and AbilityPoses.Melee[slot]
+	startCast(event.target, "Melee", slot, move, 0, true)
 end
 
 -- A clash: both fighters drop their cast and play that attack's exchange for the clash's length. The
@@ -354,7 +413,17 @@ local function onClash(event: any)
 	if type(characterId) ~= "string" or type(slot) ~= "string" or type(seconds) ~= "number" then
 		return
 	end
-	local move = AbilityPoses.clashMove(characterId, slot, math.clamp(seconds, 0, 10))
+	seconds = math.clamp(seconds, 0, 10)
+	-- The M1 trade clash has a keyframed exchange (and its own published-id slot, Melee.clash): the second
+	-- fighter runs half a loop behind, so one fist lands as the other pulls back.
+	local exchange = if characterId == "Melee" then clipsFor("Melee", "clash") else nil
+	if exchange and exchange.release then
+		local offset = exchange.release.length / 2
+		startCast(event.a, "Melee", "clash", { windupSeconds = 0, hold = seconds }, 0, true, 0)
+		startCast(event.b, "Melee", "clash", { windupSeconds = 0, hold = seconds }, 0, true, offset)
+		return
+	end
+	local move = AbilityPoses.clashMove(characterId, slot, seconds)
 	if not move then
 		return
 	end
@@ -364,10 +433,50 @@ end
 
 -- Per frame --------------------------------------------------------------------------------------
 
+-- How much of a clip the legs play: all of it standing, in the air or being thrown; none while walking on the
+-- ground (the walk takes them back, so feet never skate). Eased, so the hand-over doesn't pop.
+local function legShare(cast: Cast, dt: number): number
+	local root = cast.character:FindFirstChild("HumanoidRootPart")
+	local walking = false
+	if root and root:IsA("BasePart") and cast.humanoid.FloorMaterial ~= Enum.Material.Air then
+		local v = root.AssemblyLinearVelocity
+		walking = Vector3.new(v.X, 0, v.Z).Magnitude > Constants.CLIP_WALK_SPEED
+	end
+	local target = if walking then 0 else 1
+	cast.legs += (target - cast.legs) * (1 - math.exp(-Constants.CLIP_LEG_BLEND_RATE * dt))
+	return cast.legs
+end
+
+-- A keyframed phase: pose straight from the clip's keys.
+local function applyClip(cast: Cast, clip: KeyframeClip.Clip, t: number, weight: number, dt: number)
+	local legs = legShare(cast, dt)
+	for joint, values in KeyframeClip.sample(clip, t) do
+		local instance = jointOf(cast.character, joint)
+		if instance then
+			local w = math.min(weight, 1) * (if KeyframeClip.LEG_JOINTS[joint] then legs else 1)
+			if w > 0.001 then
+				instance.Transform = instance.Transform:Lerp(KeyframeClip.toCFrame(values), w)
+				dirty[instance] = true
+			end
+		end
+	end
+end
+
 local function applyCast(cast: Cast, now: number): boolean
+	local dt = math.clamp(now - cast.lastTime, 0, 0.1)
+	cast.lastTime = now
+	if now < cast.frozenUntil then
+		cast.started += dt -- hit-stop: the cast's clock stands still
+	end
 	local s = AnimTimeline.sample(cast.timing, now - cast.started)
 	if s.phase == "done" then
 		return false
+	end
+	if s.phase ~= "windup" and not cast.released then
+		cast.released = true
+		for _, listener in releaseListeners do
+			task.spawn(listener, cast.character, cast.characterId, cast.slot)
+		end
 	end
 	if cast.trails then
 		local want = s.phase == "release"
@@ -376,8 +485,18 @@ local function applyCast(cast: Cast, now: number): boolean
 			Swords.setTrails(cast.character, want)
 		end
 	end
-	local dt = math.clamp(now - cast.lastTime, 0, 0.1)
-	cast.lastTime = now
+	-- Keyframed phase? A non-looping wind-up clip is stretched or squeezed to the cast time.
+	if s.phase == "windup" and cast.windupClip then
+		local clip = cast.windupClip
+		local t = if clip.looped then s.windupT else s.windupT / math.max(cast.timing.windup, 1e-3) * clip.length
+		applyClip(cast, clip, t + cast.poseOffset, s.weight, dt)
+		table.clear(cast.joints)
+		return true
+	elseif s.phase ~= "windup" and cast.releaseClip then
+		applyClip(cast, cast.releaseClip, s.releaseT + cast.poseOffset, s.weight, dt)
+		table.clear(cast.joints)
+		return true
+	end
 	-- While an authored clip plays this phase, leave the joints to it (and start the springs afresh from
 	-- whatever it left behind if a placeholder phase follows).
 	local posing = if s.mix >= 1 then cast.release ~= nil else cast.windup ~= nil
@@ -511,6 +630,26 @@ end
 -- For tests and tooling: is this character mid-cast?
 function AbilityAnim.isCasting(character: Model): boolean
 	return casts[character] ~= nil
+end
+
+-- Hit-stop (ImpactFX): pause this fighter's cast for `seconds`, so a blow's impact frame hangs in the air.
+-- Published clips on the Animator are paused by ImpactFX itself.
+function AbilityAnim.freeze(character: Model, seconds: number)
+	local cast = casts[character]
+	if cast then
+		cast.frozenUntil = math.max(cast.frozenUntil, os.clock() + seconds)
+	end
+end
+
+-- Called with (character, characterId, slot) the moment a cast's release starts (ImpactFX adds its weight
+-- to ultimates and finishers).
+function AbilityAnim.onRelease(listener: (Model, string, string) -> ())
+	table.insert(releaseListeners, listener)
+end
+
+-- For tooling (contact sheets and publishing): the keyframed clips of one move, if it has any.
+function AbilityAnim.clips(characterId: string, slot: string): { windup: KeyframeClip.Clip?, release: KeyframeClip.Clip? }?
+	return clipsFor(characterId, slot)
 end
 
 local started = false

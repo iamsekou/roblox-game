@@ -55,11 +55,13 @@ AnimationIds.ids = {
 	-- M1 click combo, shared by every fighter (owner request 2026-09-25). Wind-ups are squeezed to
 	-- Constants.M1_WINDUP, so keep each windup clip short and snappy.
 	Melee = {
-		m1_1 = { windup = "", release = "" }, -- right jab
-		m1_2 = { windup = "", release = "" }, -- left cross
-		m1_3 = { windup = "", release = "" }, -- right hook
+		m1_1 = { windup = "", release = "" }, -- lead jab (left; the Blender clips keep one orthodox stance, 2026-09-28)
+		m1_2 = { windup = "", release = "" }, -- rear straight (right)
+		m1_3 = { windup = "", release = "" }, -- lead hook (left)
 		m1_4 = { windup = "", release = "" }, -- uppercut finisher (launches)
 		hit = { windup = "", release = "" }, -- flinch when punched (release only)
+		launched = { windup = "", release = "" }, -- thrown by the finisher (release only)
+		clash = { windup = "", release = "" }, -- the M1 trade clash exchange (release only, Looped)
 	},
 }
 

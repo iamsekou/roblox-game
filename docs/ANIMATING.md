@@ -1,5 +1,84 @@
 # Authoring the ability animations (Phase 3 item 8)
 
+## Keyframed fight clips, made in Blender (2026-09-27, moved to Blender 2026-09-28)
+
+Every fighter's moves are keyframed (51 clips) and **already play in game**; nothing has to be published first.
+Each character keeps their signature body language (owner, 2026-09-28: "similar to their characters in shows"):
+
+| Clips | Moves |
+|---|---|
+| M1 (every fighter), `Melee` | lead jab, rear straight, lead hook, rear uppercut finisher (one orthodox stance throughout); the flinch; "launched" (thrown by the finisher); the M1 clash exchange (looped) |
+| Gokai, `Goku` | Phase Shift (fingers to the forehead, lands low), Energy Wave (straining charge at the hip, palms-together blast by hand IK, recoil) |
+| Luffo, `Luffy` | Stretch Grapple (cock, lunge, yanked off his feet), Blitz Barrage (bouncing load, four-height flurry, looped) |
+| Krillo, `Krillin` | Blinding Burst (hands framing the face, springs onto his toes at the flash), Tracking Disc (arm straight up, bobbing hold, side-arm throw) |
+| Vejaro, `Vegeta` | Rising Fury (shaking crouch, chest-out roar, settles arms crossed by hand IK), Nova Blast (braced arm straining, recoil) |
+| Zorin, `Zoro` | Iron Guard (low crossed-blade stance, breathing loop), Cyclone Cut (wound over the left shoulder, leaping full spin, low landing) |
+| Eli, `L` | Surveillance Camera (deep knees-up squat, back to the thumb-at-lip slouch), Deduction (thinking slouch, head tilting, snaps up) |
+| Nariko, `Naruto` | Mirror Decoy (snapped hand seal), Vortex Orb (orb swirled at the hip, running lunge driving the palm) |
+| Ichiro, `Ichigo` | Blur Step (coil, mid-stride blur, lands blade out), Crescent Wave (two-handed overhead charge, diagonal slash, heel pivot) |
+| Sazuki, `Sasuke` | Lightning Dash (low charge, mid-stride thrust), Hunter's Eye (hand over the eye, snaps up to point) |
+| Gozen, `Gojo` | Blink (two fingers flick up), Boundless (calm sign, arms open slowly): deliberately unhurried |
+
+Lean compensation: when a torso leans hard into a lunge, arms that must hit or point straight ahead get that lean
+added back (Nariko's palm, Sazuki's blade); otherwise they point into the floor.
+
+### The Blender pipeline (`tools/blender`, not synced)
+
+| File | What it does |
+|---|---|
+| `rig_r15.json` | The game's R15 rig, captured in Studio from the player avatar (joint frames, part sizes) |
+| `nau_rig.py` | Builds that rig in Blender: one bone per joint, foot IK (planted feet), optional hand IK, poles tuned so the rest pose is exact, body boxes for renders |
+| `nau_anim.py` | The authoring API: keys in the game's joint angles, foot and hand goals, eases (`snap`, `whip`, `overshoot`, `elastic`, `hold`, ...), follow-through springs |
+| `clips_melee.py`, `clips_goku.py`, `clips_luffy.py` | The moves |
+| `build.py` | Makes `NAU_Fights.blend` (every clip as an editable action) |
+| `export.py` | Bakes each action (IK solved, 60 fps) into `animations/Clips/<Module>.luau` and renders a review sheet per clip into `tools/blender/renders` |
+| `selftest.py` | Checks the maths: the rest pose exports as zero, keyed angles round-trip exactly, a crouch keeps the feet planted |
+
+```bash
+"C:\Program Files\Blender Foundation\Blender 5.2\blender.exe" --background --factory-startup --python tools/blender/build.py
+"C:\Program Files\Blender Foundation\Blender 5.2\blender.exe" tools/blender/NAU_Fights.blend --background --python tools/blender/export.py
+```
+
+- **Editing a clip yourself:** open `tools/blender/NAU_Fights.blend`, select `NAU_Rig`, and pick the clip's action
+  (e.g. `Melee_m1_4_release`) in the Action Editor. Pose the joint bones; move `FootTarget.R/L` to plant the feet
+  and `HandTarget.R/L` to place the hands. IK on or off is the influence of the knee and elbow IK constraints. Save,
+  run the export, and the game has it. **Don't rebuild** after hand edits: `build.py` recreates the .blend from the
+  `clips_*.py` files and would drop them.
+- The export warns when a planted foot is out of the leg's reach (the leg would stretch out flat): lunge less or
+  bring the foot in.
+- Blender's `ZYX` Euler order is exactly Roblox's `CFrame.Angles`, and on this rig a bone's local pose converts to
+  the joint Transform through its rest orientation, so what Blender shows is what the game plays. That was checked
+  numerically (`selftest.py`) and on the real avatar in Studio.
+- **Format in game:** `src/shared/Modules/KeyframeClip.luau`. The Blender export writes `dense` clips: one key per
+  baked frame, linear between, binary-searched. Hand-written sparse clips still work, and `KeyframeClip.stance` /
+  `mirror` help with those.
+- **Playback:** `AbilityAnim` plays a clip wherever one exists, in place of the placeholder pose. It poses the whole
+  body; while a fighter walks on the ground, the legs are handed back to the walk so the feet never skate. A
+  published id in `AnimationIds` still wins over both.
+- **Timing rule for blows:** the server lands a punch at the end of its wind-up, and the hit-stop freezes both
+  fighters at that instant. So a punch reaches its strike on the **last frame of its wind-up**, and a reaction
+  **starts** on its hit pose. Otherwise the freeze shows the wrong moment.
+- **Impact layer** (`animations/Controllers/ImpactFX.luau`) is added on top: hit-stop, shockwaves, dust,
+  afterimages on dashes and launches, and a camera shake plus a black-and-white impact frame for the two fighters
+  involved. Both follow the Screen shake setting.
+
+### Publishing (optional)
+
+`tools/clips/build_keyframe_sequences.luau` builds a KeyframeSequence for every clip into
+`ServerStorage.AnimationWork.Clips`, named `<Character>_<slot>_<windup|release>` (e.g. `Melee_m1_4_release`). Claude
+runs it in Edit mode after changing clips. The sequences are baked at 60 frames a second. Played back, they match the
+in-game data playback exactly (checked joint by joint, 2026-09-27: 0.0° difference).
+
+To publish one: right-click it → **Save to Roblox**, under the experience's owner (see step 5 below). Then put its id
+in `src/shared/Modules/AnimationIds.luau` at `ids[<Character>][<slot>][<windup|release>]`.
+
+**Trade-off:** a published clip is played by Roblox's Animator, which can't hand the legs back to the walk. Moves
+that key the legs (the uppercut, the reactions, the clash, Gokai's and Luffo's moves) would skate the feet if the
+fighter walks during them. The data version is already seen by every player, so publishing is only worth it if you
+want to keep editing a clip in the Animation Editor.
+
+## Hand-keyframing in Studio's Animation Editor
+
 Every ability already animates, using a procedural placeholder pose (`animations/Controllers/AbilityPoses.luau`).
 This guide covers replacing those placeholders with hand-keyframed clips made in Studio's Animation Editor.
 Each clip you publish replaces one placeholder the moment its id goes into `src/shared/Modules/AnimationIds.luau`.

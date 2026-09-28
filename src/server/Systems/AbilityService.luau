@@ -10,8 +10,9 @@
 -- Zoro's Iron Guard makes a fighter immune to knockback, drags, locks and projectile marks; Gojo's
 -- barrier stops projectiles at its edge; spawn-protected fighters are never valid targets.
 --
--- Identity always comes from the invocation. The client's aim vector is only a direction hint:
--- it's normalised, and every range, cone and line-of-sight check is done here.
+-- Identity always comes from the invocation. The client's aim is only a hint: the ray through its cursor,
+-- normalised; the server finds what the cursor is on and aims from the attacker toward it (mouse aiming,
+-- owner 2026-09-26), and every range, cone and line-of-sight check is done here.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -254,6 +255,34 @@ local function removeDecoy(decoyId: number)
 	end
 end
 
+-- The client's ray origin, trusted only if it's actually near the character (nil otherwise).
+local function trustedEye(player: Player, eye: any): Vector3?
+	local root = rootOf(player)
+	local ok = typeof(eye) == "Vector3" and eye.Magnitude == eye.Magnitude and root ~= nil
+		and (eye - root.Position).Magnitude <= Constants.LOOK_EYE_MAX_OFFSET
+	return if ok then eye else nil
+end
+
+-- Mouse aiming (owner, 2026-09-26): attacks go toward what the cursor is on. The client sends the ray
+-- through its cursor (`aim`, from `eye`; the screen centre when there's no free mouse); the server finds
+-- the first thing on that ray (scenery or another fighter) and aims from the attacker's chest toward it.
+-- nil when the ray or its origin is unusable (callers fall back to the ray itself or where they face).
+-- Shared with MeleeService (M1 punches).
+function AbilityService.cursorAim(player: Player, aim: any, eye: any): Vector3?
+	local root = rootOf(player)
+	local ray = AbilityRules.unitAim(aim)
+	local origin = trustedEye(player, eye)
+	if not root or not ray or not origin then
+		return nil
+	end
+	local params = RaycastParams.new()
+	params.FilterDescendantsInstances = if player.Character then { player.Character } else {}
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	local hit = workspace:Raycast(origin, ray * Constants.AIM_MAX_DISTANCE, params)
+	local point = if hit then hit.Position else origin + ray * Constants.AIM_MAX_DISTANCE
+	return AbilityRules.aimToward(root.Position + CHEST, point)
+end
+
 -- The toolkit an ability module works with. Everything here is server-side and validated.
 local function makeContext(player: Player, entry: Entry, aim: any, eye: any)
 	local match = entry.match
@@ -261,24 +290,21 @@ local function makeContext(player: Player, entry: Entry, aim: any, eye: any)
 	ctx.player = player
 	ctx.userId = player.UserId
 	ctx.now = now
-	ctx.rawAim = AbilityRules.unitAim(aim)
-	-- The client's camera position, trusted only if it's actually near the character.
-	do
-		local root = rootOf(player)
-		local ok = typeof(eye) == "Vector3" and eye.Magnitude == eye.Magnitude and root ~= nil
-			and (eye - root.Position).Magnitude <= Constants.LOOK_EYE_MAX_OFFSET
-		ctx.eye = if ok then eye else nil
-	end
+	-- The camera ray through the cursor, and its origin (trusted only near the character).
+	ctx.cameraAim = AbilityRules.unitAim(aim)
+	ctx.eye = trustedEye(player, eye)
+	-- The aim abilities use: from the chest toward what the cursor is on; the bare ray if that's unusable.
+	ctx.rawAim = AbilityService.cursorAim(player, aim, eye) or ctx.cameraAim
 
 	function ctx.root(): BasePart?
 		return rootOf(player)
 	end
 
-	-- A horizontal aim: the client's camera direction if usable, else where the character faces.
+	-- A horizontal aim: toward the cursor if usable, else where the character faces.
 	function ctx.flatAim(): Vector3
 		local root = rootOf(player)
 		local look = if root then Vector3.new(root.CFrame.LookVector.X, 0, root.CFrame.LookVector.Z) else Vector3.zAxis
-		return AbilityRules.flatAim(aim, if look.Magnitude > 0.1 then look.Unit else Vector3.zAxis)
+		return AbilityRules.flatAim(ctx.rawAim, if look.Magnitude > 0.1 then look.Unit else Vector3.zAxis)
 	end
 
 	-- Still the same life in the same, unfinished match, and not cancelled by a clash (abilities with a
@@ -357,12 +383,12 @@ local function makeContext(player: Player, entry: Entry, aim: any, eye: any)
 		return nil, nil
 	end
 
-	-- Where the player is looking (owner: Blur Step and Blink go where you look): the point the ray through
-	-- the centre of their screen hits, capped at `range` from their chest. Returns (point, hit) where
-	-- `hit` is the surface under the point, or nil if the point was capped in mid-air.
+	-- Where the player is pointing (owner: Blur Step and Blink go where you look; since 2026-09-26 that's the
+	-- cursor): the point the ray through the cursor hits, capped at `range` from their chest. Returns
+	-- (point, hit) where `hit` is the surface under the point, or nil if the point was capped in mid-air.
 	function ctx.lookTarget(range: number): (Vector3?, RaycastResult?)
 		local root = rootOf(player)
-		local direction = ctx.rawAim
+		local direction = ctx.cameraAim
 		if not root or not direction then
 			return nil, nil
 		end
