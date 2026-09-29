@@ -8,6 +8,7 @@ local ServerStorage = game:GetService("ServerStorage")
 
 local Constants = require(ReplicatedStorage.Shared.Modules.Constants)
 local MapRegistry = require(ReplicatedStorage.Shared.Modules.MapRegistry)
+local ServerMode = require(script.Parent.ServerMode)
 
 local Builders = ServerStorage:WaitForChild("Assets"):WaitForChild("Builders")
 
@@ -76,6 +77,12 @@ function MapService.Init()
 	worldFolder.Name = "NAUWorld"
 	worldFolder.Parent = workspace
 
+	-- Training Grounds: no lobby. The dojo is both where fighters wait (its hall's SpawnPoints) and the arena.
+	if ServerMode.isTraining then
+		lobby = MapService.loadMap(Constants.TRAINING_MAP)
+		return
+	end
+
 	local LobbyBuilder = require(Builders:WaitForChild("Lobby"))
 	lobby = LobbyBuilder.build(worldFolder)
 	lobby:PivotTo(LOBBY_CFRAME)
@@ -126,9 +133,12 @@ local function characterList(): { Instance }
 			table.insert(list, player.Character)
 		end
 	end
-	local decoys = worldFolder and worldFolder:FindFirstChild("Decoys") -- Naruto's clones never block a spawn
-	if decoys then
-		table.insert(list, decoys)
+	-- Naruto's clones and training bots never block a spawn.
+	for _, name in { "Decoys", "Bots" } do
+		local extra = worldFolder and worldFolder:FindFirstChild(name)
+		if extra then
+			table.insert(list, extra)
+		end
 	end
 	return list
 end

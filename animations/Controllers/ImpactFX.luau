@@ -14,6 +14,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 
 local Constants = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Modules"):WaitForChild("Constants"))
+local Fighters = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Modules"):WaitForChild("Fighters"))
 local AbilityAnim = require(script.Parent:WaitForChild("AbilityAnim"))
 local CameraShake = require(script.Parent:WaitForChild("CameraShake"))
 
@@ -62,8 +63,7 @@ local function folder(): Folder
 end
 
 local function characterOf(userId: any): Model?
-	local player = if type(userId) == "number" then Players:GetPlayerByUserId(userId) else nil
-	return player and player.Character
+	return Fighters.modelOf(userId) -- a player's character or a training bot's body
 end
 
 local function rootOf(character: Model?): BasePart?

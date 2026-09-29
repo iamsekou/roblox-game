@@ -15,6 +15,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Remotes = require(Shared:WaitForChild("Remotes"))
 local Constants = require(Shared:WaitForChild("Modules"):WaitForChild("Constants"))
 local CharacterDefs = require(Shared:WaitForChild("Modules"):WaitForChild("CharacterDefs"))
+local Fighters = require(Shared:WaitForChild("Modules"):WaitForChild("Fighters"))
 local AnimControllers = ReplicatedStorage:WaitForChild("Animations"):WaitForChild("Controllers")
 local UIMotion = require(AnimControllers:WaitForChild("UIMotion"))
 local AbilityFX = require(AnimControllers:WaitForChild("AbilityFX"))
@@ -276,8 +277,7 @@ local DEDUCTION_RETRY = 0.25
 local function deduce(targets: { number }, untilTime: number)
 	local outlined: { [number]: Model } = {}
 	local function outline(userId: number)
-		local player = Players:GetPlayerByUserId(userId)
-		local character = player and player.Character
+		local character = Fighters.modelOf(userId) -- a player or a training bot
 		if not character or not character.Parent or outlined[userId] == character then
 			return
 		end

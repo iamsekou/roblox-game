@@ -41,8 +41,7 @@ local deathGrade: ColorCorrectionEffect? = nil
 local deathGradeOn = false
 
 local function nameOf(userId: number?): string
-	local player = userId and Players:GetPlayerByUserId(userId)
-	return if player then player.DisplayName else "someone"
+	return ClientState.nameOf(userId) or "someone"
 end
 
 local function escape(text: string): string
@@ -472,6 +471,13 @@ local function showBanner(title: string, subtitle: string?, color: Color3?, seco
 	end)
 end
 
+-- The big centre banner, for other controllers (XpController: level up, prestige).
+function HUDController.banner(title: string, subtitle: string?, color: Color3?, seconds: number?)
+	if refs.banner then
+		showBanner(title, subtitle, color, seconds)
+	end
+end
+
 local function pushFeed(richText: string, barColor: Color3)
 	feedOrder -= 1 -- newest on top
 	local entry, content = UI.slab({
@@ -628,15 +634,20 @@ local function refresh()
 	local timerColor = UI.Colors.Text
 	local phaseColor = UI.Colors.Muted
 
+	local training = r.training -- Training Grounds: { bots } (the dummy count)
 	if r.phase == "Waiting" then
-		refs.phase.Text = "LOBBY · WAITING FOR FIGHTERS"
-		refs.timer.Text = string.format("%d / %d", queuedCount, r.minPlayers or Constants.MIN_PLAYERS_TO_START)
+		refs.phase.Text = if training then "TRAINING GROUNDS" else "LOBBY · WAITING FOR FIGHTERS"
+		refs.timer.Text = if training then "READY" else string.format("%d / %d", queuedCount, r.minPlayers or Constants.MIN_PLAYERS_TO_START)
 	elseif r.phase == "Intermission" then
-		refs.phase.Text = string.format("NEXT ROUND · %d/%d QUEUED", queuedCount, r.maxPlayers or Constants.MAX_PLAYERS)
+		refs.phase.Text = if training then "TRAINING · STARTING" else string.format("NEXT ROUND · %d/%d QUEUED", queuedCount, r.maxPlayers or Constants.MAX_PLAYERS)
 		refs.timer.Text = formatClock(remaining)
 	elseif r.phase == "InRound" then
-		refs.phase.Text = string.upper(string.format("%s · %s", MODE_NAMES[r.mode] or tostring(r.mode), r.mapName or ""))
-		if r.graceEndsAt then
+		refs.phase.Text = if training
+			then string.format("TRAINING GROUNDS · %d %s", training.bots or 0, if training.bots == 1 then "DUMMY" else "DUMMIES")
+			else string.upper(string.format("%s · %s", MODE_NAMES[r.mode] or tostring(r.mode), r.mapName or ""))
+		if training then
+			refs.timer.Text = "FREE PLAY" -- the round never runs out
+		elseif r.graceEndsAt then
 			refs.phase.Text = "NEED FIGHTERS · ROUND ENDS IN"
 			refs.timer.Text = formatClock(r.graceEndsAt - t)
 			timerColor = UI.Colors.Bad
@@ -703,11 +714,10 @@ local function refresh()
 	if showScores then
 		local rows = {}
 		for _, entry in r.scores do
-			local player = Players:GetPlayerByUserId(entry.userId)
 			table.insert(rows, {
 				userId = entry.userId,
 				score = entry.score,
-				name = if player then player.DisplayName else "Fighter",
+				name = ClientState.nameOf(entry.userId) or "Fighter",
 				team = if teamRound then entry.team else nil,
 			})
 		end

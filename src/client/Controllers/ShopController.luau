@@ -67,6 +67,7 @@ local HOLD_TO_BUY = 1 -- seconds the BUY button must be held
 local PREVIEW_EVERY = 3.4 -- seconds between the hologram's ability previews
 local EXIT_KEY = Enum.KeyCode.X
 local PASS_GRANT_TIMEOUT = 20 -- seconds to wait for the server to confirm a Game Pass Roblox says was bought
+local XP_NUMERALS = { "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X" }
 local pendingFinish: (() -> ())? = nil -- the last close()'s clean-up, while the camera is still gliding out
 local passPromptToken = 0 -- bumped per Game Pass prompt and when Roblox reports it closed
 local UNLOCKED_STAMP = "UNLOCKED  解放"
@@ -358,7 +359,12 @@ local function refreshCards()
 		entry.stroke.Transparency = if selected then 0 else 0.75
 		entry.tint.BackgroundTransparency = if selected then 0.55 else 0.85
 		entry.card.Position = UDim2.fromOffset(if selected then entry.style.xSelected else entry.style.x, entry.card.Position.Y.Offset)
-		entry.sub.Text = string.format("%s  ·  %s", def.abilities.mild, def.abilities.ultimate)
+		-- Owned fighters lead with their level (and prestige): "P·II LV 7 · Phase Shift · Energy Wave".
+		local xp = ClientState.xpOf(def.id)
+		local level = if isOwned
+			then string.format("%sLV %d  ·  ", if xp.p > 0 then "P·" .. XP_NUMERALS[xp.p] .. " " else "", xp.l)
+			else ""
+		entry.sub.Text = string.format("%s%s  ·  %s", level, def.abilities.mild, def.abilities.ultimate)
 		if isEquipped then
 			entry.badge.Text = "EQUIPPED"
 			entry.badge.TextColor3 = HOLO
@@ -1526,7 +1532,7 @@ function ShopController.Start()
 				celebrate(UNLOCKED_STAMP)
 			end
 		end
-		if state.open and kind == "ability" then
+		if state.open and (kind == "ability" or kind == "xp") then
 			refreshCards()
 			refreshDetail()
 		elseif kind == "life" and ClientState.life.inMatch then

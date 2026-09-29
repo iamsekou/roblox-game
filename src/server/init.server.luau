@@ -14,10 +14,12 @@ local ORDER = {
 	"ClashDuelService", -- clash duels; AbilityService starts them
 	"AbilityService",
 	"MeleeService", -- M1 punches; clashes go through AbilityService
+	"XpService", -- character XP; after AbilityService (who fights as whom), before ProfileService (saves it)
 	"ShopService",
 	"LeaderboardService",
 	"ProfileService",
 	"RobuxService", -- after ProfileService: bundle receipts are saved through it
+	"TrainingService", -- Training Grounds: teleports everywhere; bots and the menu on training servers
 	"StressTestService", -- Studio only
 }
 

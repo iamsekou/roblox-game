@@ -14,12 +14,25 @@ ClientState.ability = { equipped = "Goku" } :: any -- latest AbilityState: equip
 -- latest ProfileState ({ status, settings }). Kept here because a remote event that fires before anyone listens
 -- is delivered only to the first listener, and ClientState always connects first.
 ClientState.profile = nil :: any
+-- latest XpState: { loaded, progress = { [character] = { p, l, x, need, full } }, maxLevel, maxPrestige }. The
+-- one-off parts (gain, prestiged) are passed with the "xp" change: ClientState.lastXpEvent.
+ClientState.xp = { loaded = false, progress = {}, maxLevel = Constants.XP_MAX_LEVEL, maxPrestige = Constants.XP_MAX_PRESTIGE } :: any
+ClientState.lastXpEvent = nil :: any
 
 -- In a clash duel (Controllers/ClashDuelController): number keys type the duel's digits, not codes.
 ClientState.dueling = false
 
 local changed = Instance.new("BindableEvent")
-ClientState.Changed = changed.Event -- fires with "round", "life", "ability", "profile" or "duel"
+ClientState.Changed = changed.Event -- fires with "round", "life", "ability", "profile", "xp" or "duel"
+
+-- A character's progress as the server last reported it ({ p, l, x, need, full }); a fresh start if never played.
+function ClientState.xpOf(character: string?): { p: number, l: number, x: number, need: number, full: boolean }
+	local entry = character and ClientState.xp.progress[character]
+	if type(entry) == "table" then
+		return entry
+	end
+	return { p = 0, l = 1, x = 0, need = Constants.XP_BAR_BASE, full = false }
+end
 
 function ClientState.setDueling(on: boolean)
 	if ClientState.dueling ~= on then
@@ -83,6 +96,24 @@ function ClientState.teamColor(team: string?): Color3?
 	return nil
 end
 
+-- A fighter's shown name: a player's display name, or a training bot's (the round state lists bots' names).
+function ClientState.nameOf(userId: number?): string?
+	if type(userId) ~= "number" then
+		return nil
+	end
+	local player = Players:GetPlayerByUserId(userId)
+	if player then
+		return player.DisplayName
+	end
+	local names = ClientState.round and ClientState.round.names
+	return if type(names) == "table" then names[tostring(userId)] else nil
+end
+
+-- Training Grounds: this is a training server (workspace attribute set by the server's ServerMode).
+function ClientState.isTraining(): boolean
+	return workspace:GetAttribute("NAU_Training") == true
+end
+
 function ClientState.isQueued(): boolean
 	local r = ClientState.round
 	return r ~= nil and table.find(r.queued or {}, localPlayer.UserId) ~= nil
@@ -115,6 +146,14 @@ function ClientState.Start()
 		end
 		ClientState.profile = profile
 		changed:Fire("profile")
+	end)
+	Remotes.XpState.OnClientEvent:Connect(function(state)
+		if type(state) ~= "table" or type(state.progress) ~= "table" then
+			return
+		end
+		ClientState.xp = state
+		ClientState.lastXpEvent = { gain = state.gain, prestiged = state.prestiged }
+		changed:Fire("xp")
 	end)
 	Remotes.AbilityState.OnClientEvent:Connect(function(state)
 		if type(state) ~= "table" then

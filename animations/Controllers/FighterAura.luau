@@ -12,6 +12,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Constants = require(Shared:WaitForChild("Modules"):WaitForChild("Constants"))
 local CharacterDefs = require(Shared:WaitForChild("Modules"):WaitForChild("CharacterDefs"))
+local Fighters = require(Shared:WaitForChild("Modules"):WaitForChild("Fighters"))
 
 local FighterAura = {}
 
@@ -20,7 +21,24 @@ local SCAN_SECONDS = 0.25
 -- fire texture is orange and turned every colour muddy).
 local WISP_TEXTURE = "rbxasset://textures/particles/smoke_main.dds"
 
-type Aura = { fighter: string, root: BasePart, base: BasePart, wisps: ParticleEmitter, ring: CylinderHandleAdornment }
+-- From prestige XP_AURA_BRIGHT_PRESTIGE on (owner-approved 2026-09-29: prestige is cosmetic), the aura burns
+-- denser and throws sparks. Sparkles ship with the engine too.
+local SPARK_TEXTURE = "rbxasset://textures/particles/sparkles_main.dds"
+
+type Aura = {
+	fighter: string,
+	bright: boolean,
+	root: BasePart,
+	base: BasePart,
+	wisps: ParticleEmitter,
+	sparks: ParticleEmitter?,
+	ring: CylinderHandleAdornment,
+}
+
+local function isBright(model: Model): boolean
+	local prestige = model:GetAttribute(Constants.PRESTIGE_ATTRIBUTE)
+	return type(prestige) == "number" and prestige >= Constants.XP_AURA_BRIGHT_PRESTIGE
+end
 
 local localPlayer = Players.LocalPlayer
 local auras: { [Model]: Aura } = {}
@@ -98,7 +116,33 @@ local function build(model: Model, root: BasePart, def: any): Aura
 	ring.Visible = false
 	ring.Parent = root
 
-	return { fighter = def.id, root = root, base = base, wisps = wisps, ring = ring }
+	-- High prestige: denser smoke, a bolder ring, and sparks rising through it.
+	local bright = isBright(model)
+	local sparks: ParticleEmitter? = nil
+	if bright then
+		wisps.Rate = Constants.AURA_WISP_RATE * 1.5
+		ring.Transparency = Constants.AURA_RING_TRANSPARENCY * 0.5
+		local spark = Instance.new("ParticleEmitter")
+		spark.Name = "NAU_AuraSparks"
+		spark.Texture = SPARK_TEXTURE
+		spark.Color = ColorSequence.new(if dark then Color3.fromRGB(230, 60, 60) else color) -- black smoke throws red sparks
+		spark.LightEmission = 1
+		spark.LightInfluence = 0
+		spark.Rate = 10
+		spark.Lifetime = NumberRange.new(0.6, 1)
+		spark.Speed = NumberRange.new(4, 7)
+		spark.SpreadAngle = Vector2.new(15, 15)
+		spark.EmissionDirection = Enum.NormalId.Top
+		spark.Shape = Enum.ParticleEmitterShape.Box
+		spark.ShapeStyle = Enum.ParticleEmitterShapeStyle.Volume
+		spark.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.5), NumberSequenceKeypoint.new(1, 0) })
+		spark.Transparency = NumberSequence.new(0.1)
+		spark.Enabled = false
+		spark.Parent = base
+		sparks = spark
+	end
+
+	return { fighter = def.id, bright = bright, root = root, base = base, wisps = wisps, sparks = sparks, ring = ring }
 end
 
 local function remove(model: Model)
@@ -110,9 +154,9 @@ local function remove(model: Model)
 	end
 end
 
--- Other fighters' characters, and every Mirror Decoy (another fighter's, or our own: others see ours).
+-- Other fighters' characters, training bots, and every Mirror Decoy (another fighter's, or our own: others see ours).
 local function candidates(): { Model }
-	local list = {}
+	local list = Fighters.botModels()
 	for _, player in Players:GetPlayers() do
 		if player ~= localPlayer and player.Character then
 			table.insert(list, player.Character)
@@ -140,8 +184,8 @@ local function scan()
 		if enabled and def and def.aura and root and root:IsA("BasePart") then
 			seen[model] = true
 			local aura = auras[model]
-			if aura and (aura.fighter ~= def.id or aura.root ~= root or not aura.base.Parent) then
-				remove(model) -- a new fighter on the same model, or a rebuilt root
+			if aura and (aura.fighter ~= def.id or aura.root ~= root or not aura.base.Parent or aura.bright ~= isBright(model)) then
+				remove(model) -- a new fighter on the same model, a rebuilt root, or a prestige that changes the look
 				aura = nil
 			end
 			if not aura then
@@ -154,6 +198,9 @@ local function scan()
 			local show = alive and near
 			aura.wisps.Enabled = show
 			aura.ring.Visible = show
+			if aura.sparks then
+				aura.sparks.Enabled = show
+			end
 		end
 	end
 	for model in auras do

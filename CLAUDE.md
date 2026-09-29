@@ -61,6 +61,10 @@ player's saves and the boards). Players see only "Code Clash" / "CC". The old pl
   Phone layouts on a PC: before pressing Play set `NAU_DevTouchUI = true` (touch controls) and
   `NAU_DevViewport = "844x390"` (layout size) on **StarterPlayer**, in Edit mode; remove both afterwards.
   Stress test: during a round, `NAU_DevStressBots = 11` (ServerScriptService) runs 11 bot fighters; 0 removes them.
+  Training Grounds: teleports don't run in Studio, so set `NAU_DevTraining = true` on ServerScriptService **in Edit
+  mode, before Play** to make that Play session a training server (dojo, dummies, training menu). **Remove it
+  afterwards**: never publish with it set (live ignores it, but it must not linger). XP: `NAU_DevGrantXp = <n>` (on a
+  Player) grants n XP to the equipped character (test grants change the Studio profile's XP).
   Robux buttons with an account that owns the passes: `NAU_DevIgnorePasses = true` (ServerScriptService, before Play)
   makes the server ignore pass ownership; remove it afterwards.
   Clash duel: `NAU_DevDuel` on a Player in a round starts a duel against a bot: `"lose"` (bot slips on digit 4),
@@ -103,6 +107,8 @@ player's saves and the boards). Players see only "Code Clash" / "CC". The old pl
 - Never invent Roblox asset, Game Pass or Developer Product IDs.
 - No line-of-sight check on *submit* (approved). Cover hides numbers; it doesn't block a remembered one.
 - UI is built in code by client controllers, not authored in StarterGui.
+- A match fighter is a Player or a training dummy (`Systems/FighterRegistry`; client `Modules/Fighters`). Look fighters
+  up there, not with `Players:GetPlayerByUserId`, and never FireClient to one without checking `isBot`.
 - Maps follow the map contract in `docs/DESIGN.md`: an unrotated PrimaryPart and a `SpawnArea` folder, with optional
   `buildTerrain`/`clearTerrain`. No visible spawn markers. Everything is anchored, exterior-only cover.
 

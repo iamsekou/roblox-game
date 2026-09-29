@@ -18,6 +18,7 @@ local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local MeleeRules = require(script.Parent.Parent.Lib.MeleeRules)
 local RoundManager = require(script.Parent.RoundManager)
 local AbilityService = require(script.Parent.AbilityService)
+local FighterRegistry = require(script.Parent.FighterRegistry)
 
 local MeleeService = {}
 
@@ -66,7 +67,7 @@ local function findTarget(player: Player, match: any, root: BasePart, aim: Vecto
 	local best, bestRoot, bestDistance = nil, nil, math.huge
 	for id in match.participants do
 		if id ~= player.UserId and match:isActive(id) and not match:isTeammate(id, player.UserId) then
-			local other = Players:GetPlayerByUserId(id)
+			local other = FighterRegistry.get(id) -- a player or a training bot
 			local otherRoot = rootOf(other)
 			if other and otherRoot then
 				local offset = otherRoot.Position - root.Position
@@ -130,7 +131,8 @@ local function land(player: Player, combo: number, match: any, lifeId: number, a
 	AbilityService.slow(target, Constants.M1_STAGGER_SLOW, Constants.M1_STAGGER_SECONDS)
 end
 
-local function onM1(player: Player, aim: any, eye: any)
+-- The next punch of `player`'s combo toward `punchAim` (horizontal; nil = where they face).
+local function swing(player: any, punchAim: Vector3?)
 	local match, lifeId = fightingLife(player)
 	if not match or not lifeId or AbilityService.isClashing(player) or not rootOf(player) then
 		return
@@ -139,10 +141,6 @@ local function onM1(player: Player, aim: any, eye: any)
 	if not combo then
 		return
 	end
-	-- Toward the cursor, taken at the click (horizontal; nil falls back to where the puncher faces).
-	local toward = AbilityService.cursorAim(player, aim, eye)
-	local flat = if toward then Vector3.new(toward.X, 0, toward.Z) else nil
-	local punchAim = if flat and flat.Magnitude > 0.1 then flat.Unit else nil
 	Remotes.AbilityFX:FireAllClients({
 		kind = "melee",
 		caster = player.UserId,
@@ -150,6 +148,18 @@ local function onM1(player: Player, aim: any, eye: any)
 		castSeconds = Constants.M1_WINDUP,
 	})
 	task.delay(Constants.M1_WINDUP, land, player, combo, match, lifeId, punchAim)
+end
+
+local function onM1(player: Player, aim: any, eye: any)
+	-- Toward the cursor, taken at the click (horizontal; nil falls back to where the puncher faces).
+	local toward = AbilityService.cursorAim(player, aim, eye)
+	local flat = if toward then Vector3.new(toward.X, 0, toward.Z) else nil
+	swing(player, if flat and flat.Magnitude > 0.1 then flat.Unit else nil)
+end
+
+-- A training dummy left: forget any trade chain it was part of.
+function MeleeService.forget(id: number)
+	MeleeRules.forget(state, id)
 end
 
 function MeleeService.Init()

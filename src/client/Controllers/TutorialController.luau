@@ -379,6 +379,9 @@ local function maybeShowFirstVisit()
 	if shownThisSession or not profile or type(profile.settings) ~= "table" or profile.settings.tutorialDone == true then
 		return
 	end
+	if ClientState.isTraining() then
+		return -- Training Grounds: optional, from the training board (owner, 2026-09-29), never by itself
+	end
 	shownThisSession = true
 	task.delay(FIRST_VISIT_DELAY, function()
 		while ClientState.life.inMatch do

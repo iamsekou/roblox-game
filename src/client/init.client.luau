@@ -4,6 +4,7 @@ local Controllers = script:WaitForChild("Controllers")
 
 local ORDER = {
 	"HUDController",
+	"XpController", -- after HUDController: it uses its banner and toasts
 	"NumberPlateController",
 	"SubmissionController",
 	"ClashDuelController", -- before AbilityController, which hands it each clash duel
@@ -14,6 +15,7 @@ local ORDER = {
 	"FXController",
 	"SettingsController", -- after FXController: it switches the effects FXController started
 	"TutorialController",
+	"TrainingController", -- after TutorialController: the training menu opens HOW TO PLAY
 }
 
 ClientState.Start()

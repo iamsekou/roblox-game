@@ -18,6 +18,9 @@
 --   * Reading exceptions (Krillin / Sasuke / Gojo) end with the caster's life (endLife).
 --   * Decorations that hide a plate on screen (banners, tree canopies: CanQuery off, so ordinary raycasts pass
 --     through them) block the server's line of sight too, through a server-only copy (MapService.sightBlockers).
+--
+-- Training dummies (2026-09-29) are targets under exactly the same gate (and observers too, though a dummy never
+-- types: the codes it's shown are simply never sent anywhere).
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -25,6 +28,7 @@ local Constants = require(ReplicatedStorage.Shared.Modules.Constants)
 local PlateVisibility = require(ReplicatedStorage.Shared.Modules.PlateVisibility)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local MapService = require(script.Parent.MapService)
+local FighterRegistry = require(script.Parent.FighterRegistry)
 
 local NumberAssignmentService = {}
 
@@ -98,20 +102,20 @@ function NumberAssignmentService.onCodeChange(observer: number, target: number, 
 	end
 end
 
-local function rootOf(player: Player?): BasePart?
-	local character = player and player.Character
+local function rootOf(fighter: any): BasePart?
+	local character = fighter and fighter.Character
 	local root = character and character:FindFirstChild("HumanoidRootPart")
 	return if root and root:IsA("BasePart") then root else nil
 end
 
--- A target is a player or one of Naruto's clones (registered decoy ids; never judged by the id's sign,
--- since Studio's local test players have negative user ids).
+-- A target is a player, a training bot, or one of Naruto's clones (registered decoy ids; never judged by the
+-- id's sign, since Studio's local test players have negative user ids).
 local function targetRoot(targetId: number): BasePart?
 	local decoy = decoyRoots[targetId]
 	if decoy then
 		return if decoy.Parent then decoy else nil
 	end
-	return rootOf(Players:GetPlayerByUserId(targetId))
+	return rootOf(FighterRegistry.get(targetId))
 end
 
 local function granted(observerId: number, targetId: number, distance: number, t: number): boolean
@@ -140,11 +144,13 @@ local function lineOfSight(from: Vector3, to: Vector3): boolean
 			table.insert(characters, player.Character)
 		end
 	end
-	-- Clones don't block either (their colliding torso would otherwise hide their own plate).
+	-- Clones and training bots don't block either (a colliding torso would otherwise hide its own plate).
 	local world = workspace:FindFirstChild("NAUWorld")
-	local decoys = world and world:FindFirstChild("Decoys")
-	if decoys then
-		table.insert(characters, decoys)
+	for _, name in { "Decoys", "Bots" } do
+		local extra = world and world:FindFirstChild(name)
+		if extra then
+			table.insert(characters, extra)
+		end
 	end
 	params.FilterDescendantsInstances = characters
 	params.FilterType = Enum.RaycastFilterType.Exclude
@@ -160,8 +166,12 @@ end
 local function discloseVisibleCodes()
 	local t = workspace:GetServerTimeNow()
 	for observerId, targets in assigned do
-		local observer = Players:GetPlayerByUserId(observerId)
-		local observerPosition = if observer and rootOf(observer) then positionSource(observer) else nil
+		local observer = FighterRegistry.get(observerId)
+		local observerRoot = rootOf(observer)
+		-- A player is judged from where the movement check last accepted them; a bot (server-driven) from its body.
+		local observerPosition = if not observerRoot then nil
+			elseif FighterRegistry.isBot(observer) then observerRoot.Position
+			else positionSource(observer)
 		if observerPosition and not (blindUntil[observerId] and t < blindUntil[observerId]) then
 			for targetId, code in targets do
 				local told = disclosed[observerId]
@@ -254,6 +264,16 @@ end
 
 function NumberAssignmentService.hide(targetId: number, untilTime: number)
 	hiddenUntil[targetId] = math.max(hiddenUntil[targetId] or -math.huge, untilTime)
+end
+
+-- A training dummy left the round: drop everything held for it.
+function NumberAssignmentService.forget(id: number)
+	assigned[id] = nil
+	disclosed[id] = nil
+	disclosedAt[id] = nil
+	grants[id] = nil
+	blindUntil[id] = nil
+	hiddenUntil[id] = nil
 end
 
 function NumberAssignmentService.registerDecoy(decoyId: number, root: BasePart)

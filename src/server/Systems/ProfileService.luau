@@ -23,6 +23,7 @@ local ProfileData = require(script.Parent.Parent.Lib.ProfileData)
 local SafeStore = require(script.Parent.SafeStore)
 local EconomyService = require(script.Parent.EconomyService)
 local AbilityService = require(script.Parent.AbilityService)
+local XpService = require(script.Parent.XpService)
 
 local ProfileService = {}
 
@@ -100,6 +101,9 @@ local function load(player: Player)
 			-- true on either side stays true (Modules/Settings.merge).
 			entry.profile.settings = Settings.merge(profile.settings, entry.profile.settings, entry.changedSettings)
 			entry.profile.receipts = profile.receipts
+			-- Character XP: the saved progress, plus anything earned while loading (XpService adds it on top).
+			XpService.applySaved(player, profile.xp)
+			entry.profile.xp = XpService.snapshotOf(player)
 			log(string.format("loaded %s: %d YC, %d bought, equipped %s%s", player.Name, profile.yen, #profile.owned, profile.equipped, if force then " (lock taken over)" else ""))
 			tell(player, "loaded", entry.profile.settings)
 			return
@@ -111,6 +115,7 @@ local function load(player: Player)
 	end
 	-- No DataStores (or no answer at all): the session still works, it just isn't saved.
 	log(string.format("%s is playing unsaved (%s)", player.Name, tostring(select(2, SafeStore.isOffline()) or "no response")))
+	XpService.applySaved(player, {}) -- XP works for the session (prestige included), like credits do
 	tell(player, "offline", entry.profile.settings)
 end
 
@@ -196,6 +201,41 @@ function ProfileService.creditPurchase(player: Player, purchaseId: string, amoun
 	return if saved then "granted" else "retry"
 end
 
+-- Training Grounds teleports (2026-09-29). Before a player is sent to another server, save and release their
+-- profile, so the next server loads it at once (otherwise it waits for this server's lock, up to ~35 s). Returns
+-- whether it was released (false: not loaded, or offline; the teleport still goes ahead, the next server waits).
+function ProfileService.releaseForTeleport(player: Player): boolean
+	local entry = entries[player]
+	if not entry or not entry.loaded then
+		return false
+	end
+	local released = save(player, entry, true)
+	log(string.format("%s released for a teleport: %s", player.Name, tostring(released)))
+	return released
+end
+
+-- The teleport failed: take the lock back and keep saving (the profile in memory is still the latest).
+function ProfileService.reclaimAfterTeleport(player: Player)
+	local entry = entries[player]
+	local store = SafeStore.regular(Constants.PROFILE_STORE)
+	if not entry or entry.loaded or not store then
+		return
+	end
+	local claimed = false
+	local ok = SafeStore.call(Enum.DataStoreRequestType.UpdateAsync, function()
+		return store:UpdateAsync(key(player), function(old)
+			if not ProfileData.canClaim(old, jobId, os.time(), Constants.PROFILE_LOCK_STALE_SECONDS) then
+				claimed = false
+				return nil -- another server took it meanwhile: leave it
+			end
+			claimed = true
+			return ProfileData.record(entry.profile, jobId, os.time(), false)
+		end)
+	end)
+	entry.loaded = ok and claimed
+	log(string.format("%s reclaimed after a failed teleport: %s", player.Name, tostring(entry.loaded)))
+end
+
 -- Settings (Phase 4): the client asks, the schema decides. Kept in the profile, so they're saved with it
 -- (and still work for the session when the profile couldn't load).
 local lastSettingsAt: { [Player]: number } = {}
@@ -236,6 +276,12 @@ function ProfileService.Init()
 		local entry = entries[player]
 		if entry and entry.loaded then
 			entry.profile.owned = EconomyService.boughtList(player)
+		end
+	end)
+	XpService.onChanged(function(player)
+		local entry = entries[player]
+		if entry and entry.loaded then
+			entry.profile.xp = XpService.snapshotOf(player)
 		end
 	end)
 	AbilityService.onEquipped(function(player, id)

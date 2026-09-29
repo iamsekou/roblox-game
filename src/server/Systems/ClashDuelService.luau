@@ -43,8 +43,15 @@ export type Fighter = {
 	player: Player?,
 	model: Model,
 	lifeId: number?, -- the life the duel started in (players in a match)
-	bot: { failAt: number? }?, -- Studio test bot: slips on digit `failAt` (nil = never)
+	bot: { failAt: number? }?, -- a bot (Studio test or training): answers by itself, slips on digit `failAt` (nil = never)
+	handle: any?, -- a training bot's FighterRegistry handle: a real match participant, eliminated like a player
 }
+
+-- A fighter the match knows (a player, or a training bot): its life is checked and losing eliminates it.
+-- Studio test bots aren't in the match and just disappear.
+local function inMatch(f: Fighter): boolean
+	return f.player ~= nil or f.handle ~= nil
+end
 
 type Duel = {
 	a: Fighter,
@@ -107,10 +114,11 @@ local function valid(duel: Duel, f: Fighter): boolean
 	if not f.model.Parent or not rootOf(f.model) then
 		return false
 	end
-	if not f.player then
+	if not inMatch(f) then
 		return true
 	end
-	if not f.player.Parent or f.player.Character ~= f.model then
+	local who = f.player or f.handle
+	if not who.Parent or who.Character ~= f.model then
 		return false
 	end
 	if duel.match then
@@ -191,7 +199,7 @@ local function finish(duel: Duel)
 		if duels[f.id] == duel then
 			duels[f.id] = nil
 		end
-		if f.player and duel.match then
+		if inMatch(f) and duel.match then
 			duel.match:setDueling(f.id, false)
 		end
 		if f.model.Parent then
@@ -269,8 +277,8 @@ local function resolve(duel: Duel, result: DuelRules.Result)
 	away = if away.Magnitude > 0.05 then away.Unit else (if loser == duel.b then duel.axis else -duel.axis)
 	finish(duel)
 	knockback(loser, away * Constants.CLASH_LOSER_LAUNCH + UP * 45)
-	if loser.player then
-		EliminationService.clashElimination(winner.player, loser.id)
+	if inMatch(loser) then
+		EliminationService.clashElimination(winner.player or winner.handle, loser.id)
 	else
 		task.delay(1.5, function()
 			if loser.model.Parent then
@@ -383,7 +391,7 @@ function ClashDuelService.start(a: Fighter, b: Fighter, info: { character: strin
 	end
 	local match = RoundManager.getMatch()
 	for _, f in { a, b } do
-		if f.player and match then
+		if inMatch(f) and match then
 			local p = match.participants[f.id]
 			f.lifeId = p and p.lifeId
 		end
@@ -426,7 +434,7 @@ function ClashDuelService.start(a: Fighter, b: Fighter, info: { character: strin
 	duels[b.id] = duel
 	for _, pair in { { a, posA, posB }, { b, posB, posA } } do
 		local f, at, other = pair[1], pair[2], pair[3]
-		if f.player and match then
+		if inMatch(f) and match then
 			match:setDueling(f.id, true)
 		end
 		f.model:PivotTo(CFrame.lookAt(at, Vector3.new(other.X, at.Y, other.Z)))

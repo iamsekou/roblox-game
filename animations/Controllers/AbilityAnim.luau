@@ -26,6 +26,7 @@ local RunService = game:GetService("RunService")
 
 local Modules = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Modules")
 local Constants = require(Modules:WaitForChild("Constants"))
+local Fighters = require(Modules:WaitForChild("Fighters"))
 local AnimationIds = require(Modules:WaitForChild("AnimationIds"))
 local AnimTimeline = require(Modules:WaitForChild("AnimTimeline"))
 local KeyframeClip = require(Modules:WaitForChild("KeyframeClip"))
@@ -285,7 +286,8 @@ local function fighterOf(who: any): (Player?, Model?)
 		return nil, who
 	end
 	local player = if type(who) == "number" then Players:GetPlayerByUserId(who) else nil
-	return player, player and player.Character
+	-- A training bot has no Player: its body is found by id.
+	return player, if player then player.Character else Fighters.botModel(who)
 end
 
 -- Start `move` on a fighter (user id or model), replacing whatever they were casting. Authored clips

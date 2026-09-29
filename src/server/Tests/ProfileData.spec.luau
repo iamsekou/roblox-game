@@ -83,4 +83,16 @@ test("[SAVE] credited receipts: saved, never counted twice, oldest dropped past 
 	T.eq(loaded.receipts[2], "b")
 end)
 
+test("[SAVE] character XP is saved per real character, sanitised on load", function()
+	local p = ProfileData.sanitize({ xp = { A = { p = 2, l = 5, x = 300 }, Ghost = { p = 9, l = 20, x = 1 }, B = "junk" } }, DEFS, "Free1")
+	T.eq(p.xp.A.p, 2) T.eq(p.xp.A.l, 5) T.eq(p.xp.A.x, 300)
+	T.eq(p.xp.Ghost, nil, "not a character: dropped")
+	T.eq(p.xp.B.l, 1, "damaged entry: a fresh start")
+	local record = ProfileData.record(p, "job", 1, true)
+	T.eq(record.xp.A.l, 5, "written back")
+	p.xp.A.l = 6
+	T.eq(record.xp.A.l, 5, "the record is a copy")
+	T.eq(next(ProfileData.new("Free1").xp), nil, "a new player has no XP yet")
+end)
+
 return tests

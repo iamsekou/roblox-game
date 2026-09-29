@@ -338,6 +338,34 @@ local Constants = {
 	PLATE_MIN_OFFSET = 1.2,
 	PLATE_MAX_OFFSET = 9,
 
+	-- Training Grounds (owner, 2026-09-29): a private server per player with training dummies (Systems/TrainingService).
+	TRAINING_MAP = "Dojo",
+	TRAINING_INTERMISSION_SECONDS = 3, -- before the round starts
+	TRAINING_FREE_ROUND_SECONDS = 24 * 3600, -- Free play: the round simply never runs out
+	TRAINING_DEFAULT_BOTS = 3, -- dummies
+	TRAINING_MAX_BOTS = 11, -- with the player: a full 12
+	TRAINING_CONFIG_MIN_INTERVAL = 0.5, -- seconds between training-menu changes per player
+	TRAINING_TELEPORT_MIN_INTERVAL = 5, -- seconds between enter/leave requests per player
+	DEV_TRAINING_ATTRIBUTE = "NAU_DevTraining", -- Studio-only, on ServerScriptService before Play: this Play session is a training server
+	DUMMY_TICK_SECONDS = 0.1, -- how often dummies turn
+
+	-- Character XP and prestige (owner-approved 2026-09-29; rules in Lib/XpRules). Big numbers, medium bars.
+	XP_MAX_LEVEL = 20, -- levels per prestige; filling the level-20 bar makes the character ready to prestige
+	XP_MAX_PRESTIGE = 10,
+	XP_BAR_BASE = 6000, -- the level-1 bar at prestige 0
+	XP_BAR_STEP = 800, -- each level's bar is this much bigger than the last
+	XP_PRESTIGE_GROWTH = 0.35, -- every prestige makes every bar 35% bigger (prestige 5: x2.75)
+	XP_BAR_ROUND = 100, -- bars are rounded to this
+	XP_ELIMINATION = 1200, -- a code elimination
+	XP_CLASH_WIN = 1800, -- winning a clash duel (instead of the elimination's XP)
+	XP_ROUND_WIN = 3000, -- winning the round (team battle: every member of the winning team)
+	XP_PER_MINUTE_ALIVE = 250, -- every full minute alive in a round
+	XP_TRAINING_MULTIPLIER = 0.1, -- Training Grounds pay 10% (owner, 2026-09-29)
+	XP_PRESTIGE_MIN_INTERVAL = 1, -- seconds between prestige requests per player
+	XP_AURA_BRIGHT_PRESTIGE = 5, -- from this prestige on, the fighter's aura is brighter and sparkles
+	PRESTIGE_ATTRIBUTE = "NAU_Prestige", -- on each arena character: its fighter's prestige (name chip badge, aura)
+	DEV_GRANT_XP_ATTRIBUTE = "NAU_DevGrantXp", -- Studio-only, on a Player: a number grants that XP to the equipped character
+
 	-- Fighter auras + name chips (owner, 2026-09-29): which fighter each player is using, in the arena only.
 	-- The server tags each arena character (and Mirror Decoys, which copy it) with this attribute.
 	FIGHTER_ATTRIBUTE = "NAU_Fighter",

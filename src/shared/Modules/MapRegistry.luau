@@ -11,6 +11,8 @@ export type MapDef = {
 
 local maps: { MapDef } = {
 	{ id = "ProvingGrounds", displayName = "The Proving Grounds", builder = "ProvingGrounds", enabled = true },
+	-- Training Grounds only (owner, 2026-09-29): never in the public rotation; training servers load it directly.
+	{ id = "Dojo", displayName = "The Training Grounds", builder = "Dojo", enabled = false },
 	-- Five more slots are planned for Phase 4. They join this list only once they're built and play-tested.
 }
 

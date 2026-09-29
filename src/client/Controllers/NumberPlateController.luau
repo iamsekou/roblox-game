@@ -24,6 +24,7 @@ local Remotes = require(Shared:WaitForChild("Remotes"))
 local Constants = require(Shared:WaitForChild("Modules"):WaitForChild("Constants"))
 local PlateVisibility = require(Shared:WaitForChild("Modules"):WaitForChild("PlateVisibility"))
 local CharacterDefs = require(Shared:WaitForChild("Modules"):WaitForChild("CharacterDefs"))
+local Fighters = require(Shared:WaitForChild("Modules"):WaitForChild("Fighters"))
 local UIMotion = require(ReplicatedStorage:WaitForChild("Animations"):WaitForChild("Controllers"):WaitForChild("UIMotion"))
 local Client = script.Parent.Parent
 local ClientState = require(Client:WaitForChild("ClientState"))
@@ -37,6 +38,7 @@ local CODE_TEXT_COLOR = Color3.fromRGB(255, 255, 255)
 local TEAM_STROKE_THICKNESS = 2 -- pixels; the neutral (FFA) border is 1
 local TAG_SIZE = Vector2.new(4, 0.55) -- studs: a teammate's name tag
 local TAG_GAP = 0.3 -- studs between the plate's top edge and the tag
+local PRESTIGE_NUMERALS = { "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X" }
 local RULES: PlateVisibility.PlateRules = {
 	drawDistance = Constants.PLATE_BLANK_DRAW_DISTANCE,
 	viewDistance = Constants.PLATE_VIEW_DISTANCE,
@@ -198,6 +200,7 @@ local function createPlate(userId: number): Plate
 	chipLabel.TextScaled = true
 	chipLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 	chipLabel.TextXAlignment = Enum.TextXAlignment.Left
+	chipLabel.RichText = true -- the prestige numeral is gold
 	chipLabel.Parent = chipFrame
 
 	gui.Parent = playerGui
@@ -254,7 +257,10 @@ local function applyFighter(plate: Plate, character: Model)
 	local def = if type(fighter) == "string" then CharacterDefs.byId[fighter] else nil
 	plate.fighter = if def and def.aura then def.id else nil
 	if def and def.aura then
-		plate.chipLabel.Text = string.upper(def.name)
+		-- Their fighter's prestige (XpService tags the character) as a gold numeral after the name.
+		local prestige = character:GetAttribute(Constants.PRESTIGE_ATTRIBUTE)
+		local badge = if type(prestige) == "number" and prestige > 0 then ' <font color="#D6B460">' .. (PRESTIGE_NUMERALS[prestige] or tostring(prestige)) .. "</font>" else ""
+		plate.chipLabel.Text = string.upper(def.name) .. badge
 		plate.chipDot.BackgroundColor3 = def.aura
 		-- A dark aura (Ichiro) is outlined light so the chip still reads on the dark background.
 		plate.chipStroke.Color = if def.auraDark then Color3.fromRGB(200, 200, 210) else def.aura
@@ -322,8 +328,7 @@ local function reconcile()
 	for userId in opponents do
 		-- A clone or a fighter. Tell them apart by the clone list, never by the id's sign: Studio's local
 		-- test players have negative user ids.
-		local player = if decoys[userId] then nil else Players:GetPlayerByUserId(userId)
-		local character = decoys[userId] or (player and player.Character)
+		local character = decoys[userId] or Fighters.modelOf(userId) -- a player's character or a training bot's body
 		local head = character and character:FindFirstChild("Head")
 		local root = character and character:FindFirstChild("HumanoidRootPart")
 		local plate = plates[userId]

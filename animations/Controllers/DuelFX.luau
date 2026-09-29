@@ -10,6 +10,7 @@ local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 
 local Constants = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Modules"):WaitForChild("Constants"))
+local Fighters = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Modules"):WaitForChild("Fighters"))
 local AbilityAnim = require(script.Parent:WaitForChild("AbilityAnim"))
 local ImpactFX = require(script.Parent:WaitForChild("ImpactFX"))
 local CameraShake = require(script.Parent:WaitForChild("CameraShake"))
@@ -82,8 +83,7 @@ local function modelOf(model: any, id: any): Model?
 	if typeof(model) == "Instance" and model:IsA("Model") and model.Parent then
 		return model
 	end
-	local player = if type(id) == "number" then Players:GetPlayerByUserId(id) else nil
-	return player and player.Character
+	return Fighters.modelOf(id) -- a player's character or a training bot's body
 end
 
 local function chestOf(model: Model?): Vector3?

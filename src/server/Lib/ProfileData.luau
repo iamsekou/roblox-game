@@ -1,5 +1,5 @@
 -- Saved progress (Phase 3 item 4): the profile format and its rules. Pure, unit-tested.
---   * A profile is { version, yen, owned, equipped, settings, session?, updated }.
+--   * A profile is { version, yen, owned, equipped, settings, receipts, xp, session?, updated }.
 --   * Anything loaded is sanitised: a saved record can be old, damaged or tampered with, and the game only ever
 --     sees valid values (never negative yen, only real yen-tier characters as purchases, an equipped character
 --     the player actually owns).
@@ -8,7 +8,12 @@
 --   * Settings (Phase 4) ride along in the same record, sanitised by the shared Modules/Settings schema.
 --   * Receipts (Phase 3 item 6): the purchase ids of Robux credit bundles already credited, newest last, so a
 --     receipt Roblox retries is never paid twice. The credit and its receipt id are saved in the same write.
+--   * XP (2026-09-29): each character's progress { p, l, x } (Lib/XpRules), keyed by character id.
 local Settings = require(game:GetService("ReplicatedStorage").Shared.Modules.Settings)
+local Constants = require(game:GetService("ReplicatedStorage").Shared.Modules.Constants)
+local XpRules = require(script.Parent.XpRules)
+
+local XP_PARAMS = XpRules.params(Constants)
 
 local ProfileData = {}
 
@@ -25,11 +30,20 @@ export type Profile = {
 	equipped: string,
 	settings: { [string]: any },
 	receipts: { string },
+	xp: { [string]: XpRules.Progress }, -- character id -> progress (characters never played have no entry)
 }
 export type Session = { jobId: string, time: number }
 
 function ProfileData.new(defaultCharacter: string): Profile
-	return { version = ProfileData.VERSION, yen = 0, owned = {}, equipped = defaultCharacter, settings = Settings.defaults(), receipts = {} }
+	return { version = ProfileData.VERSION, yen = 0, owned = {}, equipped = defaultCharacter, settings = Settings.defaults(), receipts = {}, xp = {} }
+end
+
+local function cloneXp(xp: { [string]: XpRules.Progress }): { [string]: XpRules.Progress }
+	local copy = {}
+	for id, progress in xp do
+		copy[id] = { p = progress.p, l = progress.l, x = progress.x }
+	end
+	return copy
 end
 
 function ProfileData.hasReceipt(profile: Profile, purchaseId: string): boolean
@@ -90,6 +104,13 @@ function ProfileData.sanitize(raw: any, defs: { Def }, defaultCharacter: string)
 			end
 		end
 	end
+	if type(raw.xp) == "table" then
+		for id, progress in raw.xp do
+			if type(id) == "string" and byId[id] then -- real characters only
+				profile.xp[id] = XpRules.sanitize(progress, XP_PARAMS)
+			end
+		end
+	end
 	return profile
 end
 
@@ -117,6 +138,7 @@ function ProfileData.record(profile: Profile, jobId: string, now: number, releas
 		equipped = profile.equipped,
 		settings = table.clone(profile.settings),
 		receipts = table.clone(profile.receipts),
+		xp = cloneXp(profile.xp),
 		session =if release then nil else { jobId = jobId, time = now },
 		updated = now,
 	}

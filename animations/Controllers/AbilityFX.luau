@@ -12,6 +12,7 @@ local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 
 local Swords = require(script.Parent:WaitForChild("Swords"))
+local Fighters = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Modules"):WaitForChild("Fighters"))
 
 local AbilityFX = {}
 
@@ -67,8 +68,7 @@ local function alongCFrame(center: Vector3, direction: Vector3): CFrame
 end
 
 local function characterOf(userId: number?): Model?
-	local player = userId and Players:GetPlayerByUserId(userId)
-	return player and player.Character
+	return Fighters.modelOf(userId) -- a player's character or a training bot's body
 end
 
 local function rootOf(character: Model?): BasePart?

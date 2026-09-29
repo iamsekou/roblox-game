@@ -5,6 +5,11 @@
 --
 -- The rules of a round live in Lib/MatchCore (pure, unit-tested). This module turns them into spawns,
 -- timers and broadcasts. Modes: FFA and Team6v6 (team rules in Lib/TeamRules).
+--
+-- Training Grounds (2026-09-29): on a training server (ServerMode) the round is FFA in the dojo, starts with one
+-- player and never runs out (TrainingService sets its length), and TrainingService adds training dummies. Dummies
+-- are match participants like players (FighterRegistry, "bots" in the code); TrainingService spawns their bodies
+-- through setBotHooks.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -21,6 +26,8 @@ local EconomyService = require(script.Parent.EconomyService)
 local MapService = require(script.Parent.MapService)
 local NumberAssignmentService = require(script.Parent.NumberAssignmentService)
 local PlayerLifeService = require(script.Parent.PlayerLifeService)
+local ServerMode = require(script.Parent.ServerMode)
+local FighterRegistry = require(script.Parent.FighterRegistry)
 
 local RoundManager = {}
 
@@ -40,6 +47,21 @@ local state = {
 
 local queued: { [Player]: number } = {} -- player -> time they queued (earliest first)
 local pendingRespawn: { [Player]: number } = {} -- player -> lifeId whose respawn is already scheduled
+local pendingBotRespawn: { [number]: number } = {} -- bot id -> lifeId whose respawn is already scheduled
+
+-- Training Grounds: TrainingService's round length and extra round-state fields.
+local trainingRoundSeconds: () -> number = function()
+	return Constants.TRAINING_FREE_ROUND_SECONDS
+end
+local trainingInfo: () -> any = function()
+	return nil
+end
+
+-- Bots (TrainingService): `spawn(id, cframe)` puts the bot's body at cframe (false if it couldn't);
+-- `lifeLost(id)` plays its death. RoundManager does the rules, the feed and the respawn timing.
+type BotHooks = { spawn: (id: number, cframe: CFrame) -> boolean, lifeLost: (id: number) -> () }
+local botHooks: BotHooks? = nil
+local roundStartedHandlers: { (match: any) -> () } = {}
 local lifeStartedHandlers: { (player: Player, match: any, lifeId: number) -> () } = {}
 local stateRequests = RateLimiter.new(Constants.ROUND_STATE_MIN_INTERVAL)
 local lastState: any = nil -- the latest RoundState broadcast (answers GetRoundState requests that come too fast)
@@ -48,6 +70,12 @@ local lastPurge = 0
 -- Other systems (AbilityService) hear about every new arena life: round start, respawn, mid-round join.
 function RoundManager.onLifeStarted(handler: (player: Player, match: any, lifeId: number) -> ())
 	table.insert(lifeStartedHandlers, handler)
+end
+
+-- XpService hears how each round ended: `winner` is MatchCore's { kind, id?, team?, reason } (a draw has neither).
+local roundFinishedHandlers: { (match: any, winner: any) -> () } = {}
+function RoundManager.onRoundFinished(handler: (match: any, winner: any) -> ())
+	table.insert(roundFinishedHandlers, handler)
 end
 
 local function now(): number
@@ -61,6 +89,9 @@ local function devLog(...)
 end
 
 local function minPlayers(): number
+	if ServerMode.isTraining then
+		return 1 -- the player; bots join once the round runs
+	end
 	if RunService:IsStudio() then
 		local override = ServerScriptService:GetAttribute(Constants.DEV_MIN_PLAYERS_ATTRIBUTE)
 		if typeof(override) == "number" and override >= 1 then
@@ -77,6 +108,9 @@ end
 
 -- Uniform random among the enabled modes; team battle only with enough fighters queued (Lib/TeamRules).
 local function pickMode(queuedCount: number): string
+	if ServerMode.isTraining then
+		return "FFA"
+	end
 	if RunService:IsStudio() then
 		local forced = ServerScriptService:GetAttribute(Constants.DEV_MODE_ATTRIBUTE)
 		if forced == "FFA" or forced == "Team6v6" then
@@ -98,6 +132,9 @@ local function teamForJoiner(match: any): string
 end
 
 local function roundTimeCap(): number
+	if ServerMode.isTraining then
+		return trainingRoundSeconds()
+	end
 	if RunService:IsStudio() then
 		local override = ServerScriptService:GetAttribute(Constants.DEV_ROUND_SECONDS_ATTRIBUTE)
 		if typeof(override) == "number" and override >= 1 then
@@ -176,6 +213,8 @@ local function buildState(bump: boolean)
 		scores = scores,
 		teamScores = if match and match.mode == "Team6v6" then match.teamScores else nil, -- team name -> eliminations
 		result = state.result,
+		names = if ServerMode.isTraining then FighterRegistry.botNames() else nil, -- bots' shown names (tostring(id) -> name)
+		training = if ServerMode.isTraining then trainingInfo() else nil, -- { bots } (the dummy count)
 	}
 end
 
@@ -197,8 +236,8 @@ local function pickArenaSpawn(match: any, forUserId: number): CFrame
 	local threats = {}
 	for id, p in match.participants do
 		if id ~= forUserId and p.alive and not match:isTeammate(id, forUserId) then
-			local player = Players:GetPlayerByUserId(id)
-			local root = player and player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+			local fighter = FighterRegistry.get(id) -- a player or a training bot
+			local root = fighter and fighter.Character and fighter.Character:FindFirstChild("HumanoidRootPart")
 			if root then
 				table.insert(threats, (root :: BasePart).Position)
 			end
@@ -209,16 +248,19 @@ end
 
 -- Spawn protection (approved): for SPAWN_PROTECTION_SECONDS after a spawn the fighter has no plate
 -- for anyone and sees no plates. MatchCore enforces it; this lifts it on time for that life only.
-local function scheduleProtectionRelease(player: Player, match: any, lifeId: number)
+local function scheduleProtectionRelease(fighter: any, match: any, lifeId: number)
+	local id = fighter.UserId
 	task.delay(Constants.SPAWN_PROTECTION_SECONDS, function()
-		local p = match.participants[player.UserId]
+		local p = match.participants[id]
 		if state.match ~= match or match.ended or not p or p.lifeId ~= lifeId then
 			return
 		end
-		if match:releaseProtection(player.UserId, now()) then
-			devLog(string.format("protection over for %s at t=%.2f", player.Name, os.clock()))
-			if player.Parent then
-				Remotes.LifeState:FireClient(player, { alive = true, inMatch = true })
+		if match:releaseProtection(id, now()) then
+			if not FighterRegistry.isBot(fighter) then
+				devLog(string.format("protection over for %s at t=%.2f", fighter.Name, os.clock()))
+				if fighter.Parent then
+					Remotes.LifeState:FireClient(fighter, { alive = true, inMatch = true })
+				end
 			end
 			broadcast()
 		end
@@ -279,6 +321,109 @@ local function scheduleRespawn(player: Player, lifeId: number)
 	end)
 end
 
+-- A bot's new life: TrainingService places its body, then the same rules as a player's spawn (a fresh life,
+-- spawn protection, the feed, and every life-started handler with the bot's handle).
+local function spawnBot(id: number, cframe: CFrame?)
+	local match = state.match
+	local handle = FighterRegistry.bot(id)
+	local p = match and match.participants[id]
+	if not match or match.ended or not p or p.alive or not handle or not botHooks then
+		return
+	end
+	if not botHooks.spawn(id, cframe or pickArenaSpawn(match, id)) then
+		return
+	end
+	if state.match ~= match or match.ended or not match.participants[id] then
+		return
+	end
+	local lifeId = match:spawn(id, now())
+	if not lifeId then
+		return
+	end
+	Remotes.MatchFeed:FireAllClients({ kind = "spawned", userId = id })
+	for _, handler in lifeStartedHandlers do
+		task.spawn(handler, handle, match, lifeId)
+	end
+	scheduleProtectionRelease(handle, match, lifeId)
+	broadcast()
+end
+
+local function scheduleBotRespawn(id: number, lifeId: number)
+	if pendingBotRespawn[id] == lifeId then
+		return
+	end
+	pendingBotRespawn[id] = lifeId
+	local match = state.match
+	task.delay(Constants.RESPAWN_SECONDS, function()
+		if pendingBotRespawn[id] == lifeId then
+			pendingBotRespawn[id] = nil
+		end
+		local p = match and match.participants[id]
+		if match and state.match == match and not match.ended and p and not p.alive and p.lifeId == lifeId then
+			spawnBot(id)
+		end
+	end)
+end
+
+-- Training Grounds ------------------------------------------------------------------------------------------
+
+-- TrainingService: the bots' bodies, the round length, and what the round state says about training.
+function RoundManager.setBotHooks(hooks: BotHooks)
+	botHooks = hooks
+end
+
+function RoundManager.setTrainingRules(roundSeconds: () -> number, info: () -> any)
+	trainingRoundSeconds = roundSeconds
+	trainingInfo = info
+end
+
+-- Called with the match whenever a round starts (TrainingService adds its bots then).
+function RoundManager.onRoundStarted(handler: (match: any) -> ())
+	table.insert(roundStartedHandlers, handler)
+end
+
+-- A bot joins the running round (and spawns). False if there's no round or it's full.
+function RoundManager.addBot(id: number): boolean
+	local match = state.match
+	if state.phase ~= "InRound" or not match or match.ended or not FighterRegistry.bot(id) then
+		return false
+	end
+	if not match:addParticipant(id, nil, now()) then
+		return false
+	end
+	task.spawn(spawnBot, id)
+	broadcast()
+	return true
+end
+
+-- A bot leaves the round (fewer bots chosen, or the round is being rebuilt).
+function RoundManager.removeBot(id: number)
+	pendingBotRespawn[id] = nil
+	local match = state.match
+	if match and match.participants[id] then
+		local winner = match:removeParticipant(id, now())
+		if winner and state.phase == "InRound" and state.match == match then
+			RoundManager.finish(winner)
+		end
+		broadcast()
+	end
+end
+
+-- A bot died outside the rules (fell off the map): like a player's reset, no credit to anyone.
+function RoundManager.botDied(id: number)
+	local match = state.match
+	local p = match and not match.ended and match.participants[id]
+	if p and p.alive then
+		match:markDead(id, now())
+		RoundManager.onLifeLost(id, { cause = "fell" })
+	end
+end
+
+-- Re-send the round state (TrainingService changed a setting the state shows).
+function RoundManager.refresh()
+	broadcast()
+end
+
 local function joinMidRound(player: Player): boolean
 	local match = state.match
 	local team = if match.mode == "Team6v6" then teamForJoiner(match) else nil
@@ -292,39 +437,50 @@ local function joinMidRound(player: Player): boolean
 	return true
 end
 
--- Every lost life in a round goes through here: code eliminations, strike-outs, and falls.
-function RoundManager.onLifeLost(victimId: number, info: { cause: string, attacker: Player? })
+-- Every lost life in a round goes through here: code eliminations, strike-outs, and falls. The victim and the
+-- attacker may each be a player or a training bot.
+function RoundManager.onLifeLost(victimId: number, info: { cause: string, attacker: any? })
 	local match = state.match
 	local p = match and match.participants[victimId]
 	local victim = Players:GetPlayerByUserId(victimId)
-	if not match or not p or not victim then
+	local bot = if victim then nil else FighterRegistry.bot(victimId)
+	if not match or not p or (not victim and not bot) then
 		return
 	end
 	local attacker = info.attacker
-	if attacker then
+	if attacker and not FighterRegistry.isBot(attacker) then
 		local attackerState = match.participants[attacker.UserId]
 		if attackerState then
 			setElims(attacker, attackerState.score)
 		end
 	end
 	NumberAssignmentService.endLife(victimId) -- reading exceptions end with the life
-	devLog(string.format("life lost: %s cause=%s t=%.2f", victim.Name, info.cause, os.clock()))
+	devLog(string.format("life lost: %s cause=%s t=%.2f", (victim or bot :: any).Name, info.cause, os.clock()))
 	Remotes.MatchFeed:FireAllClients({
 		kind = "eliminated",
 		victim = victimId,
 		attacker = if attacker then attacker.UserId else nil,
 		cause = info.cause,
 	})
-	Remotes.LifeState:FireClient(victim, {
-		alive = false,
-		inMatch = true,
-		cause = info.cause,
-		byName = if attacker then attacker.DisplayName else nil,
-		respawnAt = if match.ended then nil else now() + Constants.RESPAWN_SECONDS,
-	})
-	PlayerLifeService.kill(victim)
-	if not match.ended then
-		scheduleRespawn(victim, p.lifeId)
+	if victim then
+		Remotes.LifeState:FireClient(victim, {
+			alive = false,
+			inMatch = true,
+			cause = info.cause,
+			byName = if attacker then attacker.DisplayName else nil,
+			respawnAt = if match.ended then nil else now() + Constants.RESPAWN_SECONDS,
+		})
+		PlayerLifeService.kill(victim)
+		if not match.ended then
+			scheduleRespawn(victim, p.lifeId)
+		end
+	else
+		if botHooks then
+			task.spawn(botHooks.lifeLost, victimId)
+		end
+		if not match.ended then
+			scheduleBotRespawn(victimId, p.lifeId)
+		end
 	end
 	broadcast()
 end
@@ -359,10 +515,9 @@ function RoundManager.finish(winner: any)
 	local match = state.match
 	local result = { kind = winner.kind, reason = winner.reason, team = winner.team }
 	if winner.id then
-		local player = Players:GetPlayerByUserId(winner.id)
 		local p = match.participants[winner.id]
 		result.userId = winner.id
-		result.name = if player then player.DisplayName else "A fighter"
+		result.name = FighterRegistry.displayName(winner.id) or "A fighter"
 		result.score = if p then p.score else nil
 	end
 	state.result = result
@@ -378,6 +533,9 @@ function RoundManager.finish(winner: any)
 		end
 	end
 	devLog("round finished:", result.kind, result.reason, result.name or result.team or "")
+	for _, handler in roundFinishedHandlers do
+		task.spawn(handler, match, winner)
+	end
 	broadcast()
 end
 
@@ -386,7 +544,7 @@ local function startRound()
 	-- TEAM_MODE_MIN_PLAYERS queued.
 	local mode = pickMode(#queuedPlayers())
 	local maps = MapRegistry.enabled()
-	local mapDef = maps[math.random(1, #maps)]
+	local mapDef = if ServerMode.isTraining then MapRegistry.get(Constants.TRAINING_MAP) :: any else maps[math.random(1, #maps)]
 	MapService.loadMap(mapDef.id)
 
 	local match = MatchCore.new({
@@ -455,6 +613,13 @@ local function startRound()
 		table.insert(taken, spawnCFrame.Position)
 		task.spawn(spawnIntoArena, player, spawnCFrame)
 	end
+	for _, handler in roundStartedHandlers do
+		task.spawn(handler, match)
+	end
+end
+
+local function intermissionSeconds(): number
+	return if ServerMode.isTraining then Constants.TRAINING_INTERMISSION_SECONDS else Constants.INTERMISSION_SECONDS
 end
 
 local function returnToLobby()
@@ -475,6 +640,7 @@ local function returnToLobby()
 	state.phase = "Waiting"
 	state.endsAt = 0
 	table.clear(pendingRespawn)
+	table.clear(pendingBotRespawn)
 	NumberAssignmentService.detach()
 	for _, player in roster do
 		Remotes.LifeState:FireClient(player, { alive = true, inMatch = false })
@@ -489,7 +655,7 @@ local function tick()
 	if phase == "Waiting" then
 		if #queuedPlayers() >= minPlayers() then
 			state.phase = "Intermission"
-			state.endsAt = t + Constants.INTERMISSION_SECONDS
+			state.endsAt = t + intermissionSeconds()
 			broadcast()
 		end
 	elseif phase == "Intermission" then

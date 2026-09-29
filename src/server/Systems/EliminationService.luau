@@ -10,6 +10,8 @@ local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local RewardRules = require(script.Parent.Parent.Lib.RewardRules)
 local EconomyService = require(script.Parent.EconomyService)
 local RoundManager = require(script.Parent.RoundManager)
+local ServerMode = require(script.Parent.ServerMode)
+local FighterRegistry = require(script.Parent.FighterRegistry)
 
 local EliminationService = {}
 
@@ -17,19 +19,27 @@ local EliminationService = {}
 -- Boundless ends after 3). Handlers run after the rules have already decided; they never change them.
 -- `rewarded`: the elimination paid yen and counts as a leaderboard kill (Lib/RewardRules: eliminating the same
 -- victim over and over stops paying for a while, audit fix 2026-09-28). It always counts for the round.
+-- `cause`: "code" or "clash" (XpService pays a clash win more).
+type EliminationHandler = (attacker: Player, victimId: number, rewarded: boolean, cause: string) -> ()
 local clonePoppedHandlers: { (popper: Player, decoyId: number) -> () } = {}
-local eliminationHandlers: { (attacker: Player, victimId: number, rewarded: boolean) -> () } = {}
+local eliminationHandlers: { EliminationHandler } = {}
 local rewards = RewardRules.new()
 
 function EliminationService.onClonePopped(handler: (popper: Player, decoyId: number) -> ())
 	table.insert(clonePoppedHandlers, handler)
 end
 
-function EliminationService.onElimination(handler: (attacker: Player, victimId: number, rewarded: boolean) -> ())
+function EliminationService.onElimination(handler: EliminationHandler)
 	table.insert(eliminationHandlers, handler)
 end
 
-local function handleSubmit(player: Player, code: any)
+-- Credits and leaderboard kills are for real matches only: never on a training server, never for a bot.
+local function mayReward(attacker: any): boolean
+	return not ServerMode.isTraining and not FighterRegistry.isBot(attacker)
+end
+
+-- A code typed by `player`. The victim may be a player or a training dummy.
+local function submit(player: any, code: any)
 	local match = RoundManager.getMatch()
 	if not match then
 		return { status = "not_in_match" }
@@ -38,13 +48,13 @@ local function handleSubmit(player: Player, code: any)
 	-- and never yields, so two simultaneous correct submissions can't both be credited.
 	local result = match:submit(player.UserId, code, workspace:GetServerTimeNow())
 	local status = result.status
-	if RunService:IsStudio() then
+	if RunService:IsStudio() and not FighterRegistry.isBot(player) then
 		print("[NAU] submit from", player.Name, "->", status)
 	end
 
 	if status == "eliminated" then
-		local victim = Players:GetPlayerByUserId(result.targetId)
-		local rewarded = RewardRules.claim(
+		local victim = FighterRegistry.get(result.targetId)
+		local rewarded = mayReward(player) and RewardRules.claim(
 			rewards,
 			player.UserId,
 			result.targetId :: number,
@@ -57,7 +67,7 @@ local function handleSubmit(player: Player, code: any)
 		end
 		RoundManager.onLifeLost(result.targetId, { cause = "code", attacker = player })
 		for _, handler in eliminationHandlers do
-			task.spawn(handler, player, result.targetId, rewarded)
+			task.spawn(handler, player, result.targetId, rewarded, "code")
 		end
 		if result.winner then
 			RoundManager.finish(result.winner)
@@ -79,6 +89,10 @@ local function handleSubmit(player: Player, code: any)
 	return { status = status, strikesLeft = result.strikesLeft }
 end
 
+local function handleSubmit(player: Player, code: any)
+	return submit(player, code)
+end
+
 -- A clash duel's loser (Systems/ClashDuelService): eliminated and credited to `winner` exactly like a code
 -- elimination (score, yen within the farming limit, leaderboard kill, Gojo's count). `winner` nil = nobody to
 -- credit. Returns whether anyone was eliminated.
@@ -93,7 +107,7 @@ function EliminationService.clashElimination(winner: Player?, loserId: number): 
 		return false
 	end
 	local rewarded = false
-	if winner then
+	if winner and mayReward(winner) then
 		rewarded = RewardRules.claim(rewards, winner.UserId, loserId, t, Constants.FARM_WINDOW_SECONDS, Constants.FARM_MAX_PAID_PER_PAIR)
 		if rewarded then
 			EconomyService.award(winner, Constants.YEN_PER_ELIMINATION, "clash")
@@ -102,7 +116,7 @@ function EliminationService.clashElimination(winner: Player?, loserId: number): 
 	RoundManager.onLifeLost(loserId, { cause = "clash", attacker = winner })
 	if winner then
 		for _, handler in eliminationHandlers do
-			task.spawn(handler, winner, loserId, rewarded)
+			task.spawn(handler, winner, loserId, rewarded, "clash")
 		end
 	end
 	if roundWinner then

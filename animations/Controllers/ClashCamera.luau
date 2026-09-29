@@ -12,6 +12,7 @@ local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 
 local Constants = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Modules"):WaitForChild("Constants"))
+local Fighters = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Modules"):WaitForChild("Fighters"))
 
 local ClashCamera = {}
 
@@ -23,11 +24,7 @@ local localPlayer = Players.LocalPlayer
 local active: { stop: () -> () }? = nil
 
 local function rootOf(who: any): BasePart?
-	local character = if typeof(who) == "Instance" and who:IsA("Model") then who
-		else (function()
-			local player = if type(who) == "number" then Players:GetPlayerByUserId(who) else nil
-			return player and player.Character
-		end)()
+	local character = if typeof(who) == "Instance" and who:IsA("Model") then who else Fighters.modelOf(who)
 	local root = character and character:FindFirstChild("HumanoidRootPart")
 	return if root and root:IsA("BasePart") then root else nil
 end

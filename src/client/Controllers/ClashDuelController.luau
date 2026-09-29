@@ -13,6 +13,7 @@ local UserInputService = game:GetService("UserInputService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Remotes = require(Shared:WaitForChild("Remotes"))
+local Fighters = require(Shared:WaitForChild("Modules"):WaitForChild("Fighters"))
 local AnimControllers = ReplicatedStorage:WaitForChild("Animations"):WaitForChild("Controllers")
 local ClashCamera = require(AnimControllers:WaitForChild("ClashCamera"))
 local CameraShake = require(AnimControllers:WaitForChild("CameraShake"))
@@ -212,9 +213,9 @@ local function setPhase(text: string, color: Color3?)
 end
 
 local function nameOf(who: any): string
-	local player = if type(who) == "number" then Players:GetPlayerByUserId(who) else nil
-	if player then
-		return string.upper(player.DisplayName)
+	local name = if type(who) == "number" then ClientState.nameOf(who) else nil -- a player or a training bot
+	if name then
+		return string.upper(name)
 	end
 	return if typeof(who) == "Instance" then string.upper(who.Name) else "THEM"
 end
@@ -372,8 +373,7 @@ function ClashDuelController.onFX(event: any)
 			if typeof(model) == "Instance" and model:IsA("Model") then
 				return model
 			end
-			local player = if type(id) == "number" then Players:GetPlayerByUserId(id) else nil
-			return player and player.Character
+			return Fighters.modelOf(id)
 		end
 		ClashCamera.duelFinal(modelOf(event.winnerModel, event.winner), modelOf(event.loserModel, event.loser), event.finalAt)
 	end

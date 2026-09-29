@@ -26,6 +26,7 @@ local HUDController = require(script.Parent:WaitForChild("HUDController"))
 local LobbyController = {}
 
 local localPlayer = Players.LocalPlayer
+local XP_NUMERALS = { "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X" }
 
 -- Every server answer gets a visible explanation; nothing fails silently.
 local MESSAGES: { [string]: { string } } = {
@@ -46,16 +47,6 @@ local busy = false
 local refreshCardAction: () -> ()
 local equipShown: () -> ()
 
--- FIGHT button looks: hot red when ready, cold steel once you're queued.
-local FIGHT_READY = ColorSequence.new({
-	ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 96, 40)),
-	ColorSequenceKeypoint.new(0.55, Color3.fromRGB(214, 20, 36)),
-	ColorSequenceKeypoint.new(1, Color3.fromRGB(120, 6, 20)),
-})
-local FIGHT_QUEUED = ColorSequence.new({
-	ColorSequenceKeypoint.new(0, Color3.fromRGB(120, 130, 150)),
-	ColorSequenceKeypoint.new(1, Color3.fromRGB(44, 50, 64)),
-})
 
 local function call(remote: RemoteFunction)
 	if busy then
@@ -77,7 +68,7 @@ local function call(remote: RemoteFunction)
 end
 
 local function requestFight()
-	UIMotion.punch(refs.holder) -- the container, so it doesn't fight the button's own idle pulse
+	UIMotion.punch(refs.fight.button)
 	call(Remotes.RequestFight)
 end
 
@@ -273,10 +264,21 @@ function equipShown()
 	end
 end
 
+-- The fighter's XP on the card: "PRESTIGE II · LEVEL 7 · 8,400 / 11,000 XP".
+local function xpLine(def: any): string
+	local xp = ClientState.xpOf(def.id)
+	return string.format(
+		"%sLEVEL %d  ·  %s",
+		if xp.p > 0 then "PRESTIGE " .. (XP_NUMERALS[xp.p] or tostring(xp.p)) .. "  ·  " else "",
+		xp.l,
+		if xp.full then "READY TO PRESTIGE" else string.format("%s / %s XP", UI.formatNumber(xp.x), UI.formatNumber(xp.need))
+	)
+end
+
 local function showCard(def: any)
 	refs.cardAccent.BackgroundColor3 = def.accent
 	refs.cardName.Text = def.name
-	refs.cardEpithet.Text = "" -- franchise names aren't shown in game (owner renamed the roster, 2026-09-23)
+	refs.cardEpithet.Text = xpLine(def) -- franchise names used to sit here; they aren't shown in game
 	if def.tier == "Free" then
 		refs.cardTier.Text = "FREE STARTER · already yours"
 	elseif def.tier == "Yen" then
@@ -385,94 +387,76 @@ end
 
 local function build()
 	local gui = UI.screen("NAU_Lobby", 3)
+	local touch = UI.isTouch()
+	-- The lobby's calls to action (owner, 2026-09-30: moved to the bottom-left and restyled; the comic "FIGHT!"
+	-- button and the separate TRAINING tab above it were retired): one stack of slabs in the HUD's own style, the
+	-- round status on top, FIGHT, LEAVE QUEUE while queued, then TRAINING (TrainingController adds it through
+	-- LobbyController.actionStack). On touch it sits higher, clear of the movement thumbstick's corner.
 	local holder = UI.new("Frame", {
-		Name = "FightHolder",
-		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, -16),
-		Size = UDim2.fromOffset(240, if UI.isTouch() then 134 else 112),
+		Name = "Actions",
+		AnchorPoint = Vector2.new(0, 1),
+		Position = if touch then UDim2.new(0, 16, 1, -110) else UDim2.new(0, 16, 1, -16),
+		Size = UDim2.fromOffset(if touch then 250 else 280, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
 		BackgroundTransparency = 1,
 		Parent = gui,
+	}, {
+		UI.new("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 6) }),
 	})
 	refs.holder = holder
-	-- Smaller, angrier FIGHT button: hot gradient, heavy black outline, comic-impact lettering
-	-- tilted like it's mid-swing. Motion (pulse, light sweep, press punch) comes from UIMotion.
-	-- The gradient lives on the plate behind the text (a UIGradient would also tint the lettering),
-	-- and only the lettering is tilted: Roblox doesn't clip children of a rotated frame, and the
-	-- light sweep has to stay inside the plate.
-	refs.fightGradient = UI.new("UIGradient", { Color = FIGHT_READY, Rotation = 90 })
-	refs.fight = UI.new("Frame", {
-		Name = "FightButton",
-		AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.fromScale(0.5, 0),
-		Size = UDim2.fromOffset(230, 58),
-		ClipsDescendants = true,
-		BackgroundColor3 = Color3.new(1, 1, 1),
-		Parent = holder,
-	}, {
-		UI.corner(8),
-		refs.fightGradient,
-		UI.new("UIStroke", { Color = Color3.fromRGB(20, 0, 4), Thickness = 3, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }),
-	})
-	refs.fightShine = UI.new("Frame", {
-		Name = "Shine",
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(-0.3, 0.5),
-		Size = UDim2.new(0, 26, 2, 0),
-		Rotation = 20,
-		BackgroundColor3 = Color3.new(1, 1, 1),
-		BackgroundTransparency = 0.65,
-		BorderSizePixel = 0,
-		ZIndex = 1,
-		Parent = refs.fight,
-	})
-	refs.fightText = UI.button({
-		Name = "Hit",
-		Size = UDim2.fromScale(1, 1),
-		Rotation = -4,
-		ZIndex = 2,
-		AutoButtonColor = false,
-		BackgroundTransparency = 1,
-		Font = Enum.Font.Bangers,
-		TextSize = 48,
-		TextColor3 = Color3.new(1, 1, 1),
-		TextStrokeColor3 = Color3.fromRGB(20, 0, 4),
-		TextStrokeTransparency = 0,
-		Text = "FIGHT!",
-		Parent = refs.fight,
-	})
-	UIMotion.pulse(refs.fight, 0.05, 0.9)
-	UIMotion.sweep(refs.fightShine, 2.4)
-
 	refs.status = UI.label({
 		Name = "Status",
-		Position = UDim2.fromOffset(-60, 64),
-		Size = UDim2.new(1, 120, 0, 20),
-		TextSize = 14,
-		TextStrokeTransparency = 0.4,
+		LayoutOrder = 1,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Font = UI.Font,
+		TextSize = 13,
+		TextColor3 = UI.Colors.Muted,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextWrapped = true,
+		TextStrokeTransparency = 0.6,
 		Parent = holder,
+	})
+	refs.fight = UI.actionButton({
+		name = "Fight",
+		title = "FIGHT",
+		caption = "ENTER THE ARENA",
+		glyph = "»",
+		accent = UI.Colors.Accent,
+		height = if touch then 64 else 68,
+		order = 2,
+		parent = holder,
 	})
 	refs.leave = UI.button({
 		Name = "LeaveQueue",
-		AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.new(0.5, 0, 0, 88),
-		Size = if UI.isTouch() then UDim2.fromOffset(150, 44) else UDim2.fromOffset(120, 22), -- 44: touch target
+		LayoutOrder = 3,
+		Size = UDim2.new(1, 0, 0, if touch then 44 else 26), -- 44: touch target
 		BackgroundColor3 = UI.Colors.Ink,
-		BackgroundTransparency = 0.25,
-		TextSize = if UI.isTouch() then 15 else 12,
-		Text = "Leave queue",
+		BackgroundTransparency = 0.2,
+		Font = UI.Font,
+		TextSize = if touch then 15 else 13,
+		TextColor3 = UI.Colors.Muted,
+		Text = "LEAVE QUEUE",
 		Visible = false,
 		Parent = holder,
-	}, { UI.corner(8) })
-	refs.fightText.Activated:Connect(requestFight)
+	}, { UI.corner() })
+	refs.fight.button.Activated:Connect(requestFight)
 	refs.leave.Activated:Connect(leaveQueue)
 	buildCard(gui)
+end
+
+-- The stack the lobby's calls to action live in (TrainingController adds TRAINING to it).
+function LobbyController.actionStack(): Frame
+	return refs.holder
 end
 
 local function refresh()
 	local r = ClientState.round
 	local inMatch = ClientState.isParticipant()
-	refs.holder.Visible = not inMatch
-	if inMatch then
+	-- Training Grounds have no lobby queue: the training controller has its own buttons. The stack also steps aside
+	-- while a fighter card is open (both live on the left).
+	refs.holder.Visible = not inMatch and not ClientState.isTraining() and not refs.card.Visible
+	if inMatch or ClientState.isTraining() then
 		refs.card.Visible = false
 		return
 	end
@@ -481,8 +465,9 @@ local function refresh()
 		return
 	end
 	local queued = ClientState.isQueued()
-	refs.fightText.Text = if queued then "QUEUED" else "FIGHT!"
-	refs.fightGradient.Color = if queued then FIGHT_QUEUED else FIGHT_READY
+	refs.fight.title.Text = if queued then "QUEUED" else "FIGHT"
+	refs.fight.caption.Text = if queued then "WAITING FOR THE ROUND" else "ENTER THE ARENA"
+	UI.setActionAccent(refs.fight, if queued then UI.Colors.Line else UI.Colors.Accent) -- steel while queued
 	refs.leave.Visible = queued
 
 	local t = workspace:GetServerTimeNow()
@@ -509,6 +494,7 @@ end
 
 function LobbyController.Start()
 	build()
+	refs.card:GetPropertyChangedSignal("Visible"):Connect(refresh) -- the stack hides while a card is open
 	ClientState.Changed:Connect(function(kind)
 		refresh()
 		if kind == "ability" then
@@ -518,6 +504,8 @@ function LobbyController.Start()
 				HUDController.toast(string.format("%s unlocked! Tap EQUIP to fight as them.", refs.cardDef.name), "good")
 			end
 			refreshCardAction()
+		elseif kind == "xp" and refs.cardDef and refs.card.Visible then
+			refs.cardEpithet.Text = xpLine(refs.cardDef)
 		end
 	end)
 	-- The card's price follows the balance (a bundle, an elimination, a purchase).

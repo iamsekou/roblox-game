@@ -31,12 +31,19 @@ local EliminationService = require(script.Parent.EliminationService)
 local EconomyService = require(script.Parent.EconomyService)
 local MovementGuard = require(script.Parent.MovementGuard)
 local ClashDuelService = require(script.Parent.ClashDuelService)
+local FighterRegistry = require(script.Parent.FighterRegistry)
+local ServerMode = require(script.Parent.ServerMode)
 
 local AbilityService = {}
 
 -- Every effect sent to one player goes through here, so the movement check (Systems/MovementGuard) hears
--- about each knockback, dash and grapple before the player's client acts on it.
+-- about each knockback, dash and grapple before the player's client acts on it. A training bot has no client:
+-- its own controller applies the effect (FighterRegistry: handle.onEffect).
 local function sendEffect(target: Player, payload: { [string]: any })
+	if FighterRegistry.isBot(target) then
+		(target :: any).onEffect(payload)
+		return
+	end
 	MovementGuard.expect(target, payload)
 	Remotes.AbilityEffect:FireClient(target, payload)
 end
@@ -108,6 +115,10 @@ local function characterModels(): { Instance }
 	if decoyFolder and decoyFolder.Parent then
 		table.insert(list, decoyFolder)
 	end
+	local bots = FighterRegistry.bots()
+	if next(bots) ~= nil then
+		table.insert(list, FighterRegistry.folder()) -- training bots
+	end
 	return list
 end
 
@@ -166,6 +177,9 @@ local function ownedList(player: Player): { string }
 end
 
 local function pushState(player: Player)
+	if FighterRegistry.isBot(player) then
+		return -- a bot has no HUD to update
+	end
 	local entry = entries[player]
 	local payload: { [string]: any } = {
 		equipped = equipped[player] or Constants.DEFAULT_CHARACTER,
@@ -341,7 +355,7 @@ local function makeContext(player: Player, entry: Entry, aim: any, eye: any)
 		for id in match.participants do
 			local isSelf = id == player.UserId
 			if (not isSelf or selfTarget) and match:isActive(id) and (isSelf or not match:isTeammate(id, player.UserId)) then
-				local other = Players:GetPlayerByUserId(id)
+				local other = FighterRegistry.get(id) -- a player or a training bot
 				local root = other and rootOf(other)
 				-- Fighters in a clash are inside its force field: no ability reaches them.
 				if other and root and not AbilityService.isClashing(other) then
@@ -721,9 +735,17 @@ local function startClash(a: Player, b: Player, character: string, slot: string)
 		end
 		clashCasts[id] = nil
 	end
+	-- A training dummy never punches or casts, so it can't start a clash; should one ever end up in a duel it
+	-- answers by itself (the duel's bot path) and, as a real match participant, losing eliminates it like anyone.
+	local function duelist(f: any)
+		if FighterRegistry.isBot(f) then
+			return { id = f.UserId, model = f.Character :: Model, handle = f, bot = {} }
+		end
+		return { id = f.UserId, player = f, model = f.Character :: Model }
+	end
 	local started = ClashDuelService.start(
-		{ id = a.UserId, player = a, model = a.Character :: Model },
-		{ id = b.UserId, player = b, model = b.Character :: Model },
+		duelist(a),
+		duelist(b),
 		{
 			character = character,
 			slot = slot,
@@ -839,7 +861,17 @@ local function handleEquip(player: Player, characterId: any)
 	local match = RoundManager.getMatch()
 	local p = match and not match.ended and match.participants[player.UserId]
 	if p and p.alive then
-		return { status = "in_fight" }
+		if not ServerMode.isTraining then
+			return { status = "in_fight" }
+		end
+		-- Training Grounds: switch on the spot, this life (practice any fighter without waiting to respawn).
+		local entry = entries[player]
+		if entry and entry.match == match then
+			entry.character = def.id
+			if player.Character then
+				player.Character:SetAttribute(Constants.FIGHTER_ATTRIBUTE, def.id)
+			end
+		end
 	end
 	equipped[player] = def.id
 	pushState(player)
@@ -897,7 +929,8 @@ local function onLifeStarted(player: Player, match: any, lifeId: number)
 		AbilityRules.onRespawn(entry.rules, t, Constants.ULTIMATE_RESPAWN_REDUCTION)
 	end
 	entry.lifeId = lifeId
-	entry.character = equipped[player] or Constants.DEFAULT_CHARACTER
+	-- A training bot fights as the character TrainingService gave it.
+	entry.character = if FighterRegistry.isBot(player) then (player :: any).fighter else equipped[player] or Constants.DEFAULT_CHARACTER
 	-- Every client shows which fighter this is (aura + name chip, owner 2026-09-29). Public information: casts
 	-- already show it. On the character, so it replicates by itself, goes with the body, and Mirror Decoys (copies
 	-- of the character) carry it too. Lobby characters are new models without it.
@@ -936,6 +969,18 @@ function AbilityService.meleeClash(a: Player, b: Player): boolean
 	return startClash(a, b, "Melee", "m1")
 end
 
+-- The character this player is fighting as in the current round (nil outside one). Used by XpService.
+function AbilityService.fighterOf(player: Player): string?
+	local entry = entries[player]
+	local match = RoundManager.getMatch()
+	return if entry and match and entry.match == match then entry.character else nil
+end
+
+-- The character this player has equipped (lobby, shop, next life).
+function AbilityService.equippedOf(player: Player): string
+	return equipped[player] or Constants.DEFAULT_CHARACTER
+end
+
 -- Does the player own this character (free, bought, or unlocked for Studio testing)? Used by ShopService.
 function AbilityService.owns(player: Player, id: string): boolean
 	local def = CharacterDefs.byId[id]
@@ -962,19 +1007,22 @@ function AbilityService.Init()
 	for _, player in Players:GetPlayers() do
 		task.defer(pushState, player)
 	end
-	Players.PlayerRemoving:Connect(function(player)
-		equipped[player] = nil
-		pendingEquip[player] = nil
-		entries[player] = nil
-		speedMods[player] = nil
-		guardUntil[player.UserId] = nil
-		mildBlockedUntil[player.UserId] = nil
-		lastGuardSpark[player.UserId] = nil
-		clashCasts[player.UserId] = nil
-		failedRequests[player] = nil
-		RateLimiter.forget(equipRequests, player)
-		ClashRules.forget(clashState, player.UserId)
-	end)
+	Players.PlayerRemoving:Connect(AbilityService.forget)
+end
+
+-- A fighter left (a player leaving, or a training bot removed): drop everything held for them.
+function AbilityService.forget(player: Player)
+	equipped[player] = nil
+	pendingEquip[player] = nil
+	entries[player] = nil
+	speedMods[player] = nil
+	guardUntil[player.UserId] = nil
+	mildBlockedUntil[player.UserId] = nil
+	lastGuardSpark[player.UserId] = nil
+	clashCasts[player.UserId] = nil
+	failedRequests[player] = nil
+	RateLimiter.forget(equipRequests, player)
+	ClashRules.forget(clashState, player.UserId)
 end
 
 -- A round started or ended: drop everything that belonged to the old one (clones, barriers, listeners, pending

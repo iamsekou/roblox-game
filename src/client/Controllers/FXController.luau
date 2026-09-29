@@ -5,6 +5,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Remotes = require(Shared:WaitForChild("Remotes"))
 local Constants = require(Shared:WaitForChild("Modules"):WaitForChild("Constants"))
+local Fighters = require(Shared:WaitForChild("Modules"):WaitForChild("Fighters"))
 local AnimControllers = ReplicatedStorage:WaitForChild("Animations"):WaitForChild("Controllers")
 local EliminationFX = require(AnimControllers:WaitForChild("EliminationFX"))
 local SpawnFX = require(AnimControllers:WaitForChild("SpawnFX"))
@@ -19,14 +20,14 @@ local Audio = require(script.Parent.Parent:WaitForChild("Audio"))
 
 local FXController = {}
 
+-- A fighter's body (a player's character or a training bot's), waiting up to `timeout` for it to appear.
 local function characterOf(userId: number?, timeout: number): Model?
-	local player = userId and Players:GetPlayerByUserId(userId)
-	if not player then
+	if type(userId) ~= "number" then
 		return nil
 	end
 	local deadline = os.clock() + timeout
 	while true do
-		local character = player.Character
+		local character = Fighters.modelOf(userId)
 		if character and character:FindFirstChild("HumanoidRootPart") then
 			return character
 		end

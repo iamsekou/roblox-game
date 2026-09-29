@@ -46,6 +46,16 @@ local DEFINITIONS: { [string]: string } = {
 	IncomeNotice = "RemoteEvent", -- S->one player { source = "purchase", amount } (a credit bundle was granted)
 	PurchaseItem = "RemoteFunction", -- C->S (characterId) -> { status = bought|insufficient|owned|not_for_yen|unknown|rate_limited, granted?, price?, yen }
 
+	-- Character XP and prestige (Systems/XpService)
+	XpState = "RemoteEvent", -- S->one { loaded, progress = { [character] = { p, l, x, need, full } }, maxLevel, maxPrestige, gain? = { character, amount, reason, levels, full, level }, prestiged? = { character, p } }
+	Prestige = "RemoteFunction", -- C->S (characterId) -> { status = "prestiged" | "not_ready" | "loading" | "unknown" | "rate_limited", p? }
+
+	-- Training Grounds (Systems/TrainingService)
+	EnterTraining = "RemoteFunction", -- C->S () -> { status = "teleporting" | "studio" | "in_round" | "failed" | "rate_limited" | "already_training" }
+	LeaveTraining = "RemoteFunction", -- C->S () -> { status = "teleporting" | "studio" | "failed" | "rate_limited" | "not_training" }
+	TrainingConfig = "RemoteFunction", -- C->S ({ bots?, difficulty?, mode? }) -> { status = "ok" | "malformed" | "rate_limited" | "not_training", config = { bots, difficulty, mode } }
+	TrainingNotice = "RemoteEvent", -- S->one { kind = "teleport_failed" }
+
 	-- Saved progress
 	ProfileState = "RemoteEvent", -- S->one { status = "loaded" | "offline", settings }
 	SetSettings = "RemoteFunction", -- C->S ({ [key] = value }) -> { status = "ok" | "rate_limited" | "malformed", settings }

@@ -8,6 +8,7 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local StarterPlayer = game:GetService("StarterPlayer")
+local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 
 local UI = {}
@@ -234,6 +235,119 @@ function UI.screen(name: string, displayOrder: number?, fullBleed: boolean?): Sc
 		ScreenInsets = if fullBleed then Enum.ScreenInsets.None else Enum.ScreenInsets.CoreUISafeInsets,
 		Parent = playerGui,
 	})
+end
+
+-- A call-to-action slab (owner, 2026-09-30: the lobby's FIGHT and TRAINING). A charcoal slab with an accent bar on
+-- its left edge and a soft wash of the accent colour fading across it (on its own plate: a UIGradient would tint the
+-- text too), a heavy title, a small caption under it, and a chevron on the right. Hovering brightens it, widens the
+-- bar and nudges the chevron. Returns its parts so the caller can restyle states (queued, busy).
+export type Action = { button: TextButton, title: TextLabel, caption: TextLabel, glyph: TextLabel, accent: Frame, wash: Frame }
+function UI.actionButton(props: {
+	name: string,
+	title: string,
+	caption: string?,
+	glyph: string?,
+	accent: Color3,
+	height: number,
+	order: number?,
+	parent: Instance,
+}): Action
+	local height = props.height
+	local button = UI.new("TextButton", {
+		Name = props.name,
+		Text = "",
+		AutoButtonColor = false,
+		BackgroundColor3 = UI.Colors.Panel,
+		BackgroundTransparency = 0.06,
+		BorderSizePixel = 0,
+		Size = UDim2.new(1, 0, 0, height),
+		LayoutOrder = props.order or 0,
+		Parent = props.parent,
+	}, { UI.corner(), UI.stroke(Color3.new(1, 1, 1), 1, 0.86) })
+	local wash = UI.new("Frame", {
+		Name = "Wash",
+		BackgroundColor3 = props.accent,
+		BorderSizePixel = 0,
+		Size = UDim2.fromScale(1, 1),
+		Parent = button,
+	}, {
+		UI.corner(),
+		UI.new("UIGradient", {
+			Transparency = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, 0.6),
+				NumberSequenceKeypoint.new(0.55, 0.92),
+				NumberSequenceKeypoint.new(1, 1),
+			}),
+		}),
+	})
+	local accent = UI.new("Frame", {
+		Name = "Accent",
+		BackgroundColor3 = props.accent,
+		BorderSizePixel = 0,
+		Size = UDim2.new(0, 4, 1, 0),
+		ZIndex = 3,
+		Parent = button,
+	})
+	local hasCaption = props.caption ~= nil
+	local titleSize = math.floor(height * (if hasCaption then 0.48 else 0.54))
+	local top = if hasCaption then math.floor((height - titleSize - 14) / 2) - 1 else 0
+	local title = UI.label({
+		Name = "Title",
+		Position = UDim2.fromOffset(18, top),
+		Size = UDim2.new(1, -60, 0, if hasCaption then titleSize + 2 else height),
+		Font = UI.FontHeavy,
+		TextSize = titleSize,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Text = props.title,
+		ZIndex = 3,
+		Parent = button,
+	})
+	local caption = UI.label({
+		Name = "Caption",
+		Position = UDim2.fromOffset(19, top + titleSize + 1),
+		Size = UDim2.new(1, -60, 0, 14),
+		Font = UI.Font,
+		TextSize = 12,
+		TextColor3 = UI.Colors.Muted,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Text = props.caption or "",
+		Visible = hasCaption,
+		ZIndex = 3,
+		Parent = button,
+	})
+	local glyph = UI.label({
+		Name = "Glyph",
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -16, 0.5, 0),
+		Size = UDim2.fromOffset(28, height),
+		Font = UI.FontHeavy,
+		TextSize = titleSize,
+		TextColor3 = props.accent,
+		TextXAlignment = Enum.TextXAlignment.Right,
+		Text = props.glyph or "›",
+		ZIndex = 3,
+		Parent = button,
+	})
+	local hoverInfo = TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	local function hover(on: boolean)
+		TweenService:Create(button, hoverInfo, { BackgroundColor3 = if on then UI.Colors.Slot else UI.Colors.Panel }):Play()
+		TweenService:Create(accent, hoverInfo, { Size = UDim2.new(0, if on then 7 else 4, 1, 0) }):Play()
+		TweenService:Create(glyph, hoverInfo, { Position = UDim2.new(1, if on then -10 else -16, 0.5, 0) }):Play()
+	end
+	button.MouseEnter:Connect(function()
+		hover(true)
+	end)
+	button.MouseLeave:Connect(function()
+		hover(false)
+	end)
+	return { button = button, title = title, caption = caption, glyph = glyph, accent = accent, wash = wash }
+end
+
+-- Recolours an action slab's accent (bar, wash, chevron): e.g. steel while queued.
+function UI.setActionAccent(action: Action, color: Color3)
+	action.accent.BackgroundColor3 = color
+	action.wash.BackgroundColor3 = color
+	action.glyph.TextColor3 = color
 end
 
 function UI.toneColor(tone: string?): Color3
