@@ -1057,9 +1057,12 @@ local function makeHologram(stage: BasePart): Model?
 	return copy
 end
 
+-- The latest camera glide is kept so an instant close can stop it (a glide left running fights the normal
+-- camera once it's back).
 local function cameraTween(cframe: CFrame, seconds: number, style: Enum.EasingStyle?): Tween
 	local camera = workspace.CurrentCamera
-	return tween(camera, seconds, { CFrame = cframe }, style or Enum.EasingStyle.Quad, Enum.EasingDirection.InOut)
+	scene.cameraTween = tween(camera, seconds, { CFrame = cframe }, style or Enum.EasingStyle.Quad, Enum.EasingDirection.InOut)
+	return scene.cameraTween
 end
 
 -- Freeze the character while shopping (this place has no standard PlayerModule to disable controls
@@ -1069,10 +1072,7 @@ local function setControls(enabled: boolean)
 	GuiService.TouchControlsEnabled = enabled
 	local character = localPlayer.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	if not humanoid then
-		return
-	end
-	if not enabled then
+	if not enabled and humanoid then
 		scene.movement = {
 			humanoid = humanoid,
 			walkSpeed = humanoid.WalkSpeed,
@@ -1087,11 +1087,20 @@ local function setControls(enabled: boolean)
 	elseif scene.movement then
 		local saved = scene.movement
 		scene.movement = nil
-		if saved.humanoid.Parent then
-			saved.humanoid.WalkSpeed = saved.walkSpeed
-			saved.humanoid.JumpPower = saved.jumpPower
-			saved.humanoid.JumpHeight = saved.jumpHeight
-			saved.humanoid.AutoRotate = saved.autoRotate
+		-- Only the humanoid we froze, and only values still at our freeze: anything the server set meanwhile
+		-- (it replicates over ours) is newer and stays. A respawned character never had them changed.
+		local frozen = saved.humanoid
+		if frozen.Parent and frozen == humanoid then
+			if frozen.WalkSpeed == 0 then
+				frozen.WalkSpeed = saved.walkSpeed
+			end
+			if frozen.JumpPower == 0 then
+				frozen.JumpPower = saved.jumpPower
+			end
+			if frozen.JumpHeight == 0 then
+				frozen.JumpHeight = saved.jumpHeight
+			end
+			frozen.AutoRotate = saved.autoRotate
 		end
 	end
 end
@@ -1344,7 +1353,7 @@ function ShopController.open()
 	local doorway = door.CFrame * CFrame.new(0, 1.2, -7)
 	scene.doorway = CFrame.lookAt(doorway.Position, door.Position + Vector3.new(0, 1.2, 0))
 	scene.hologram = makeHologram(stage)
-	tween(camera, 1.1, { FieldOfView = 52 }, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut)
+	scene.fovTween = tween(camera, 1.1, { FieldOfView = 52 }, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut)
 	cameraTween(scene.doorway, 0.5).Completed:Wait()
 	if not state.open then
 		return
@@ -1370,7 +1379,9 @@ function ShopController.open()
 	ShopController.select(pick)
 end
 
-function ShopController.close()
+-- `instant`: skip the glide back out (the player respawned or was sent into a round, so the lobby door is
+-- no longer where they are; gliding there left the camera scripted and the HUD hidden for a moment).
+function ShopController.close(instant: boolean?)
 	if not state.open then
 		return
 	end
@@ -1388,6 +1399,19 @@ function ShopController.close()
 			scene.hologram:Destroy()
 			scene.hologram = nil
 		end
+		-- Stop any glide or zoom still playing: a tween left running keeps writing the camera after it's
+		-- handed back (an exit within a second of entering used to leave the view zoomed in).
+		for _, key in { "cameraTween", "fovTween" } do
+			if scene[key] then
+				scene[key]:Cancel()
+				scene[key] = nil
+			end
+		end
+		local character = localPlayer.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			camera.CameraSubject = humanoid -- the character may have respawned while shopping
+		end
 		camera.CameraType = Enum.CameraType.Custom
 		camera.FieldOfView = scene.returnFov or 70
 		for _, g in scene.hidden or {} do
@@ -1402,7 +1426,7 @@ function ShopController.close()
 	-- runs it first (audit fix, 2026-09-28: a quick reopen used to leave the old hologram behind, the HUD
 	-- hidden and the player frozen).
 	pendingFinish = finish
-	if scene.doorway and camera.CameraType == Enum.CameraType.Scriptable then
+	if not instant and scene.doorway and camera.CameraType == Enum.CameraType.Scriptable then
 		task.spawn(function()
 			cameraTween(scene.doorway, 0.45, Enum.EasingStyle.Quint).Completed:Wait()
 			if scene.returnCFrame and pendingFinish == finish then
@@ -1505,13 +1529,19 @@ function ShopController.Start()
 		if state.open and kind == "ability" then
 			refreshCards()
 			refreshDetail()
-		elseif state.open and kind == "life" and ClientState.life.inMatch then
-			ShopController.close()
+		elseif kind == "life" and ClientState.life.inMatch then
+			if state.open then
+				ShopController.close(true)
+			elseif pendingFinish then
+				pendingFinish() -- sent into a round mid-glide: hand the camera straight back
+			end
 		end
 	end)
 	localPlayer.CharacterAdded:Connect(function()
 		if state.open then
-			ShopController.close()
+			ShopController.close(true)
+		elseif pendingFinish then
+			pendingFinish() -- respawned mid-glide: hand the camera straight back
 		end
 	end)
 end

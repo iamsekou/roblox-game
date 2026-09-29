@@ -53,11 +53,16 @@ test("[CLASH] different abilities never clash", function()
 	T.eq(ClashRules.offer(s, cast(2, "Vegeta.ultimate", 0.2, 20, WEST), PARAMS), nil)
 end)
 
-test("[CLASH] abilities off the clash list never clash, even mirrored", function()
+test("[CLASH] every ability clashes when mirrored: teleports, buffs, milds (owner, 2026-09-29)", function()
+	for _, key in { "Goku.mild", "Vegeta.mild", "L.ultimate", "Gojo.mild" } do
+		local s = ClashRules.new()
+		T.eq(ClashRules.offer(s, cast(1, key, 0, 0, EAST, 0.3), PARAMS), nil, key .. ": first cast waits")
+		local partner = ClashRules.offer(s, cast(2, key, 0.2, 10, WEST, 0.3), PARAMS)
+		T.truthy(partner and partner.id == 1, key .. ": second cast clashes")
+	end
 	local s = ClashRules.new()
-	T.eq(ClashRules.offer(s, cast(1, "Goku.mild", 0, 0, EAST), PARAMS), nil)
-	T.eq(ClashRules.offer(s, cast(2, "Goku.mild", 0.1, 10, WEST), PARAMS), nil)
-	T.eq(#s.pending, 0, "non-clashable casts are never kept")
+	ClashRules.offer(s, cast(1, "Vegeta.mild", 0, 0, EAST, 0.3), PARAMS)
+	T.eq(ClashRules.offer(s, cast(2, "Vegeta.mild", 0.2, 10, EAST, 0.3), PARAMS), nil, "not at each other: no clash")
 end)
 
 test("[CLASH] too late: outside the window, or after the first one already fired", function()

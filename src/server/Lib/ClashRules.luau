@@ -1,26 +1,14 @@
--- Clash rule (owner-approved 2026-09-23). Two fighters who start the SAME attack ability at each other at
--- nearly the same moment clash instead of hitting: both abilities are cancelled (cooldowns stay spent) and
--- the pair is locked face to face for a short anime-style exchange. Nothing new decides the winner: they
--- stand inside reading range, so the first correct code wins through the normal elimination rules.
+-- Clash rule (owner-approved 2026-09-23; every ability since 2026-09-29, owner: "any interaction that
+-- involves two players using the same ability against each other at the same time"). Two fighters who
+-- start the SAME ability at each other at nearly the same moment clash instead of hitting: both abilities
+-- are cancelled (cooldowns stay spent) and the pair is locked into a clash duel (Systems/ClashDuelService).
 --
--- Pure: no engine calls beyond Vector3 math. The server feeds it each accepted clashable cast; it answers
--- with the earlier cast to clash with, or keeps the new one pending for a later caster.
+-- Pure: no engine calls beyond Vector3 math. The server feeds it each accepted cast; it answers with the
+-- earlier cast to clash with, or keeps the new one pending for a later caster.
 -- A cast can only be clashed with while it is still in its wind-up and within the clash window, so a dash
--- that already fired can't be pulled back into a clash.
+-- that already fired can't be pulled back into a clash. "At each other" = each aims at the other (the
+-- facing cone), which is what separates a clash from two fighters happening to press the same key.
 local ClashRules = {}
-
--- Attack abilities that can clash, as "<character id>.<slot>". Teleports, guards and information
--- abilities never clash.
-ClashRules.CLASHABLE = {
-	["Goku.ultimate"] = true, -- Energy Wave
-	["Luffy.ultimate"] = true, -- Blitz Barrage
-	["Vegeta.ultimate"] = true, -- Nova Blast
-	["Zoro.ultimate"] = true, -- Cyclone Cut
-	["Naruto.ultimate"] = true, -- Vortex Orb
-	["Ichigo.mild"] = true, -- Blur Step
-	["Ichigo.ultimate"] = true, -- Crescent Wave
-	["Sasuke.mild"] = true, -- Lightning Dash
-}
 
 export type Cast = {
 	id: number, -- the caster's user id
@@ -51,10 +39,6 @@ function ClashRules.key(character: string, slot: string): string
 	return character .. "." .. slot
 end
 
-function ClashRules.isClashable(key: string): boolean
-	return ClashRules.CLASHABLE[key] == true
-end
-
 -- Does a fighter at `from` aiming along `aim` point at `to`, within `degrees` (horizontal only)?
 function ClashRules.aimsAt(from: Vector3, aim: Vector3, to: Vector3, degrees: number): boolean
 	local offset = Vector3.new(to.X - from.X, 0, to.Z - from.Z)
@@ -83,7 +67,7 @@ local function removeFor(state: State, id: number)
 end
 
 -- Offer a newly accepted cast. Returns the earlier cast it clashes with (both leave the pending list), or
--- nil (a clashable cast is then kept pending so a later caster can clash with it).
+-- nil (the cast is then kept pending so a later caster can clash with it).
 function ClashRules.offer(state: State, cast: Cast, params: Params): Cast?
 	for i = #state.pending, 1, -1 do
 		if not open(state.pending[i], cast.t, params) then
@@ -91,7 +75,7 @@ function ClashRules.offer(state: State, cast: Cast, params: Params): Cast?
 		end
 	end
 	removeFor(state, cast.id) -- a fighter has at most one pending cast: their latest
-	if not ClashRules.isClashable(cast.key) or state.clashing[cast.id] then
+	if state.clashing[cast.id] then
 		return nil
 	end
 	local best: Cast? = nil

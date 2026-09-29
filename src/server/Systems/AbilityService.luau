@@ -69,7 +69,8 @@ local mildBlockedUntil: { [number]: number } = {}
 local lastGuardSpark: { [number]: number } = {} -- Iron Guard block sparks, rate-limited per fighter
 local equipListeners: { (Player, string) -> () } = {}
 local clashState = ClashRules.new()
-local clashCasts: { [number]: any } = {} -- user id -> the context of their latest clashable cast (to cancel it)
+-- user id -> their latest cast (its context, and when its wind-up ends), so a clash can cancel it before it fires
+local clashCasts: { [number]: { ctx: any, firesAt: number } } = {}
 local CLASH_PARAMS = {
 	window = Constants.CLASH_WINDOW,
 	range = Constants.CLASH_RANGE,
@@ -714,8 +715,9 @@ local function startClash(a: Player, b: Player, character: string, slot: string)
 	ClashRules.begin(clashState, a.UserId, b.UserId)
 	for _, id in { a.UserId, b.UserId } do
 		local pending = clashCasts[id]
-		if pending then
-			pending.cancelled = true -- its wind-up re-check stops it from firing
+		-- Only a cast still winding up: one already in effect (a 20 s camera, a reading) keeps running.
+		if pending and now() < pending.firesAt then
+			pending.ctx.cancelled = true -- its wind-up re-check stops it from firing
 		end
 		clashCasts[id] = nil
 	end
@@ -794,13 +796,13 @@ local function handleUse(player: Player, slot: any, aim: any, eye: any)
 		slot = slot,
 		castSeconds = plan.castSeconds or 0,
 	})
-	-- The same attack started at each other a moment apart clashes: both are cancelled, the pair locks in.
-	local clashKey = ClashRules.key(entry.character, slot)
+	-- The same ability started at each other a moment apart clashes (any ability since 2026-09-29): both are
+	-- cancelled, the pair locks into a clash duel.
 	local root = rootOf(player)
-	if ClashRules.isClashable(clashKey) and root then
+	if root then
 		local partner = ClashRules.offer(clashState, {
 			id = player.UserId,
-			key = clashKey,
+			key = ClashRules.key(entry.character, slot),
 			t = t,
 			windup = plan.castSeconds or 0,
 			position = root.Position,
@@ -811,7 +813,7 @@ local function handleUse(player: Player, slot: any, aim: any, eye: any)
 		if other and startClash(other, player, entry.character, slot) then
 			return { status = "ok", readyAt = entry.rules.readyAt[slot] } -- this cast never runs
 		end
-		clashCasts[player.UserId] = ctx
+		clashCasts[player.UserId] = { ctx = ctx, firesAt = t + (plan.castSeconds or 0) }
 	end
 	task.spawn(function()
 		local success, err = pcall(plan.run)
