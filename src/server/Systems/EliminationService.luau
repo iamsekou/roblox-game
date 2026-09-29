@@ -79,6 +79,38 @@ local function handleSubmit(player: Player, code: any)
 	return { status = status, strikesLeft = result.strikesLeft }
 end
 
+-- A clash duel's loser (Systems/ClashDuelService): eliminated and credited to `winner` exactly like a code
+-- elimination (score, yen within the farming limit, leaderboard kill, Gojo's count). `winner` nil = nobody to
+-- credit. Returns whether anyone was eliminated.
+function EliminationService.clashElimination(winner: Player?, loserId: number): boolean
+	local match = RoundManager.getMatch()
+	if not match then
+		return false
+	end
+	local t = workspace:GetServerTimeNow()
+	local done, roundWinner = match:eliminateByClash(if winner then winner.UserId else nil, loserId, t)
+	if not done then
+		return false
+	end
+	local rewarded = false
+	if winner then
+		rewarded = RewardRules.claim(rewards, winner.UserId, loserId, t, Constants.FARM_WINDOW_SECONDS, Constants.FARM_MAX_PAID_PER_PAIR)
+		if rewarded then
+			EconomyService.award(winner, Constants.YEN_PER_ELIMINATION, "clash")
+		end
+	end
+	RoundManager.onLifeLost(loserId, { cause = "clash", attacker = winner })
+	if winner then
+		for _, handler in eliminationHandlers do
+			task.spawn(handler, winner, loserId, rewarded)
+		end
+	end
+	if roundWinner then
+		RoundManager.finish(roundWinner)
+	end
+	return true
+end
+
 function EliminationService.Init()
 	Remotes.SubmitCode.OnServerInvoke = handleSubmit
 	Players.PlayerRemoving:Connect(function(player)

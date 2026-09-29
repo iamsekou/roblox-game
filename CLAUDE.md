@@ -58,6 +58,10 @@ you eliminate someone by typing the number *you* see on them. Studio place: **"N
   Phone layouts on a PC: before pressing Play set `NAU_DevTouchUI = true` (touch controls) and
   `NAU_DevViewport = "844x390"` (layout size) on **StarterPlayer**, in Edit mode; remove both afterwards.
   Stress test: during a round, `NAU_DevStressBots = 11` (ServerScriptService) runs 11 bot fighters; 0 removes them.
+  Clash duel: `NAU_DevDuel` on a Player in a round starts a duel against a bot: `"lose"` (bot slips on digit 4),
+  `"win"` (never slips; 30 s → draw), a number n (slips on digit n), `"watch"` (two bots duel in front of you: the
+  spectators' view). Studio's test tool takes over a second per call, longer than a digit's window, so type through
+  a `ClashDigit` listener that answers with `ClashInput`, or schedule key presses in one `user_keyboard_input` call.
   Studio's tooling resets the camera to Custom after each `execute_luau` call, so the shop's scripted camera looks
   wrong in tests driven that way (not a game bug). Without Studio API
   access the DataStores run offline (the boards show this server's session). Studio command-bar

@@ -537,6 +537,13 @@ local function onFeed(event: any)
 		pushFeed(string.format('%s  <font color="%s">ELIMINATED</font>  %s', attacker, muted, victim), bar)
 	elseif event.cause == "strikes" then
 		pushFeed(string.format('%s  <font color="%s">MISFIRED TWICE</font>', victim, muted), UI.Colors.Line)
+	elseif event.cause == "clash" then
+		local bar = if event.attacker == localPlayer.UserId then UI.Colors.Good elseif event.victim == localPlayer.UserId then UI.Colors.Accent else UI.Colors.Line
+		if event.attacker then
+			pushFeed(string.format('%s  <font color="%s">WON THE CLASH ·</font>  %s', named(event.attacker), muted, victim), bar)
+		else
+			pushFeed(string.format('%s  <font color="%s">LOST THE CLASH</font>', victim, muted), bar)
+		end
 	else
 		pushFeed(string.format('%s  <font color="%s">FELL</font>', victim, muted), UI.Colors.Line)
 	end
@@ -577,6 +584,9 @@ local function onLifeChanged()
 		elseif life.cause == "strikes" then
 			refs.overlayTitle.Text = "MISFIRE"
 			refs.overlaySub.Text = "TWO WRONG CODES IN ONE LIFE"
+		elseif life.cause == "clash" then
+			refs.overlayTitle.Text = "CLASH LOST"
+			refs.overlaySub.Text = string.upper(string.format("%s won the clash", life.byName or "They"))
 		else
 			refs.overlayTitle.Text = "YOU FELL"
 			refs.overlaySub.Text = ""

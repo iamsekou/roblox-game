@@ -19,6 +19,7 @@ export type Participant = {
 	strikes: number,
 	score: number,
 	lastSubmitAt: number,
+	dueling: boolean?, -- locked in a clash duel: inside its force field, out of reach of codes (both ways)
 }
 
 export type Winner = {
@@ -31,7 +32,7 @@ export type Winner = {
 export type SubmitResult = {
 	status: string,
 	-- "eliminated" | "wrong" | "self_eliminated" | "stale" | "teammate" | "protected" | "locked" | "clone"
-	-- | "malformed" | "rate_limited" | "not_alive" | "not_in_match" | "round_over"
+	-- | "dueling" | "shielded" | "malformed" | "rate_limited" | "not_alive" | "not_in_match" | "round_over"
 	targetId: number?,
 	strikes: number?,
 	strikesLeft: number?,
@@ -184,6 +185,40 @@ function MatchCore:reissue(observer: number, targets: { number }, now: number): 
 	return replaced
 end
 
+-- Clash duels (owner request 2026-09-29): the two fighters float inside a force field while they type digits.
+-- Meanwhile codes can't touch them (a code for a duelist answers "shielded", no strike) and they can't submit
+-- codes ("dueling"). Only alive fighters can be put in a duel. Returns whether the flag is now as asked.
+function MatchCore:setDueling(id: number, on: boolean): boolean
+	local p = self.participants[id]
+	if not p or (on and not p.alive) then
+		return false
+	end
+	p.dueling = if on then true else nil
+	return true
+end
+
+-- The duel's loser is eliminated, credited to the winner (nil = nobody, e.g. the other side left): the same
+-- scoring as a code elimination. Returns (whether anyone was eliminated, the round's winner if that ended it).
+function MatchCore:eliminateByClash(winnerId: number?, loserId: number, now: number): (boolean, Winner?)
+	if self.ended then
+		return false, nil
+	end
+	local loser = self.participants[loserId]
+	if not loser or not loser.alive then
+		return false, nil
+	end
+	self:_endLife(loserId, now)
+	local w = if winnerId then self.participants[winnerId] else nil
+	if w then
+		w.dueling = nil
+		w.score += 1
+		if w.team then
+			self.teamScores[w.team] = (self.teamScores[w.team] or 0) + 1
+		end
+	end
+	return true, self:_checkWin()
+end
+
 -- Forgets retired codes whose reuse cooldown is over (keeps a long round's bookkeeping small).
 function MatchCore:purge(now: number)
 	self.codes:purgeStale(now)
@@ -236,6 +271,7 @@ function MatchCore:_endLife(id: number, now: number)
 	local p = self.participants[id]
 	p.alive = false
 	p.protectedUntil = nil
+	p.dueling = nil
 	self:_removeDecoysOf(id, now)
 	self.codes:retireTarget(id, now)
 	self.codes:retireView(id, now)
@@ -395,6 +431,9 @@ function MatchCore:submit(observerId: number, rawCode: any, now: number): Submit
 	if now < p.inputLockedUntil then
 		return { status = "locked" } -- an ability jammed their input; never a strike
 	end
+	if p.dueling then
+		return { status = "dueling" } -- typing the duel's digits, not codes; never a strike
+	end
 	if
 		typeof(rawCode) ~= "string"
 		or #rawCode ~= self.config.codeLength
@@ -421,6 +460,9 @@ function MatchCore:submit(observerId: number, rawCode: any, now: number): Submit
 		if target and target.alive then
 			if self:isTeammate(observerId, targetId) then
 				return { status = "teammate", targetId = targetId } -- a real number they saw; not a strike
+			end
+			if target.dueling then
+				return { status = "shielded", targetId = targetId } -- inside a clash's force field; not a strike
 			end
 			-- Check-and-set with no yield in between: a second submission for this target (even in
 			-- the same frame) finds it dead with its codes retired, so it can never be credited twice.

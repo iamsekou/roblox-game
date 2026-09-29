@@ -32,6 +32,10 @@ local DEFINITIONS: { [string]: string } = {
 	AbilityEffect = "RemoteEvent", -- S->one { kind = "knockback" | "grapple" | "clearCode" | "lock", ... }
 	M1 = "RemoteEvent", -- C->S (aim: Vector3, eye: Vector3) throw the next punch toward the cursor (Systems/MeleeService decides the rest)
 
+	-- Clash duel (Systems/ClashDuelService)
+	ClashDigit = "RemoteEvent", -- S->one duelist { step, digit, deadline } the digit to type now, or { result = "win" | "lose" | "draw" }
+	ClashInput = "RemoteEvent", -- C->S (step: number, digit: number) the duelist typed a digit
+
 	-- Kill leaderboards (all-time + weekly)
 	Leaderboards = "RemoteEvent", -- S->all { serverTime, offline, boards = { AllTime|Weekly = { rows, you, syncedAt, resetAt? } } }
 	GetLeaderboards = "RemoteFunction", -- C->S () -> the latest Leaderboards payload (for players who just joined)

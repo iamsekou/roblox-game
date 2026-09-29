@@ -30,7 +30,7 @@ type Entry = {
 	profile: ProfileData.Profile,
 	loaded: boolean, -- false until the saved profile arrived (nothing is saved before that)
 	saving: boolean,
-	settingsChanged: boolean?, -- the player changed a setting before the save arrived: keep their choice
+	changedSettings: { [string]: boolean }, -- settings the player changed before the save arrived (kept on load)
 	toldOffline: boolean?, -- they've been told this session isn't being saved
 }
 
@@ -59,7 +59,7 @@ local save: (Player, Entry, boolean) -> boolean -- below
 -- Loading ----------------------------------------------------------------------------------------
 
 local function load(player: Player)
-	local entry: Entry = { profile = ProfileData.new(Constants.DEFAULT_CHARACTER), loaded = false, saving = false }
+	local entry: Entry = { profile = ProfileData.new(Constants.DEFAULT_CHARACTER), loaded = false, saving = false, changedSettings = {} }
 	entries[player] = entry
 	local store = SafeStore.regular(Constants.PROFILE_STORE)
 	for attempt = 1, Constants.PROFILE_LOAD_ATTEMPTS + 1 do
@@ -87,7 +87,7 @@ local function load(player: Player)
 			local profile = loaded :: ProfileData.Profile
 			if not player.Parent or entries[player] ~= entry then
 				-- Left while loading: hand the lock straight back, unchanged, so their next server needn't wait.
-				save(player, { profile = profile, loaded = true, saving = false }, true)
+				save(player, { profile = profile, loaded = true, saving = false, changedSettings = {} }, true)
 				return
 			end
 			entry.loaded = true
@@ -96,9 +96,9 @@ local function load(player: Player)
 			entry.profile.yen = EconomyService.getBalance(player)
 			entry.profile.owned = EconomyService.boughtList(player)
 			entry.profile.equipped = AbilityService.applySavedEquip(player, profile.equipped)
-			if not entry.settingsChanged then
-				entry.profile.settings = profile.settings -- (a change made while loading wins, and is saved from now on)
-			end
+			-- The saved settings, except the ones changed while loading; a one-time flag (how-to-play seen) that's
+			-- true on either side stays true (Modules/Settings.merge).
+			entry.profile.settings = Settings.merge(profile.settings, entry.profile.settings, entry.changedSettings)
 			entry.profile.receipts = profile.receipts
 			log(string.format("loaded %s: %d YC, %d bought, equipped %s%s", player.Name, profile.yen, #profile.owned, profile.equipped, if force then " (lock taken over)" else ""))
 			tell(player, "loaded", entry.profile.settings)
@@ -215,7 +215,11 @@ local function handleSetSettings(player: Player, changes: any)
 		return { status = "malformed", settings = entry.profile.settings }
 	end
 	entry.profile.settings = updated
-	entry.settingsChanged = true
+	if not entry.loaded then
+		for key in changes do
+			entry.changedSettings[key] = true
+		end
+	end
 	return { status = "ok", settings = updated }
 end
 

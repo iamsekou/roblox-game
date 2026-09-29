@@ -30,6 +30,7 @@ local NumberAssignmentService = require(script.Parent.NumberAssignmentService)
 local EliminationService = require(script.Parent.EliminationService)
 local EconomyService = require(script.Parent.EconomyService)
 local MovementGuard = require(script.Parent.MovementGuard)
+local ClashDuelService = require(script.Parent.ClashDuelService)
 
 local AbilityService = {}
 
@@ -341,7 +342,8 @@ local function makeContext(player: Player, entry: Entry, aim: any, eye: any)
 			if (not isSelf or selfTarget) and match:isActive(id) and (isSelf or not match:isTeammate(id, player.UserId)) then
 				local other = Players:GetPlayerByUserId(id)
 				local root = other and rootOf(other)
-				if other and root then
+				-- Fighters in a clash are inside its force field: no ability reaches them.
+				if other and root and not AbilityService.isClashing(other) then
 					table.insert(list, { player = other, root = root })
 				end
 			end
@@ -693,16 +695,17 @@ local function lifeOf(player: Player): number?
 	return if p and p.alive then p.lifeId else nil
 end
 
--- Lock `a` and `b` into a clash over `key` (the ability `character`.`slot`) for `seconds` (default
--- Constants.CLASH_SECONDS). `cinematic`: the two fighters get the cutscene camera (M1 trade clashes).
--- Returns false (nothing changed) if the pair can't clash right now.
-local function startClash(a: Player, b: Player, character: string, slot: string, seconds: number?, cinematic: boolean?): boolean
+-- Lock `a` and `b` into a clash over the ability `character`.`slot` (or "Melee"."m1" for M1 trades). Since
+-- 2026-09-29 (owner) every clash is a clash duel: they float inside a force field, trade a slow punch and a
+-- barrage while typing digits, and the first to slip is eliminated (Systems/ClashDuelService). Returns false
+-- (nothing changed) if the pair can't clash right now.
+local function startClash(a: Player, b: Player, character: string, slot: string): boolean
 	local rootA, rootB = rootOf(a), rootOf(b)
 	local lifeA, lifeB = lifeOf(a), lifeOf(b)
 	if not rootA or not rootB or not lifeA or not lifeB or not a.Character or not b.Character then
 		return false
 	end
-	if ClashRules.isClashing(clashState, a.UserId) or ClashRules.isClashing(clashState, b.UserId) then
+	if AbilityService.isClashing(a) or AbilityService.isClashing(b) then
 		return false
 	end
 	if not lineOfSight(rootB.Position + CHEST, rootA.Position + CHEST) then
@@ -716,56 +719,21 @@ local function startClash(a: Player, b: Player, character: string, slot: string,
 		end
 		clashCasts[id] = nil
 	end
-
-	-- Face to face, inside reading range, rooted in place.
-	local standA, standB, axis = ClashRules.stances(rootA.Position, rootB.Position, Constants.CLASH_DISTANCE)
-	a.Character:PivotTo(CFrame.lookAt(standA, Vector3.new(standB.X, standA.Y, standB.Z)))
-	b.Character:PivotTo(CFrame.lookAt(standB, Vector3.new(standA.X, standB.Y, standA.Z)))
-	MovementGuard.reset(a)
-	MovementGuard.reset(b)
-	seconds = seconds or Constants.CLASH_SECONDS
-	local freeA = addSpeed(a, 0, seconds)
-	local freeB = addSpeed(b, 0, seconds)
-	local untilTime = now() + seconds
-	sendEffect(a, { kind = "clash", untilTime = untilTime, face = standB, partner = b.UserId, cinematic = cinematic == true })
-	sendEffect(b, { kind = "clash", untilTime = untilTime, face = standA, partner = a.UserId, cinematic = cinematic == true })
-	local midpoint = (standA + standB) / 2
-	Remotes.AbilityFX:FireAllClients({
-		kind = "clash",
-		a = a.UserId,
-		b = b.UserId,
-		character = character,
-		slot = slot,
-		duration = seconds,
-		midpoint = midpoint,
-	})
-	if RunService:IsStudio() then
-		print(string.format("[NAU] clash %s vs %s (%s.%s)", a.Name, b.Name, character, slot))
-	end
-
-	-- The exchange runs its time, or ends as soon as either fighter goes down; then both are thrown apart.
-	task.spawn(function()
-		while now() < untilTime and lifeOf(a) == lifeA and lifeOf(b) == lifeB do
-			task.wait(0.1)
-		end
+	local started = ClashDuelService.start(
+		{ id = a.UserId, player = a, model = a.Character :: Model },
+		{ id = b.UserId, player = b, model = b.Character :: Model },
+		{
+			character = character,
+			slot = slot,
+			onEnd = function()
+				ClashRules.finish(clashState, a.UserId, b.UserId)
+			end,
+		}
+	)
+	if not started then
 		ClashRules.finish(clashState, a.UserId, b.UserId)
-		freeA()
-		freeB()
-		local up = Vector3.new(0, Constants.CLASH_LAUNCH, 0)
-		if lifeOf(a) == lifeA then
-			sendEffect(a, { kind = "knockback", velocity = -axis * Constants.CLASH_KNOCKBACK + up })
-		end
-		if lifeOf(b) == lifeB then
-			sendEffect(b, { kind = "knockback", velocity = axis * Constants.CLASH_KNOCKBACK + up })
-		end
-		for _, p in { a, b } do
-			if p.Parent then
-				sendEffect(p, { kind = "clash_end" })
-			end
-		end
-		Remotes.AbilityFX:FireAllClients({ kind = "clash_end", a = a.UserId, b = b.UserId, midpoint = midpoint })
-	end)
-	return true
+	end
+	return started
 end
 
 local function handleUse(player: Player, slot: any, aim: any, eye: any)
@@ -777,7 +745,7 @@ local function handleUse(player: Player, slot: any, aim: any, eye: any)
 	if not match or match.ended or not entry or entry.match ~= match then
 		return { status = "not_in_match" }
 	end
-	if ClashRules.isClashing(clashState, player.UserId) then
+	if AbilityService.isClashing(player) then
 		return { status = "clashing" }
 	end
 	local p = match.participants[player.UserId]
@@ -946,17 +914,18 @@ function AbilityService.slow(target: Player, multiplier: number, seconds: number
 	addSpeed(target, multiplier, seconds, "m1_stagger")
 end
 
+-- In a clash (or a Studio test duel): out of reach of abilities and punches, and can't use them.
 function AbilityService.isClashing(player: Player): boolean
-	return ClashRules.isClashing(clashState, player.UserId)
+	return ClashRules.isClashing(clashState, player.UserId) or ClashDuelService.isDueling(player.UserId)
 end
 
 function AbilityService.lineOfSight(from: Vector3, to: Vector3): boolean
 	return lineOfSight(from, to)
 end
 
--- Three M1 trades in a row: the pair locks into a fist-exchange clash with the cutscene camera.
+-- Three M1 trades in a row: the pair locks into a clash duel.
 function AbilityService.meleeClash(a: Player, b: Player): boolean
-	return startClash(a, b, "Melee", "m1", Constants.M1_CLASH_SECONDS, true)
+	return startClash(a, b, "Melee", "m1")
 end
 
 -- Does the player own this character (free, bought, or unlocked for Studio testing)? Used by ShopService.

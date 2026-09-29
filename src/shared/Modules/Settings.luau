@@ -29,9 +29,13 @@ Settings.DEFS = {
 	{ key = "crowd", kind = "choice", label = "Crowd", section = "VISUALS", default = "Auto", options = { "Auto", "Off", "Low", "Medium", "High" }, hint = "Auto follows your graphics quality" },
 	{ key = "music", kind = "slider", label = "Music", section = "AUDIO", default = 60, min = 0, max = 100 },
 	{ key = "effects", kind = "slider", label = "Effects", section = "AUDIO", default = 80, min = 0, max = 100 },
-	-- The how-to-play walkthrough opens by itself until the player has finished or skipped it once.
+	-- The how-to-play walkthrough opens by itself on the first visit only (owner, 2026-09-29). Once true it stays
+	-- true (Settings.STICKY): nothing a client sends and no merge can set it back.
 	{ key = "tutorialDone", kind = "toggle", label = "How to play seen", section = "STATE", default = false },
 } :: { Def }
+
+-- Toggles that only ever go from false to true (one-time flags).
+Settings.STICKY = { tutorialDone = true } :: { [string]: boolean }
 
 Settings.byKey = {} :: { [string]: Def }
 for _, def in Settings.DEFS do
@@ -91,9 +95,29 @@ function Settings.apply(current: { [string]: any }, changes: any): ({ [string]: 
 	end
 	local updated = table.clone(current)
 	for key, value in changes do
-		updated[key] = value
+		if not (Settings.STICKY[key] and current[key] == true) then
+			updated[key] = value
+		end
 	end
 	return updated, true
+end
+
+-- The saved settings arrived while the session already had its own (the player changed some before the profile
+-- loaded). The saved values win except for the keys changed this session; a one-time flag that is true on
+-- either side stays true. `changed` = the keys the player changed during loading.
+function Settings.merge(saved: { [string]: any }, session: { [string]: any }, changed: { [string]: boolean }): { [string]: any }
+	local merged = table.clone(saved)
+	for key in changed do
+		if Settings.byKey[key] and session[key] ~= nil then
+			merged[key] = session[key]
+		end
+	end
+	for key in Settings.STICKY do
+		if saved[key] == true or session[key] == true then
+			merged[key] = true
+		end
+	end
+	return merged
 end
 
 return Settings

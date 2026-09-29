@@ -175,6 +175,10 @@ local function onResult(result: any)
 		HUDController.toast("It was a decoy!", "info") -- Naruto's Mirror Decoy popped: no strike, no kill
 	elseif status == "locked" then
 		HUDController.toast("JAMMED: you can't type codes yet", "bad")
+	elseif status == "shielded" then
+		HUDController.toast("They're locked in a clash: the force field blocks it", "info")
+	elseif status == "dueling" then
+		HUDController.toast("You're in a clash: type the digits!", "info")
 	elseif status == "rate_limited" then
 		HUDController.toast("Too fast, try again", "info")
 	elseif status == "malformed" then

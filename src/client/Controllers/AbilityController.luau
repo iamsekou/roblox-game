@@ -22,12 +22,14 @@ local AbilityAnim = require(AnimControllers:WaitForChild("AbilityAnim"))
 local CameraShake = require(AnimControllers:WaitForChild("CameraShake"))
 local ClashCamera = require(AnimControllers:WaitForChild("ClashCamera"))
 local ImpactFX = require(AnimControllers:WaitForChild("ImpactFX"))
+local DuelFX = require(AnimControllers:WaitForChild("DuelFX"))
 local Client = script.Parent.Parent
 local ClientState = require(Client:WaitForChild("ClientState"))
 local UI = require(Client:WaitForChild("UI"))
 local HUDController = require(script.Parent:WaitForChild("HUDController"))
 local SubmissionController = require(script.Parent:WaitForChild("SubmissionController"))
 local NumberPlateController = require(script.Parent:WaitForChild("NumberPlateController"))
+local ClashDuelController = require(script.Parent:WaitForChild("ClashDuelController"))
 
 local AbilityController = {}
 
@@ -313,13 +315,17 @@ local clashRelease: (() -> ())? = nil
 local function endClash()
 	local release = clashRelease
 	clashRelease = nil
-	ClashCamera.stop()
+	-- A clash duel lets its result and final blast play out before handing the camera back.
+	ClashDuelController.finish()
+	if ClashCamera.isPlaying() and not ClientState.dueling then
+		ClashCamera.stop()
+	end
 	if release then
 		release()
 	end
 end
 
-local function beginClash(untilTime: number, face: any, cinematic: boolean?, partner: any)
+local function beginClash(untilTime: number, face: any, cinematic: boolean?, partner: any, effect: any)
 	endClash()
 	local root, humanoid = myRootAndHumanoid()
 	if not root or not humanoid or humanoid.Health <= 0 then
@@ -329,13 +335,18 @@ local function beginClash(untilTime: number, face: any, cinematic: boolean?, par
 	humanoid.AutoRotate = false
 	humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, false)
 	root.AssemblyLinearVelocity = Vector3.zero
-	if typeof(face) == "Vector3" then
+	if typeof(face) == "Vector3" and not root.Anchored then
 		root.CFrame = CFrame.lookAt(root.Position, Vector3.new(face.X, root.Position.Y, face.Z))
 	end
-	HUDController.toast("CLASH! Press F and type their number!", "good")
-	CameraShake.shake(0.5, 0.35)
-	if cinematic and type(partner) == "number" then
-		ClashCamera.play(partner, math.max(0, untilTime - now()))
+	if effect and effect.duel then
+		-- The clash duel (owner, 2026-09-29): its own camera, digits and score.
+		ClashDuelController.begin(effect)
+	else
+		HUDController.toast("CLASH! Press F and type their number!", "good")
+		CameraShake.shake(0.5, 0.35)
+		if cinematic and type(partner) == "number" then
+			ClashCamera.play(partner, math.max(0, untilTime - now()))
+		end
 	end
 	clashRelease = function()
 		if humanoid.Parent then
@@ -357,7 +368,7 @@ local function onEffect(effect: any)
 		return
 	end
 	if effect.kind == "clash" and type(effect.untilTime) == "number" then
-		beginClash(effect.untilTime, effect.face, effect.cinematic == true, effect.partner)
+		beginClash(effect.untilTime, effect.face, effect.cinematic == true, effect.partner, effect)
 		return
 	elseif effect.kind == "clash_end" then
 		endClash()
@@ -671,6 +682,8 @@ function AbilityController.Start()
 		AbilityAnim.handle(event)
 		AbilityFX.play(event)
 		ImpactFX.handle(event)
+		DuelFX.handle(event)
+		ClashDuelController.onFX(event)
 	end)
 	ClientState.Changed:Connect(function()
 		refreshPicker()

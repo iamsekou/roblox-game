@@ -6,6 +6,7 @@ local ORDER = {
 	"HUDController",
 	"NumberPlateController",
 	"SubmissionController",
+	"ClashDuelController", -- before AbilityController, which hands it each clash duel
 	"AbilityController",
 	"LobbyController",
 	"ShopController",

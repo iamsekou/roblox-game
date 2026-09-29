@@ -127,10 +127,27 @@ local Constants = {
 	CLASH_WINDOW = 0.6, -- max seconds between the two casts (and the first must still be winding up)
 	CLASH_RANGE = 30, -- max studs between the two fighters
 	CLASH_FACING_DEGREES = 35, -- each must aim at the other within this cone
-	CLASH_SECONDS = 2.5, -- how long the exchange lasts (ends early if either goes down)
-	CLASH_DISTANCE = 7, -- studs apart during the exchange: inside plate reading range, so both numbers show
-	CLASH_KNOCKBACK = 45, -- studs/second each is thrown back when it ends (placeholder)
+	CLASH_DISTANCE = 7, -- studs apart during the exchange
+	CLASH_KNOCKBACK = 45, -- studs/second each is thrown back when a duel ends in a draw (placeholder)
 	CLASH_LAUNCH = 18, -- upward studs/second on that throw (placeholder)
+	-- The clash duel (owner request 2026-09-29; rules in Lib/DuelRules, run by Systems/ClashDuelService). Every clash
+	-- (M1 trades and matching abilities) lifts both fighters into the air inside a force field: a slow punch, then
+	-- a barrage while single digits pop up one at a time for each of them to type. First mistake loses and is
+	-- eliminated by the winner's final punch, which blows everything nearby back. All placeholder.
+	CLASH_FLOAT_HEIGHT = 6, -- studs the pair rises
+	CLASH_LIFT_SECONDS = 0.9, -- rising into the air, the force field forming
+	CLASH_SLOW_PUNCH_SECONDS = 1.6, -- the slow punch, until the fists meet
+	CLASH_DUEL_FIRST_WINDOW = 2.2, -- seconds to type the first digit...
+	CLASH_DUEL_WINDOW_DECAY = 0.9, -- ...each next one gets this share of the previous window...
+	CLASH_DUEL_MIN_WINDOW = 0.7, -- ...down to this
+	CLASH_DUEL_GRACE = 0.2, -- network slack on every window
+	CLASH_DUEL_MAX_SECONDS = 30, -- a duel nobody loses by then is a draw (both thrown apart)
+	CLASH_FINAL_WINDUP = 0.6, -- the winner's final punch winds up this long before it lands
+	CLASH_FORCEFIELD_RADIUS = 9, -- studs
+	CLASH_BLAST_RADIUS = 30, -- the final punch blows back everyone this close...
+	CLASH_BLAST_SPEED = 85, -- ...at up to this many studs/second (less further out)...
+	CLASH_BLAST_LIFT = 28, -- ...plus this much upward
+	CLASH_LOSER_LAUNCH = 110, -- studs/second the loser is sent flying
 
 	-- M1 click combo (owner request 2026-09-25; rules in Lib/MeleeRules, run by Systems/MeleeService).
 	-- Punches never eliminate (codes do that): they shove, stagger and launch. All placeholder.
@@ -150,8 +167,7 @@ local Constants = {
 	-- Trades: two fighters punching each other at the same moment. Enough trades in a row = a clash.
 	M1_TRADE_WINDOW = 0.35, -- both punches land within this many seconds = one trade
 	M1_TRADE_CHAIN_GAP = 1.6, -- trades further apart than this start the count over
-	M1_TRADES_TO_CLASH = 3,
-	M1_CLASH_SECONDS = 3, -- the fist-exchange clash, with the cutscene camera for the two fighters
+	M1_TRADES_TO_CLASH = 3, -- then the two are locked into a clash duel (CLASH_* above)
 
 	-- Ability cast animations (Phase 3 item 8). Poses: animations/Controllers/AbilityPoses; hand-keyframed clip
 	-- ids: Modules/AnimationIds. The wind-up lasts the server's cast time; these shape the blends around it.
@@ -363,6 +379,11 @@ local Constants = {
 	-- Studio-only: a number (1-11) on ServerScriptService during a round runs that many bot fighters around the
 	-- arena for the 12-player stress test (Systems/StressTestService); 0 removes them. Ignored live.
 	DEV_STRESS_BOTS_ATTRIBUTE = "NAU_DevStressBots",
+	-- Studio-only: set on a Player who is fighting in a round to start a clash duel against a bot standing in front
+	-- of them (a duel needs two fighters). "lose": the bot slips on its 4th digit; "win": the bot never slips;
+	-- a number n: the bot slips on digit n; "watch": two bots duel in front of them (the spectators' view).
+	-- Ignored live.
+	DEV_DUEL_ATTRIBUTE = "NAU_DevDuel",
 }
 
 return Constants

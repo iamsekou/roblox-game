@@ -385,6 +385,9 @@ local function maybeShowFirstVisit()
 			task.wait(1)
 		end
 		if SettingsController.get("tutorialDone") ~= true and not TutorialController.isOpen() then
+			-- Owner, 2026-09-29: only ever on the first visit. It counts as seen the moment it opens, however it's
+			-- closed afterwards (finished, skipped, or the player leaving mid-way); HOW TO PLAY reopens it any time.
+			SettingsController.set("tutorialDone", true)
 			TutorialController.open()
 		end
 	end)

@@ -15,8 +15,18 @@ ClientState.ability = { equipped = "Goku" } :: any -- latest AbilityState: equip
 -- is delivered only to the first listener, and ClientState always connects first.
 ClientState.profile = nil :: any
 
+-- In a clash duel (Controllers/ClashDuelController): number keys type the duel's digits, not codes.
+ClientState.dueling = false
+
 local changed = Instance.new("BindableEvent")
-ClientState.Changed = changed.Event -- fires with "round", "life", "ability" or "profile"
+ClientState.Changed = changed.Event -- fires with "round", "life", "ability", "profile" or "duel"
+
+function ClientState.setDueling(on: boolean)
+	if ClientState.dueling ~= on then
+		ClientState.dueling = on
+		changed:Fire("duel")
+	end
+end
 
 local localPlayer = Players.LocalPlayer
 
@@ -87,6 +97,7 @@ function ClientState.canSubmit(): boolean
 		and life.alive == true
 		and life.inMatch == true
 		and life.protectedUntil == nil -- spawn-protected fighters see no plates and can't strike
+		and not ClientState.dueling -- a duel's digits aren't codes
 end
 
 function ClientState.Start()

@@ -11,6 +11,7 @@ local ORDER = {
 	"PlayerLifeService",
 	"RoundManager",
 	"EliminationService",
+	"ClashDuelService", -- clash duels; AbilityService starts them
 	"AbilityService",
 	"MeleeService", -- M1 punches; clashes go through AbilityService
 	"ShopService",

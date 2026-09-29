@@ -632,6 +632,20 @@ function AbilityAnim.handle(event: any)
 	end
 end
 
+-- The clash duel (animations/Controllers/DuelFX): plays one move on a fighter (user id or model). `hold`
+-- overrides how long the release is held (the barrage runs until the duel ends; the next move replaces it);
+-- `poseOffset` starts the pose clock later (the second fighter's barrage runs half a beat off).
+function AbilityAnim.playMove(who: any, characterId: string, slot: string, castSeconds: number, hold: number?, poseOffset: number?)
+	local byCharacter = AbilityPoses[characterId]
+	local base = type(byCharacter) == "table" and byCharacter[slot] or nil
+	local move = if base then table.clone(base) else {}
+	move.windupSeconds = castSeconds -- the duel sets the pace (a slow punch winds up for over a second)
+	if hold then
+		move.hold = hold
+	end
+	startCast(who, characterId, slot, move, castSeconds, true, poseOffset)
+end
+
 -- The yen shop's hologram: plays a character's ability animation (placeholder pose and swords) on a
 -- stand-in model that isn't a player.
 function AbilityAnim.preview(model: Model, characterId: string, slot: string, castSeconds: number)
