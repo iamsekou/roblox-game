@@ -1,6 +1,13 @@
 # HANDOFF — Code Clash [CC] (formerly Numbers Assassin Universe)
 
-Last updated: 2026-09-30 (later). **Always-on rounds + lobby announcements** (owner: "have the arena matches running even
+Last updated: 2026-09-30 (later still). **BACK TO LOBBY, only while eliminated** (owner: first "go back to the lobby
+when i am in an arena match", then "not unless they are dead"; `RoundManager.leaveMatch`, remote `LeaveMatch`,
+`LobbyController` "MatchActions" on its own layer above the elimination screen; uncommitted). Studio [Verified]: outside
+a round → `not_in_match`; alive in a round: button hidden, LeaveMatch → `alive`; eliminated (fell): button shown, a
+real click on it → "went back to the lobby", still in the lobby 5-6 s later (no respawn), FIGHT stack back; FIGHT
+afterwards → `joined` straight into the arena; the round ran on meanwhile. Not tested: a sudden-death sole leader
+winning when someone leaves this way (same code path as leaving the game). Before that: **Always-on rounds + lobby
+announcements** (owner: "have the arena matches running even
 if people did not queue… allow players to join the fight any time"; docs/DESIGN.md "Intermission"; uncommitted). Studio
 [Verified]: 183/183; with nobody queued a round started 15 s after the server did; lobby banners "ROUND BEGINS IN 5",
 "ROUND STARTING NOW", then the empty round ended by itself "ROUND OVER / NO FIGHTERS THIS ROUND", "NEXT ROUND IN 15" and

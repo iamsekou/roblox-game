@@ -752,10 +752,45 @@ function RoundManager.leaveQueue(player: Player)
 	return { status = "left_queue" }
 end
 
+-- BACK TO LOBBY (owner, 2026-09-30: "i need to be able to go back to the lobby when i am in an arena match", then
+-- "only when they are dead"): an eliminated player waiting to respawn leaves the running round exactly as if
+-- they'd left the game (their numbers retire, their clones pop; in sudden death a sole leader left behind wins),
+-- and stands in the lobby, out of the queue, instead of respawning. FIGHT brings them back any time. A living
+-- fighter can't leave.
+function RoundManager.leaveMatch(player: Player)
+	if ServerMode.isTraining then
+		return { status = "training" } -- the dojo has no lobby: LEAVE DOJO goes back to one
+	end
+	if queueRateLimited(player) then
+		return { status = "rate_limited" }
+	end
+	local match = state.match
+	local p = match and state.phase == "InRound" and not match.ended and match.participants[player.UserId]
+	if not p then
+		return { status = "not_in_match" }
+	end
+	if p.alive then
+		return { status = "alive" } -- only once eliminated, while waiting to respawn
+	end
+	queued[player] = nil
+	pendingRespawn[player] = nil
+	local winner = match:removeParticipant(player.UserId, now())
+	NumberAssignmentService.endLife(player.UserId)
+	devLog(string.format("%s went back to the lobby", player.Name))
+	Remotes.LifeState:FireClient(player, { alive = true, inMatch = false })
+	task.spawn(PlayerLifeService.spawnAt, player, MapService.getLobbySpawn())
+	if winner and state.match == match then
+		RoundManager.finish(winner)
+	end
+	broadcast()
+	return { status = "left" }
+end
+
 function RoundManager.Init()
 	PlayerLifeService.onDied = onDied
 	Remotes.RequestFight.OnServerInvoke = RoundManager.requestFight
 	Remotes.LeaveQueue.OnServerInvoke = RoundManager.leaveQueue
+	Remotes.LeaveMatch.OnServerInvoke = RoundManager.leaveMatch
 	Remotes.GetRoundState.OnServerInvoke = function(player: Player)
 		if lastState and not RateLimiter.allow(stateRequests, player, os.clock()) then
 			return lastState

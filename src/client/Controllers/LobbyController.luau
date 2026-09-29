@@ -40,6 +40,9 @@ local MESSAGES: { [string]: { string } } = {
 	queue_full = { "The next round is full. Try again once it starts.", "bad" },
 	left_queue = { "You left the queue.", "info" },
 	not_queued = { "You weren't in the queue.", "info" },
+	left = { "Back in the lobby. Press FIGHT to jump back in any time.", "info" },
+	not_in_match = { "You're not in a round.", "info" },
+	alive = { "You can go back to the lobby once you've been eliminated.", "info" },
 }
 
 local refs: { [string]: any } = {}
@@ -74,6 +77,12 @@ end
 
 local function leaveQueue()
 	call(Remotes.LeaveQueue)
+end
+
+-- Only offered while eliminated (owner: "only when they are dead"), so one tap is enough.
+local function backToLobby()
+	UIMotion.punch(refs.backToLobby.button)
+	call(Remotes.LeaveMatch)
 end
 
 local CONFIRM_SECONDS = 3 -- a credit purchase waits this long for its confirming second tap
@@ -442,6 +451,32 @@ local function build()
 	}, { UI.corner() })
 	refs.fight.button.Activated:Connect(requestFight)
 	refs.leave.Activated:Connect(leaveQueue)
+
+	-- BACK TO LOBBY (owner, 2026-09-30): only while eliminated in an arena round, waiting to respawn; same spot and
+	-- style. Its own layer above the elimination screen (HUDController's respawn overlay), so it stays clickable.
+	local matchGui = UI.screen("NAU_MatchActions", 6)
+	local matchStack = UI.new("Frame", {
+		Name = "MatchActions",
+		AnchorPoint = Vector2.new(0, 1),
+		Position = holder.Position,
+		Size = UDim2.fromOffset(if touch then 210 else 220, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+		Visible = false,
+		Parent = matchGui,
+	}, {
+		UI.new("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder }),
+	})
+	refs.matchStack = matchStack
+	refs.backToLobby = UI.actionButton({
+		name = "BackToLobby",
+		title = "BACK TO LOBBY",
+		caption = "INSTEAD OF RESPAWNING",
+		accent = UI.Colors.Line,
+		height = if touch then 46 else 42,
+		parent = matchStack,
+	})
+	refs.backToLobby.button.Activated:Connect(backToLobby)
 	buildCard(gui)
 end
 
@@ -462,6 +497,10 @@ local function refresh()
 	-- Training Grounds have no lobby queue: the training controller has its own buttons. The stack also steps aside
 	-- while a fighter card is open (both live on the left).
 	refs.holder.Visible = not inMatch and not ClientState.isTraining() and not refs.card.Visible
+	-- BACK TO LOBBY: only while eliminated in an arena round, waiting to respawn (not in the dojo: LEAVE DOJO).
+	local life = ClientState.life
+	refs.matchStack.Visible = inMatch and r ~= nil and r.phase == "InRound" and life.inMatch == true and life.alive == false
+		and not ClientState.isTraining()
 	if inMatch or ClientState.isTraining() then
 		refs.card.Visible = false
 		return

@@ -11,6 +11,7 @@ local DEFINITIONS: { [string]: string } = {
 	-- Lobby / round flow
 	RequestFight = "RemoteFunction", -- C->S ()                 -> { status }
 	LeaveQueue = "RemoteFunction", -- C->S ()                   -> { status }
+	LeaveMatch = "RemoteFunction", -- C->S ()                   -> { status = "left" | "not_in_match" | "alive" | "training" | "rate_limited" } back to the lobby while eliminated (waiting to respawn)
 	GetRoundState = "RemoteFunction", -- C->S ()                -> RoundState
 	RoundState = "RemoteEvent", -- S->all RoundState
 
