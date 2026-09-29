@@ -160,13 +160,26 @@ local function build()
 		Text = "",
 		Parent = gui,
 	})
-	-- Touch: ten keys along the bottom, two rows.
+	-- Touch: a dedicated duel keypad with oversized keys (tapping is the slow part of a duel on a phone), two rows
+	-- of five along the bottom. On phones the digit card moves up and shrinks so the keys never cover it.
 	if UI.isTouch() then
+		local phone = UI.isPhone()
+		local keyW, keyH, gap = if phone then 84 else 96, if phone then 70 else 80, 10
+		if phone then
+			card.Size = UDim2.fromOffset(124, 124)
+			card.Position = UDim2.fromScale(0.5, 0.36)
+			refs.digit.TextSize = 108
+			refs.hint.Visible = false
+			refs.phase.Position = UDim2.new(0.5, 0, 0.02, 0)
+			refs.score.Position = UDim2.new(0.5, 0, 0.02, 50)
+			refs.result.Position = UDim2.fromScale(0.5, 0.3)
+			refs.result.TextSize = 72
+		end
 		local pad = UI.new("Frame", {
 			Name = "Keys",
 			AnchorPoint = Vector2.new(0.5, 1),
-			Position = UDim2.new(0.5, 0, 1, -24),
-			Size = UDim2.fromOffset(5 * 64 + 4 * 8, 2 * 56 + 8),
+			Position = UDim2.new(0.5, 0, 1, -12),
+			Size = UDim2.fromOffset(5 * keyW + 4 * gap, 2 * keyH + gap),
 			BackgroundTransparency = 1,
 			Parent = gui,
 		})
@@ -174,16 +187,17 @@ local function build()
 			local index = if d == 0 then 9 else d - 1
 			local key = UI.button({
 				Name = "Key" .. d,
-				Position = UDim2.fromOffset((index % 5) * 72, math.floor(index / 5) * 64),
-				Size = UDim2.fromOffset(64, 56),
+				Position = UDim2.fromOffset((index % 5) * (keyW + gap), math.floor(index / 5) * (keyH + gap)),
+				Size = UDim2.fromOffset(keyW, keyH),
 				Font = UI.FontHeavy,
-				TextSize = 32,
+				TextSize = 40,
 				Text = tostring(d),
-				BackgroundTransparency = 0.15,
+				BackgroundTransparency = 0.1,
 				Parent = pad,
 			})
 			UI.corner().Parent = key
-			key.Activated:Connect(function()
+			-- On touch-down, not release: every tenth of a second counts in a duel.
+			key.MouseButton1Down:Connect(function()
 				ClashDuelController.type(d)
 			end)
 		end
@@ -380,8 +394,32 @@ function ClashDuelController.snapshot(): { [string]: any }
 	}
 end
 
+-- Tell the server what we play with: a duel's window floor follows the slower fighter's device.
+local reportedDevice: string? = nil
+local function reportDevice(inputType: Enum.UserInputType?)
+	local device
+	if inputType == Enum.UserInputType.Touch then
+		device = "touch"
+	elseif inputType and string.find(inputType.Name, "Gamepad", 1, true) then
+		device = "gamepad"
+	elseif inputType == Enum.UserInputType.Keyboard or (inputType and string.find(inputType.Name, "Mouse", 1, true)) then
+		device = "keyboard"
+	elseif inputType == nil then
+		device = if UI.isTouch() then "touch" else "keyboard"
+	else
+		return -- focus changes, text input and the like say nothing about the device
+	end
+	if device ~= reportedDevice then
+		reportedDevice = device
+		Remotes.InputDevice:FireServer(device)
+	end
+end
+
 function ClashDuelController.Start()
 	build()
+	-- A phone or tablet (or Studio's emulated touch layout) starts as touch; after that the last input used decides.
+	reportDevice(if UI.isTouch() then Enum.UserInputType.Touch else nil)
+	UserInputService.LastInputTypeChanged:Connect(reportDevice)
 	Remotes.ClashDigit.OnClientEvent:Connect(function(payload)
 		if type(payload) ~= "table" then
 			return

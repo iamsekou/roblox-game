@@ -12,8 +12,17 @@
 -- else sees the fight from their own camera (AbilityFX "clash_duel" / "clash_tick" / "clash_duel_end").
 -- The server alone judges every digit; a client only sends (step, digit).
 --
+-- Windows are fair across devices: each duel's floor is the slower fighter's device's (touch taps are slower than
+-- keypresses; Lib/DuelRules.minWindowFor). Clients report their device (InputDevice).
+--
+-- Telemetry (2026-09-29: the timings are placeholders to tune from real play): when a duel ends, each human
+-- fighter gets a Roblox custom analytics event "ClashDuel" (AnalyticsService; Creator Dashboard → Analytics →
+-- Custom): value = the duel's length in seconds, fields = outcome (win / lose / draw / aborted), the device
+-- matchup (e.g. "touch vs keyboard"), and the digits they typed.
+--
 -- Studio-only test switch (Constants.DEV_DUEL_ATTRIBUTE): a duel against a bot opponent, since a duel needs two
 -- fighters and Studio's test automation drives one player.
+local AnalyticsService = game:GetService("AnalyticsService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -22,6 +31,7 @@ local Constants = require(ReplicatedStorage.Shared.Modules.Constants)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local ClashRules = require(script.Parent.Parent.Lib.ClashRules)
 local DuelRules = require(script.Parent.Parent.Lib.DuelRules)
+local RateLimiter = require(script.Parent.Parent.Lib.RateLimiter)
 local RoundManager = require(script.Parent.RoundManager)
 local EliminationService = require(script.Parent.EliminationService)
 local MovementGuard = require(script.Parent.MovementGuard)
@@ -47,18 +57,21 @@ type Duel = {
 	midpoint: Vector3,
 	axis: Vector3, -- from a toward b
 	state: DuelRules.State?,
+	params: DuelRules.Params,
+	devices: { string }, -- each fighter's input device (a then b)
 	over: boolean,
 	onEnd: () -> (),
 	character: string,
 	slot: string,
 }
 
-local PARAMS: DuelRules.Params = {
-	firstWindow = Constants.CLASH_DUEL_FIRST_WINDOW,
-	decay = Constants.CLASH_DUEL_WINDOW_DECAY,
-	minWindow = Constants.CLASH_DUEL_MIN_WINDOW,
-	grace = Constants.CLASH_DUEL_GRACE,
+local FLOORS: { [string]: number } = {
+	keyboard = Constants.CLASH_DUEL_MIN_WINDOW,
+	gamepad = Constants.CLASH_DUEL_MIN_WINDOW,
+	touch = Constants.CLASH_DUEL_MIN_WINDOW_TOUCH,
 }
+local deviceOf: { [Player]: string } = {} -- what each player last reported playing with
+local deviceReports = RateLimiter.new(1)
 local TICK = 0.05
 local BOT_ID_BASE = -1500000000 -- far below user ids (Studio test players are -1, -2, ...) and clone ids
 local UP = Vector3.yAxis
@@ -150,6 +163,28 @@ local function fighterOf(duel: Duel, id: number?): Fighter?
 	return nil
 end
 
+-- One analytics event per human fighter (see the header). Never lets a failure touch the game.
+local function report(duel: Duel, outcomeOf: (Fighter) -> string)
+	local length = math.max(0, now() - duel.barrageAt)
+	local matchup = duel.devices[1] .. " vs " .. duel.devices[2]
+	for _, f in { duel.a, duel.b } do
+		if f.player and f.player.Parent then
+			local typed = if duel.state then duel.state.fighters[f.id].typed else 0
+			local ok, err = pcall(AnalyticsService.LogCustomEvent, AnalyticsService, f.player, "ClashDuel", math.floor(length * 10 + 0.5) / 10, {
+				[Enum.AnalyticsCustomFieldKeys.CustomField01.Name] = outcomeOf(f),
+				[Enum.AnalyticsCustomFieldKeys.CustomField02.Name] = matchup,
+				[Enum.AnalyticsCustomFieldKeys.CustomField03.Name] = tostring(math.min(typed, 60)),
+			})
+			if not ok and RunService:IsStudio() then
+				warn("[NAU] clash telemetry failed: " .. tostring(err))
+			end
+		end
+	end
+	if RunService:IsStudio() then
+		print(string.format("[NAU] clash telemetry: %.1f s, %s, floor %.2f s", length, matchup, duel.params.minWindow))
+	end
+end
+
 -- Ends the duel: nobody is dueling any more, both drop out of the air, the trigger hears it's over.
 local function finish(duel: Duel)
 	for _, f in { duel.a, duel.b } do
@@ -179,6 +214,9 @@ local function abort(duel: Duel)
 	end
 	duel.over = true
 	Remotes.AbilityFX:FireAllClients(event(duel, "clash_duel_end", { aborted = true }))
+	report(duel, function()
+		return "aborted"
+	end)
 	finish(duel)
 	if RunService:IsStudio() then
 		print("[NAU] clash duel aborted")
@@ -191,6 +229,9 @@ local function resolve(duel: Duel, result: DuelRules.Result)
 	end
 	duel.over = true
 	local winner, loser = fighterOf(duel, result.winner), fighterOf(duel, result.loser)
+	report(duel, function(f)
+		return if result.draw or not winner then "draw" elseif f == winner then "win" else "lose"
+	end)
 	for _, f in { duel.a, duel.b } do
 		if f.player and f.player.Parent then
 			local outcome = if result.draw then "draw" elseif f == winner then "win" else "lose"
@@ -310,7 +351,7 @@ local function run(duel: Duel)
 		end
 		task.wait(TICK)
 	end
-	duel.state = DuelRules.new({ duel.a.id, duel.b.id }, now(), PARAMS, DuelRules.randomDigits(Random.new()))
+	duel.state = DuelRules.new({ duel.a.id, duel.b.id }, now(), duel.params, DuelRules.randomDigits(Random.new()))
 	for _, f in { duel.a, duel.b } do
 		sendDigit(duel, f)
 		if f.bot then
@@ -353,7 +394,19 @@ function ClashDuelService.start(a: Fighter, b: Fighter, info: { character: strin
 	local t0 = now()
 	local slowAt = t0 + Constants.CLASH_LIFT_SECONDS
 	local barrageAt = slowAt + Constants.CLASH_SLOW_PUNCH_SECONDS
+	-- Bots (Studio tests) count as keyboard players.
+	local devices = {
+		if a.player then deviceOf[a.player] or "keyboard" else "keyboard",
+		if b.player then deviceOf[b.player] or "keyboard" else "keyboard",
+	}
 	local duel: Duel = {
+		params = {
+			firstWindow = Constants.CLASH_DUEL_FIRST_WINDOW,
+			decay = Constants.CLASH_DUEL_WINDOW_DECAY,
+			minWindow = DuelRules.minWindowFor(devices, FLOORS, Constants.CLASH_DUEL_MIN_WINDOW),
+			grace = Constants.CLASH_DUEL_GRACE,
+		},
+		devices = devices,
 		a = a,
 		b = b,
 		match = match,
@@ -504,7 +557,14 @@ function ClashDuelService.Init()
 			onInput(duel, f, step, digit)
 		end
 	end)
+	Remotes.InputDevice.OnServerEvent:Connect(function(player: Player, device: any)
+		if (device == "touch" or device == "keyboard" or device == "gamepad") and RateLimiter.allow(deviceReports, player, os.clock()) then
+			deviceOf[player] = device
+		end
+	end)
 	Players.PlayerRemoving:Connect(function(player)
+		deviceOf[player] = nil
+		RateLimiter.forget(deviceReports, player)
 		local duel = duels[player.UserId]
 		if duel then
 			abort(duel)

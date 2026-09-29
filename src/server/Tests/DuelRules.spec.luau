@@ -77,6 +77,16 @@ test("[DUEL] duplicate or out-of-date answers are ignored, junk is a mistake", f
 	T.eq(DuelRules.input(s, 99, 1, 1, 0.3), "over", "not in this duel")
 end)
 
+test("[DUEL] a duel's window floor is the slower device's, for both fighters", function()
+	local floors = { keyboard = 0.7, gamepad = 0.7, touch = 1.05 }
+	T.eq(DuelRules.minWindowFor({ "keyboard", "keyboard" }, floors, 0.7), 0.7)
+	T.eq(DuelRules.minWindowFor({ "keyboard", "touch" }, floors, 0.7), 1.05, "PC vs phone: both get the phone's floor")
+	T.eq(DuelRules.minWindowFor({ "touch", "touch" }, floors, 0.7), 1.05)
+	T.eq(DuelRules.minWindowFor({ nil, "banana" }, floors, 0.7), 0.7, "unknown or unreported: the default")
+	local params = { firstWindow = 2, decay = 0.5, minWindow = DuelRules.minWindowFor({ "touch", "keyboard" }, floors, 0.7), grace = 0.2 }
+	T.eq(DuelRules.window(params, 10), 1.05, "late windows stop at the touch floor")
+end)
+
 test("[DUEL] random digits are single digits and never repeat back to back", function()
 	local nextDigit = DuelRules.randomDigits(Random.new(7))
 	local previous = nil

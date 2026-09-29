@@ -139,9 +139,12 @@ local Constants = {
 	CLASH_SLOW_PUNCH_SECONDS = 1.6, -- the slow punch, until the fists meet
 	CLASH_DUEL_FIRST_WINDOW = 2.2, -- seconds to type the first digit...
 	CLASH_DUEL_WINDOW_DECAY = 0.9, -- ...each next one gets this share of the previous window...
-	CLASH_DUEL_MIN_WINDOW = 0.7, -- ...down to this
+	CLASH_DUEL_MIN_WINDOW = 0.7, -- ...down to this (keyboard and gamepad)...
+	-- ...or, when either fighter plays on touch, this for both of them (tapping is slower than a keypress; the
+	-- slower device sets the floor so cross-play duels stay winnable). Needs real phones to tune.
+	CLASH_DUEL_MIN_WINDOW_TOUCH = 1.05,
 	CLASH_DUEL_GRACE = 0.2, -- network slack on every window
-	CLASH_DUEL_MAX_SECONDS = 30, -- a duel nobody loses by then is a draw (both thrown apart)
+	CLASH_DUEL_MAX_SECONDS = 20, -- a duel nobody loses by then is a draw (both thrown apart); telemetry shows real lengths
 	CLASH_FINAL_WINDUP = 0.6, -- the winner's final punch winds up this long before it lands
 	CLASH_FORCEFIELD_RADIUS = 9, -- studs
 	CLASH_BLAST_RADIUS = 30, -- the final punch blows back everyone this close...

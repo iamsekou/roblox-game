@@ -35,6 +35,7 @@ local DEFINITIONS: { [string]: string } = {
 	-- Clash duel (Systems/ClashDuelService)
 	ClashDigit = "RemoteEvent", -- S->one duelist { step, digit, deadline } the digit to type now, or { result = "win" | "lose" | "draw" }
 	ClashInput = "RemoteEvent", -- C->S (step: number, digit: number) the duelist typed a digit
+	InputDevice = "RemoteEvent", -- C->S (device: "touch" | "keyboard" | "gamepad") what this player plays with (sets duel windows)
 
 	-- Kill leaderboards (all-time + weekly)
 	Leaderboards = "RemoteEvent", -- S->all { serverTime, offline, boards = { AllTime|Weekly = { rows, you, syncedAt, resetAt? } } }

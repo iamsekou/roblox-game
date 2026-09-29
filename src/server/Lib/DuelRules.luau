@@ -34,6 +34,19 @@ export type State = {
 
 export type Result = { winner: number?, loser: number?, draw: boolean }
 
+-- The window floor for a duel between these input devices ("touch", "keyboard", "gamepad"): the slowest device's
+-- floor, for both fighters (2026-09-29: tapping digits on a touchscreen is slower than pressing keys, so a phone
+-- player facing a PC player would otherwise lose nearly every duel). Both get the same floor, so claiming a slower
+-- device (the client reports it; the server can't check) buys no edge over the opponent. Unknown devices use `default`.
+function DuelRules.minWindowFor(devices: { string? }, floors: { [string]: number }, default: number): number
+	local floor = default
+	for _, device in devices do
+		local own = if type(device) == "string" then floors[device] else nil
+		floor = math.max(floor, own or default)
+	end
+	return floor
+end
+
 function DuelRules.window(params: Params, step: number): number
 	return math.max(params.minWindow, params.firstWindow * params.decay ^ (step - 1))
 end
