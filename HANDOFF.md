@@ -6,7 +6,7 @@ every finding fixed), then clash duel fairness + telemetry (`daec61a`). All push
 game ready for release (publishing is the owner's step in Studio). Before that: `7bb6d1e` moved the game to the new "Numbers Assassin Universe"
 experience (2026-09-28) and `56f83d7` committed mouse aiming, the Blender fight animations (51 clips) and the impact
 layer; both pushed. 2026-09-25: the teammate's M1 click combo + trade clash (PR #2, `05c37a5`). The owner declared
-the game's **first drop ready and complete** (2026-09-24); it is **not published**.
+the game's **first drop ready and complete** (2026-09-24); it is **live** (owner, 2026-09-29, on the owner's account).
 Current state first; a condensed history is at the end.
 
 Labels: **[Verified]** = checked directly (test output, measurement, screenshot, or file/Studio inspection).
@@ -162,12 +162,24 @@ Extras added at the owner's request: swords and slash effects, clashes, kill lea
 
 ## 7. Known issues and risks
 
+- **Resolved (owner report, 2026-09-29: "Gozen and Sazuki are unlockable without paying"): not a bug. The owner's
+  account created both passes, and Roblox counts a pass's creator as owning it.** [Verified with Roblox, 2026-09-29]
+  Both passes (Sazuki 1998321390, Gozen 1999689391) were created by samyudenbackup21 (user 286159463), who also owns
+  the experience; `UserOwnsGamePassAsync` is true for that account and false for accounts that never bought (ids
+  1, 156, 261). So on the owner's account (live and in Studio) both show as owned. Every other player must buy them.
+  Played as a non-owner (`NAU_DevIgnorePasses`) [Verified]: owned list = the two free starters only; equipping
+  Gozen/Sazuki → `not_owned` (in the lobby and mid-round); buying them with credits → `not_for_yen`; a saved profile
+  equipped with Gozen loaded but the round was fought as Gokai; the lobby card offers only BUY WITH ROBUX. The only
+  other way to see them unlocked is Studio's unlock-all (when ServerScriptService lacks `NAU_DevUnlockAll = false`;
+  live servers ignore it). To see the game as a player sees it, use a second account or `NAU_DevIgnorePasses` in
+  Studio.
 - A real purchase through Roblox's dialog hasn't been observed by Claude with the new ids (automation can't click
   it); the fake-receipt path is verified. Owner: one test purchase in Studio (no Robux are charged).
 - Multi-client behaviour can only be checked by the owner (Test → Clients and Servers). Solo Play uses the real
   positive user id; multi-client test players have negative ids (never judged by sign anywhere now).
 - After a crash or a very fast server hop, a joining player waits up to ~35 s (shown 0 YC) before their save loads.
-- The game isn't published; live saves start only once it is (publishing is the owner's call).
+- The game is live (2026-09-29): real saves, purchases and leaderboards now run on live DataStores; Studio keeps its
+  separate `_Studio` stores. Changes reach players only when the owner publishes again from Studio.
 - Placeholder numbers: shop prices, balance values, crowd density, the kill-farming limit (3 paid eliminations of the
   same victim per 60 s), every clash duel timing (`CLASH_*`); all in `Constants` / `CharacterDefs`.
 - Clash duel: the touch floor (1.05 s) is a guess until real phone players try it; read the "ClashDuel" analytics
@@ -214,6 +226,9 @@ succeeds before publishing.
 - **2026-09-25/26:** the teammate's M1 combo + trade clash (PR #2); mouse aiming.
 - **2026-09-27/28:** keyframed clips + impact layer, then the Blender pipeline and 51 clips for every fighter
   (`56f83d7`); the move to "Numbers Assassin Universe" (`7bb6d1e`); both pushed.
+- **2026-09-29 (later):** new Robux ids; tutorial first-visit only; the clash duel; duel fairness + telemetry; buying
+  from the lobby pedestal cards (all three buttons tested); `NAU_DevIgnorePasses`. All pushed (`b9f59e6`). The game went live on the owner's account.
+  The owner's report that Sazuki/Gozen unlock without Robux: pass-creator ownership, not a bug (section 7).
 - **2026-09-28/29:** handoff review; a parallel audit (security, leaks, runtime errors) plus Studio parity and a
   multi-round leak run; every finding fixed and tested (section 2); passive yen removed; docs updated; committed.
 
