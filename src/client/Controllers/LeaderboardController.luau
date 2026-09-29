@@ -256,7 +256,7 @@ local function buildBoard(id: string, floating: Model, screen: BasePart): Board
 	UI.stroke(PINK, 2, 0.1).Parent = youBar
 	local you = text({ Text = "", TextSize = 28, Position = UDim2.fromOffset(20, 0), Size = UDim2.new(1, -40, 1, 0), Parent = youBar })
 	local footer = text({ Text = "", TextSize = 16, TextColor3 = MUTED, Position = UDim2.fromOffset(28, CANVAS.Y - 34), Size = UDim2.fromOffset(500, 20), Parent = root })
-	text({ Text = "NAU // KILL RECORD", TextSize = 16, TextColor3 = MUTED, TextXAlignment = Enum.TextXAlignment.Right, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -28, 0, CANVAS.Y - 34), Size = UDim2.fromOffset(300, 20), Parent = root })
+	text({ Text = "CC // KILL RECORD", TextSize = 16, TextColor3 = MUTED, TextXAlignment = Enum.TextXAlignment.Right, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -28, 0, CANVAS.Y - 34), Size = UDim2.fromOffset(300, 20), Parent = root })
 
 	local sweep = UI.new("Frame", { Size = UDim2.new(1, 0, 0, 8), Position = UDim2.fromOffset(0, -20), BackgroundColor3 = theme.accent, BorderSizePixel = 0, ZIndex = 9, Parent = root })
 	UI.new("UIGradient", {

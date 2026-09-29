@@ -1,4 +1,4 @@
-# CLAUDE.md — Numbers Assassin Universe (NAU)
+# CLAUDE.md — Code Clash [CC] (formerly Numbers Assassin Universe, NAU)
 
 Durable rules for working in this repo. Current state and the next task live in `HANDOFF.md`;
 approved design decisions and contracts live in `docs/DESIGN.md` (read it before changing any rule).
@@ -6,8 +6,11 @@ approved design decisions and contracts live in `docs/DESIGN.md` (read it before
 ## What this is
 
 A 12-player Roblox PvP arena game. Every player sees a *different* 4-digit number above each opponent;
-you eliminate someone by typing the number *you* see on them. Studio place: **"Numbers Assassin Universe"**
-(placeId 98704863055759, universe 10768509193; moved here 2026-09-28). The old place "InDeveopmentPart2" (placeId
+you eliminate someone by typing the number *you* see on them. **The game is called "Code Clash [CC]"** (owner,
+2026-09-29; it was "Numbers Assassin Universe"). Studio place: placeId 98704863055759, universe 10768509193 (moved here
+2026-09-28). Internal names keep the `NAU` prefix (`NAU_*` attributes, `NAURemotes`, `NAUWorld`, log tags) and
+**DataStore names must never be renamed** (`NAU_Profiles_v1` and the leaderboard stores: renaming would lose every
+player's saves and the boards). Players see only "Code Clash" / "CC". The old place "InDeveopmentPart2" (placeId
 125676427996909, universe 10767444751) is retired; its DataStores, Game Passes and Developer Products stay there.
 
 ## How to work with the owner

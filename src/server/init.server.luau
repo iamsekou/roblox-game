@@ -1,4 +1,4 @@
--- Numbers Assassin Universe: server entry point.
+-- Code Clash [CC] (formerly Numbers Assassin Universe; internal names keep the NAU prefix): server entry point.
 -- Each system is a ModuleScript in Systems/. Init() wires state and remotes without yielding;
 -- Start() runs long-lived loops. Order matters: later systems depend on earlier ones.
 local Systems = script:WaitForChild("Systems")

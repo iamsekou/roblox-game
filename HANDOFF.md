@@ -1,7 +1,9 @@
-# HANDOFF — Numbers Assassin Universe
+# HANDOFF — Code Clash [CC] (formerly Numbers Assassin Universe)
 
-Last updated: 2026-09-29 (late). **Fighter auras + name chips** (uncommitted, section 2). Before that: **every
-ability clashes + shop exit hardening** (`550cc0b`, pushed and published by the owner). Before that: **Clash duel + tutorial first-visit-only**. Earlier the same day:
+Last updated: 2026-09-29 (late). **The game is now called "Code Clash [CC]"** (owner; renamed on Roblox by the owner;
+the only in-game text with the old name, the leaderboard footer, now reads "CC // KILL RECORD"; internal `NAU` names
+and DataStore names stay). Before that: **fighter auras + name chips** (`b1204af`) and **every ability clashes + shop
+exit hardening** (`550cc0b`), both pushed and published by the owner. Before that: **Clash duel + tutorial first-visit-only**. Earlier the same day:
 new Robux ids (`f1cd0f5`); audit fixes + passive yen removed (`d49f8fa`, a full security / leak / error audit with
 every finding fixed), then clash duel fairness + telemetry (`daec61a`). All pushed 2026-09-29; the owner declared the
 game ready for release (publishing is the owner's step in Studio). Before that: `7bb6d1e` moved the game to the new "Numbers Assassin Universe"

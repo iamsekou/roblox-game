@@ -1,4 +1,7 @@
-# Numbers Assassin Universe — design & technical reference
+# Code Clash [CC] — design & technical reference
+
+Renamed from "Numbers Assassin Universe" by the owner on 2026-09-29. Internal names keep the `NAU` prefix, and the
+DataStore names (`NAU_Profiles_v1`, the leaderboard stores) must never change: renaming them would lose every save.
 
 Source of truth for approved decisions, contracts and phase status. Code constants live in
 `src/shared/Modules/Constants.luau`; this file explains *why*.

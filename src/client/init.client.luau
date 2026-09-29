@@ -1,4 +1,4 @@
--- Numbers Assassin Universe: client entry point. Starts each controller in order.
+-- Code Clash [CC] (formerly Numbers Assassin Universe; internal names keep the NAU prefix): client entry point. Starts each controller in order.
 local ClientState = require(script:WaitForChild("ClientState"))
 local Controllers = script:WaitForChild("Controllers")
 

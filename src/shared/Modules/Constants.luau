@@ -1,4 +1,4 @@
--- Numbers Assassin Universe: every tunable gameplay number lives here.
+-- Code Clash [CC]: every tunable gameplay number lives here.
 -- Decisions approved by the designer are marked "approved"; "placeholder" values are expected to change.
 
 -- Owner, 2026-09-23: every ability effect lasts 1.75x longer (locks, blinds, marks, boosts, stances, clones,
