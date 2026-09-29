@@ -2,7 +2,8 @@
 
 Last updated: 2026-09-29. **Clash duel + tutorial first-visit-only** (this commit, section 2). Earlier the same day:
 new Robux ids (`f1cd0f5`); audit fixes + passive yen removed (`d49f8fa`, a full security / leak / error audit with
-every finding fixed). Neither of today's commits is pushed yet. Before that: `7bb6d1e` moved the game to the new "Numbers Assassin Universe"
+every finding fixed), then clash duel fairness + telemetry (`daec61a`). All pushed 2026-09-29; the owner declared the
+game ready for release (publishing is the owner's step in Studio). Before that: `7bb6d1e` moved the game to the new "Numbers Assassin Universe"
 experience (2026-09-28) and `56f83d7` committed mouse aiming, the Blender fight animations (51 clips) and the impact
 layer; both pushed. 2026-09-25: the teammate's M1 click combo + trade clash (PR #2, `05c37a5`). The owner declared
 the game's **first drop ready and complete** (2026-09-24); it is **not published**.
