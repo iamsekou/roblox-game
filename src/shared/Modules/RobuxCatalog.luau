@@ -1,18 +1,15 @@
--- NOTE (2026-09-28): these ids belong to the OLD experience (universe 10767444751). Since the move to "Numbers
--- Assassin Universe" (universe 10768509193) they must be recreated there and replaced here; until then Roblox
--- won't deliver these purchases to the new experience.
--- Robux credit bundles (Developer Products; owner's ids, 2026-09-24). Never invent ids: they come from the
--- owner's Creator Dashboard. `yen` is what the server credits (Yern Credits; the internal name stays "yen").
--- `robux` is only a fallback label: the menu shows the live price read from Roblox, which is what players pay.
+-- Robux credit bundles (Developer Products; owner's ids for "Numbers Assassin Universe", 2026-09-29, replacing the
+-- old experience's products). Never invent ids: they come from the owner's Creator Dashboard. `yen` is what the
+-- server credits (Yern Credits; the internal name stays "yen"). `robux` is only a fallback label: the menu shows
+-- the live price read from Roblox, which is what players pay.
 -- The Game Passes for the Robux characters are on their CharacterDefs entries (gamePassId).
 export type Bundle = { productId: number, yen: number, robux: number }
 
 local bundles: { Bundle } = {
-	{ productId = 3714587165, yen = 5000, robux = 199 },
-	{ productId = 3714587398, yen = 10000, robux = 499 },
-	-- Owner, 2026-09-24: 20,000. The product was created as "2000 YERN CREDITS"; rename it on Roblox to match.
-	{ productId = 3714587623, yen = 20000, robux = 999 },
-	{ productId = 3714587718, yen = 40000, robux = 1999 },
+	{ productId = 3715355768, yen = 5000, robux = 200 },
+	{ productId = 3715356059, yen = 10000, robux = 500 },
+	{ productId = 3715356212, yen = 20000, robux = 1000 },
+	{ productId = 3715356256, yen = 40000, robux = 2000 },
 }
 
 local byProductId: { [number]: Bundle } = {}

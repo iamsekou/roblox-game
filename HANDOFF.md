@@ -23,7 +23,7 @@ Phase 3 (plan approved 2026-09-23, 8 items), worked in the owner's order:
 | 3 Choose character at the pedestal / respawn screen | Done |
 | 4 Saved progress (yen, owned characters, equipped) | Done 2026-09-23 (section 2), committed |
 | 5 Yen shop | Done (shop cottage in the lobby garden); purchases now saved |
-| 6 Robux characters via Game Passes | Built 2026-09-24 with the Robux credit bundles (section 2); committed. **The pass and product ids belong to the old experience** (universe 10767444751): the owner will create 2 Game Passes + 4 Developer Products in "Numbers Assassin Universe" and send the new ids (owner, 2026-09-29: "will be updated in the future") |
+| 6 Robux characters via Game Passes | Built 2026-09-24 with the Robux credit bundles (section 2); committed. **New ids for "Numbers Assassin Universe" in place (owner, 2026-09-29)**: passes Sazuki 1998321390, Gozen 1999689391 (2,500 R$ each); bundles 5,000 YC 3715355768 (200 R$), 10,000 YC 3715356059 (500 R$), 20,000 YC 3715356212 (1,000 R$), 40,000 YC 3715356256 (2,000 R$). All six checked with Roblox: this universe, right names and prices [Verified]. The owner's "balance doesn't update" report was the old product ids: a receipt for a product the game doesn't know is left uncredited |
 | 7 Team 6v6 mode alongside FFA | Built 2026-09-23, all 8 decisions approved (section 2); committed; a side that empties now loses by forfeit (2026-09-28); needs a multi-player test |
 | 8 Hand-keyframed animations | Done: 51 clips made in Blender for all 10 fighters + M1 (2026-09-28, section 2); feel at full speed is the owner's to judge |
 
@@ -81,7 +81,7 @@ Extras added at the owner's request: swords and slash effects, clashes, kill lea
 | **Movement check** (2026-09-24; hardened by the audit fixes 2026-09-28, row "Audit fixes"): server samples characters 10×/s against a distance budget; the game's own knockbacks, dashes and grapples raise the limit; server teleports reset it; violations are undone (back up to a second) plus 1.5 s without new numbers; no kicks | `Lib/MovementRules`, `Systems/MovementGuard`, `AbilityService` (sendEffect, teleport/clash resets), `PlayerLifeService` (spawn reset) | 7 unit tests. Solo Play [Verified]: running, strafing and jumping in the lobby, a spawn and two respawns, Luffo's real grapple (26 studs at 120 studs/s) and Vejaro's launch → no pull-backs; a client-side 50-stud teleport → put back at the exact start; forcing 90 studs/s → caught twice within ~0.75 s, net 0.1 studs gained. Multi-player, real network lag, Phase Shift, clash stances [Not tested] |
 | **Luffo's Stretch Grapple arm** (2026-09-24): rubber arm from the elbow with Luffo's own hand, ripple and thinning, grab with squash and dust, hold during the pull, snap back | `animations/Controllers/AbilityFX` (luffyGrapple), `Abilities/Luffy` (sends the surface normal) | Real grapple at full speed [Verified]: arm out at the cast, grab + dust 0.33 s later, pull, arm gone and forearm back on arrival. Slowed test screenshots [Verified]: the arm stretching out of the sleeve, the hand gripping a lamp post. Feel at full speed: owner to judge |
 | **Sound** (Phase 4): lobby/arena music, effects for round start, elimination (you / of you), wrong code, 30 s alert, sudden death, win, ability casts (3D), income, shop slots | `src/client/Audio`, hooks in `HUDController`, `SubmissionController`, `FXController`, `ShopController` | All 18 candidate ids load here [Verified]. In Play [Verified]: lobby music in the Music group, arena music + round-start gong on entering, ability cast at the caster, wrong code, eliminated, 30 s alert, income. Sudden death, the kill sound, win [Not tested]. How it all sounds: owner to judge (Claude can't listen) |
-| **Robux characters + credit bundles** (Phase 3 item 6, 2026-09-24, owner's ids — **of the old experience, to be replaced**, section 4; tests below ran in the old place): Game Passes for Sazuki/Gozen (2,499 R$), checked with Roblox on join and granted at once when bought in game; four credit bundles (5,000 / 10,000 / 20,000 / 40,000 YC for 199 / 499 / 999 / 1,999 R$). Lobby bubbles under Sazuki/Gozen show "R$ 2,499" (live Game Pass price, owner 2026-09-24) instead of "ROBUX". Shop: BUY WITH ROBUX, live Robux prices, "+ GET CREDITS" on the balance and "NEED X YC · GET MORE" open a CREDITS overlay. Receipts saved with the credit before PurchaseGranted | `Systems/RobuxService`, `Modules/RobuxCatalog`, `ProfileService.creditPurchase`, `Lib/ProfileData` (receipts), `EconomyService` (grantPass), `AbilityService` (owns, pending Robux equip), `ShopController` | 1 unit test (receipts). Studio [Verified]: the owner's account owns both passes → both shown OWNED; credits overlay and live prices (screenshot); fake receipts through the real ProcessReceipt (`NAU_DevReceipt`): 999 R$ bundle credited 20,000 and saved, the same receipt again → granted, no second credit, unknown product → NotProcessedYet, after stop → start the receipt was still recognised; Sazuki equipped → rejoin → still equipped. Studio profile restored afterwards. **Not tested:** Roblox's real purchase dialog (automation can't click it: owner, click a bundle and a pass in Studio for a test purchase), buying a pass in game, live servers, the phone layout of the overlay beyond Studio's small window |
+| **Robux characters + credit bundles** (Phase 3 item 6, 2026-09-24, owner's ids; replaced with the new experience's ids 2026-09-29, section 1 item 6; tests below ran in the old place): Game Passes for Sazuki/Gozen (2,499 R$), checked with Roblox on join and granted at once when bought in game; four credit bundles (5,000 / 10,000 / 20,000 / 40,000 YC for 199 / 499 / 999 / 1,999 R$). Lobby bubbles under Sazuki/Gozen show "R$ 2,499" (live Game Pass price, owner 2026-09-24) instead of "ROBUX". Shop: BUY WITH ROBUX, live Robux prices, "+ GET CREDITS" on the balance and "NEED X YC · GET MORE" open a CREDITS overlay. Receipts saved with the credit before PurchaseGranted | `Systems/RobuxService`, `Modules/RobuxCatalog`, `ProfileService.creditPurchase`, `Lib/ProfileData` (receipts), `EconomyService` (grantPass), `AbilityService` (owns, pending Robux equip), `ShopController` | 1 unit test (receipts). Studio [Verified]: the owner's account owns both passes → both shown OWNED; credits overlay and live prices (screenshot); fake receipts through the real ProcessReceipt (`NAU_DevReceipt`): 999 R$ bundle credited 20,000 and saved, the same receipt again → granted, no second credit, unknown product → NotProcessedYet, after stop → start the receipt was still recognised; Sazuki equipped → rejoin → still equipped. Studio profile restored afterwards. **Not tested:** Roblox's real purchase dialog (automation can't click it: owner, click a bundle and a pass in Studio for a test purchase), buying a pass in game, live servers, the phone layout of the overlay beyond Studio's small window |
 | **Shown names** (owner, 2026-09-24): currency **Yern Credits / YC** (`Modules/Currency`; player-list column "Credits"); original ability names replace the shows' terms (Blitz Barrage, Blinding Burst, Rising Fury, Nova Blast, Cyclone Cut, Mirror Decoy, Vortex Orb, Blur Step, Crescent Wave; Boundless committed earlier) | `Modules/Currency`, `CharacterDefs`, toasts | Studio [Verified]: HUD, player list, lobby bubbles, shop prompt/menu, tutorial text fit; no "Infinity"/"¥" left in scripts. Internal ids keep the old keys |
 
 ## 3. Repository state
@@ -102,15 +102,16 @@ Extras added at the owner's request: swords and slash effects, clashes, kill lea
 - **The game lives in "Numbers Assassin Universe"** (placeId 98704863055759, universe 10768509193; Studio's title
   now reads "Numbers Assassin Universe [NAU] NEW DROPS COMING"), owned by the owner's account (user 286159463).
   The old place "InDeveopmentPart2" is retired.
-- **Robux ids still belong to the old experience** (universe 10767444751; product 3714587165 checked): both Game
-  Passes and all 4 Developer Products must be recreated in the new experience and the ids replaced in
-  `CharacterDefs` / `RobuxCatalog` **before publishing**, or bundle purchases can't be delivered (owner, 2026-09-29:
-  "will be updated in the future"). Renaming product 3714587623 on the old experience no longer matters.
+- **Robux ids are the new experience's** (owner, 2026-09-29; list in section 1, item 6), replacing the old
+  experience's (universe 10767444751). A fake receipt for the 5,000 bundle through the real ProcessReceipt path
+  (`NAU_DevReceipt = "3715355768"`): PurchaseGranted, balance 400 → 5,400 in the HUD, player list and shop at once,
+  "+5,000 YC · PURCHASED" popup [Verified]. The Studio account owns both new passes. The Studio test profile now
+  holds 5,400 YC (400 from passive yen before its removal + 5,000 from this test; `NAU_DevGrantYen` can only add).
 - Studio-only state in the new place [Verified 2026-09-29]: `NAU_DevUnlockAll = false` on ServerScriptService (Studio
   shows real ownership; delete it to unlock all), and the 51 KeyframeSequences in `ServerStorage.AnimationWork.Clips`
   (optional publishing, docs/ANIMATING.md). `AnimationWork.Swords` was not recreated (superseded by Blender).
 - DataStores are per experience: the Studio test profile and leaderboards started empty here. The Studio profile
-  (account samyudenbackup21) holds 400 YC earned by passive yen during Claude's test runs before it was removed.
+  (account samyudenbackup21) holds 5,400 YC from Claude's test runs (see above).
 - Place settings untouched by Claude: `Lighting.Technology`, `StreamingEnabled = true`, `CharacterAutoLoads = true`
   (the server sets false at runtime), HttpService off, **Studio API access on** (Studio uses the `_Studio` stores).
 - Studio printed "Server Save Failure: PublishService AssetUpload failed" (its cloud save of the place) three times on
@@ -156,8 +157,8 @@ Extras added at the owner's request: swords and slash effects, clashes, kill lea
 
 ## 7. Known issues and risks
 
-- **Robux ids of the old experience** (section 4): publishing before they're replaced means Robux characters and
-  credit bundles don't work in the new experience.
+- A real purchase through Roblox's dialog hasn't been observed by Claude with the new ids (automation can't click
+  it); the fake-receipt path is verified. Owner: one test purchase in Studio (no Robux are charged).
 - Multi-client behaviour can only be checked by the owner (Test → Clients and Servers). Solo Play uses the real
   positive user id; multi-client test players have negative ids (never judged by sign anywhere now).
 - After a crash or a very fast server hop, a joining player waits up to ~35 s (shown 0 YC) before their save loads.
@@ -179,7 +180,7 @@ Extras added at the owner's request: swords and slash effects, clashes, kill lea
 - IP: names are original, but silhouettes come from franchise art, abilities/poses follow the shows, and the shop
   cottage is inspired by a Dragon Ball frame; the Robux passes for Sazuki/Gozen remain the highest-risk part.
   The currency is shown as **Yern Credits / YC** (`Modules/Currency`); internally, and in these notes, it's "yen".
-- Robux pricing is the owner's: bundles give 25 YC per R$ at 199 but 20 YC per R$ at 499 / 999 / 1,999, so bigger
+- Robux pricing is the owner's: bundles give 25 YC per R$ at 200 but 20 YC per R$ at 500 / 1,000 / 2,000, so bigger
   bundles are worse value, and the 40,000 bundle alone doesn't reach Ichiro (43,500).
 - With passive yen gone, credits come only from eliminations (500 each, farming-limited) and bundles; the yen ladder
   (5,000–43,500) was set when passive yen existed, so progression is slower now [owner to judge].
@@ -188,12 +189,10 @@ Extras added at the owner's request: swords and slash effects, clashes, kill lea
 
 ## 8. Single next task
 
-**Owner: create the 2 Game Passes and 4 Developer Products in "Numbers Assassin Universe" and send the new ids**
-(Creator Dashboard → the experience → Monetization); Claude then replaces them in `CharacterDefs` / `RobuxCatalog`
-and re-tests with `NAU_DevReceipt`. In parallel: play every character's moves at full speed and say what to push
-further; run Test → Clients and Servers (2–4 clients) to exercise team battle, the forfeit and the farming limit.
-Before publishing: one test purchase by hand in Studio (no Robux are charged), and confirm File → Save to Roblox
-succeeds.
+**Owner: one test purchase of a credit bundle by hand in Studio** (shop → tap the balance → buy; Roblox's test
+dialog charges no Robux) to confirm the new product ids end to end, then play every character's moves at full speed
+and say what to push further; run Test → Clients and Servers (2–4 clients) to exercise team battle, the forfeit and
+the farming limit. Before publishing: confirm File → Save to Roblox succeeds.
 
 ---
 
