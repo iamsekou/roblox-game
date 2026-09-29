@@ -58,6 +58,8 @@ you eliminate someone by typing the number *you* see on them. Studio place: **"N
   Phone layouts on a PC: before pressing Play set `NAU_DevTouchUI = true` (touch controls) and
   `NAU_DevViewport = "844x390"` (layout size) on **StarterPlayer**, in Edit mode; remove both afterwards.
   Stress test: during a round, `NAU_DevStressBots = 11` (ServerScriptService) runs 11 bot fighters; 0 removes them.
+  Robux buttons with an account that owns the passes: `NAU_DevIgnorePasses = true` (ServerScriptService, before Play)
+  makes the server ignore pass ownership; remove it afterwards.
   Clash duel: `NAU_DevDuel` on a Player in a round starts a duel against a bot: `"lose"` (bot slips on digit 4),
   `"win"` (never slips; 30 s → draw), a number n (slips on digit n), `"watch"` (two bots duel in front of you: the
   spectators' view). Studio's test tool takes over a second per call, longer than a digit's window, so type through

@@ -387,6 +387,9 @@ local Constants = {
 	-- a number n: the bot slips on digit n; "watch": two bots duel in front of them (the spectators' view).
 	-- Ignored live.
 	DEV_DUEL_ATTRIBUTE = "NAU_DevDuel",
+	-- Studio-only: true on ServerScriptService (set before Play) and players count as owning no Game Passes, so the
+	-- BUY WITH ROBUX buttons can be tested with an account that owns them. Ignored live.
+	DEV_IGNORE_PASSES_ATTRIBUTE = "NAU_DevIgnorePasses",
 }
 
 return Constants

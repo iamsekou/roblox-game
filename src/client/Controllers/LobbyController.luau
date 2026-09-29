@@ -8,6 +8,7 @@ local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
 local ProximityPromptService = game:GetService("ProximityPromptService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Remotes = require(Shared:WaitForChild("Remotes"))
@@ -225,6 +226,9 @@ local function pressCardAction()
 	elseif mode == "credits" then
 		local bundle = bundleFor((def.yenPrice or 0) - balance())
 		if bundle then
+			if RunService:IsStudio() then
+				print(string.format("[NAU] card: prompting credit bundle %d (%d YC, R$ %d) for %s", bundle.productId, bundle.yen, bundle.robux, def.name))
+			end
 			MarketplaceService:PromptProductPurchase(localPlayer, bundle.productId)
 		end
 	elseif mode == "pass" then
@@ -232,6 +236,9 @@ local function pressCardAction()
 		local token = passToken
 		pendingPass = { id = def.id, token = token }
 		refreshCardAction()
+		if RunService:IsStudio() then
+			print(string.format("[NAU] card: prompting Game Pass %d for %s", def.gamePassId, def.name))
+		end
 		MarketplaceService:PromptGamePassPurchase(localPlayer, def.gamePassId)
 		-- Should Roblox never report the prompt closed, the button comes back.
 		task.delay(Constants.GAMEPASS_PROMPT_TIMEOUT, function()

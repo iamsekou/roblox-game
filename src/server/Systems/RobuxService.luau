@@ -13,6 +13,7 @@ local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local ServerScriptService = game:GetService("ServerScriptService")
 
 local Constants = require(ReplicatedStorage.Shared.Modules.Constants)
 local CharacterDefs = require(ReplicatedStorage.Shared.Modules.CharacterDefs)
@@ -52,6 +53,12 @@ local function ownsPass(player: Player, passId: number): (boolean, boolean, stri
 end
 
 local function checkPasses(player: Player)
+	-- Studio-only test switch (Constants.DEV_IGNORE_PASSES_ATTRIBUTE): act as if the account owned no passes, so the
+	-- BUY WITH ROBUX buttons can be tested with an account that owns them.
+	if RunService:IsStudio() and ServerScriptService:GetAttribute(Constants.DEV_IGNORE_PASSES_ATTRIBUTE) == true then
+		print(string.format("[NAU] %s: pass ownership ignored (Studio test switch)", player.Name))
+		return
+	end
 	local failed = {}
 	local lastError = nil
 	for passId, def in byPassId do
