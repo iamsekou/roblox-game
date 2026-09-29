@@ -7,6 +7,7 @@ local RunService = game:GetService("RunService")
 
 local Constants = require(ReplicatedStorage.Shared.Modules.Constants)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
+local RewardRules = require(script.Parent.Parent.Lib.RewardRules)
 local EconomyService = require(script.Parent.EconomyService)
 local RoundManager = require(script.Parent.RoundManager)
 
@@ -14,14 +15,17 @@ local EliminationService = {}
 
 -- Hooks for AbilityService: a popped Mirror Decoy (remove its model) and every elimination (Gojo's
 -- Boundless ends after 3). Handlers run after the rules have already decided; they never change them.
+-- `rewarded`: the elimination paid yen and counts as a leaderboard kill (Lib/RewardRules: eliminating the same
+-- victim over and over stops paying for a while, audit fix 2026-09-28). It always counts for the round.
 local clonePoppedHandlers: { (popper: Player, decoyId: number) -> () } = {}
-local eliminationHandlers: { (attacker: Player, victimId: number) -> () } = {}
+local eliminationHandlers: { (attacker: Player, victimId: number, rewarded: boolean) -> () } = {}
+local rewards = RewardRules.new()
 
 function EliminationService.onClonePopped(handler: (popper: Player, decoyId: number) -> ())
 	table.insert(clonePoppedHandlers, handler)
 end
 
-function EliminationService.onElimination(handler: (attacker: Player, victimId: number) -> ())
+function EliminationService.onElimination(handler: (attacker: Player, victimId: number, rewarded: boolean) -> ())
 	table.insert(eliminationHandlers, handler)
 end
 
@@ -40,10 +44,20 @@ local function handleSubmit(player: Player, code: any)
 
 	if status == "eliminated" then
 		local victim = Players:GetPlayerByUserId(result.targetId)
-		EconomyService.award(player, Constants.YEN_PER_ELIMINATION, "elimination")
+		local rewarded = RewardRules.claim(
+			rewards,
+			player.UserId,
+			result.targetId :: number,
+			workspace:GetServerTimeNow(),
+			Constants.FARM_WINDOW_SECONDS,
+			Constants.FARM_MAX_PAID_PER_PAIR
+		)
+		if rewarded then
+			EconomyService.award(player, Constants.YEN_PER_ELIMINATION, "elimination")
+		end
 		RoundManager.onLifeLost(result.targetId, { cause = "code", attacker = player })
 		for _, handler in eliminationHandlers do
-			task.spawn(handler, player, result.targetId)
+			task.spawn(handler, player, result.targetId, rewarded)
 		end
 		if result.winner then
 			RoundManager.finish(result.winner)
@@ -51,7 +65,7 @@ local function handleSubmit(player: Player, code: any)
 		return {
 			status = status,
 			targetName = if victim then victim.DisplayName else "a fighter",
-			yen = Constants.YEN_PER_ELIMINATION,
+			yen = if rewarded then Constants.YEN_PER_ELIMINATION else 0,
 		}
 	elseif status == "clone" then
 		for _, handler in clonePoppedHandlers do
@@ -67,6 +81,9 @@ end
 
 function EliminationService.Init()
 	Remotes.SubmitCode.OnServerInvoke = handleSubmit
+	Players.PlayerRemoving:Connect(function(player)
+		RewardRules.forget(rewards, player.UserId)
+	end)
 end
 
 return EliminationService

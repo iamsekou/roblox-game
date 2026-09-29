@@ -101,6 +101,13 @@ local function decor(part: BasePart): BasePart
 	return part
 end
 
+-- Decoration big and solid enough to hide a number plate on screen: the server's plate gate treats it as
+-- cover too (MapService.sightBlockers), although abilities, aiming and the camera pass through it.
+local function blocksSight(part: BasePart): BasePart
+	part:SetAttribute("BlocksSight", true)
+	return part
+end
+
 local function hide(part: BasePart): BasePart
 	part.Transparency = 1
 	part.CastShadow = false
@@ -246,7 +253,7 @@ local function buildStadium(model: Model)
 		block(balcony, "Post", Vector3.new(1, 8, 1), anchor * CFrame.new(x, 17.5, -5.5), PALETTE.Wood, Enum.Material.Wood)
 	end
 	block(balcony, "Canopy", Vector3.new(22, 0.8, 8), anchor * CFrame.new(0, 21.8, -3) * CFrame.Angles(math.rad(8), 0, 0), PALETTE.Roof, Enum.Material.Slate)
-	decor(block(balcony, "Banner", Vector3.new(8, 9, 0.3), anchor * CFrame.new(0, 7.5, -0.4), PALETTE.Gold, Enum.Material.Fabric))
+	blocksSight(decor(block(balcony, "Banner", Vector3.new(8, 9, 0.3), anchor * CFrame.new(0, 7.5, -0.4), PALETTE.Gold, Enum.Material.Fabric)))
 	balcony.Parent = stadium
 	for _, offset in { -20, 20 } do
 		local statue = Instance.new("Model")
@@ -263,7 +270,7 @@ local function buildStadium(model: Model)
 		local degrees = 22.5 + i * 45
 		if not nearAngle(degrees, { BALCONY_ANGLE }, 10) then
 			local color = if i % 2 == 0 then PALETTE.Red else PALETTE.Blue
-			decor(ringBlock(stadium, "Banner", FIELD_RADIUS - 0.2, degrees, 13, Vector3.new(5, 11, 0.3), color, Enum.Material.Fabric))
+			blocksSight(decor(ringBlock(stadium, "Banner", FIELD_RADIUS - 0.2, degrees, 13, Vector3.new(5, 11, 0.3), color, Enum.Material.Fabric)))
 		end
 	end
 	for i = 0, 11 do
@@ -344,9 +351,9 @@ local function buildField(model: Model, rng: Random)
 			local angle = root * 120 + spec[2]
 			decor(block(tree, "Root", Vector3.new(4, 1.2, 1.4), CFrame.new(base + polar(1.8, angle, 0.5)) * CFrame.Angles(0, math.rad(-angle), math.rad(-15)), PALETTE.Trunk, Enum.Material.Wood))
 		end
-		decor(ball(tree, "Canopy", 12, base + Vector3.new(0, 17, 0), PALETTE.Leaf, Enum.Material.Grass))
-		decor(ball(tree, "Canopy", 9, base + Vector3.new(4, 15.5, 2), PALETTE.Leaf2, Enum.Material.Grass))
-		decor(ball(tree, "Canopy", 8, base + Vector3.new(-3.5, 15, -3), PALETTE.Leaf, Enum.Material.Grass))
+		blocksSight(decor(ball(tree, "Canopy", 12, base + Vector3.new(0, 17, 0), PALETTE.Leaf, Enum.Material.Grass)))
+		blocksSight(decor(ball(tree, "Canopy", 9, base + Vector3.new(4, 15.5, 2), PALETTE.Leaf2, Enum.Material.Grass)))
+		blocksSight(decor(ball(tree, "Canopy", 8, base + Vector3.new(-3.5, 15, -3), PALETTE.Leaf, Enum.Material.Grass)))
 		for bush = 1, 2 do
 			local spot = base + polar(4.5, spec[2] + 100 * bush, 0)
 			tagCover(ball(tree, "Bush", 5, spot + Vector3.new(0, 1, 0), PALETTE.Bush, Enum.Material.Grass), "Low")

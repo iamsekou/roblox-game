@@ -3,7 +3,9 @@
 -- lobby (LeaderboardController draws them).
 --
 -- A kill = an elimination by a correct code (EliminationService.onElimination): never clones, falls,
--- self-eliminations or strike-outs.
+-- self-eliminations or strike-outs, and never one past the kill-farming limit (Lib/RewardRules).
+-- User ids are never judged by their sign (Studio's test players have negative ids, and any id may be one
+-- Roblox can't describe): a name or avatar Roblox won't give us is simply left out and asked for again later.
 --   * Each kill counts at once as "live" on this server's boards (broadcast straight away).
 --   * Every FLUSH seconds the unsaved kills are added to both stores (IncrementAsync); on shutdown too.
 --   * Every REFRESH seconds the global top list is re-read (GetSortedAsync), the fastest the per-minute
@@ -44,6 +46,7 @@ end
 local boards: { [string]: Board } = { AllTime = newBoard(), Weekly = newBoard() }
 local weekKey = WeekClock.key(os.time())
 local names: { [number]: string } = {}
+local nameRetryAt: { [number]: number } = {} -- ids Roblox couldn't name: not asked again until then
 local champions: { [string]: { userId: number, model: Model? } } = {}
 local lastPayload: any = nil
 local namingInFlight = false
@@ -64,14 +67,20 @@ local function nameOf(userId: number): string
 	if player then
 		names[userId] = player.DisplayName
 	end
-	return names[userId] or (if userId > 0 then "…" else "Test " .. tostring(-userId))
+	return names[userId] or "…"
 end
 
--- Fills in display names for ids we haven't seen (yields; called from the refresh loop only).
+-- Should we ask Roblox for this id's name now? Not if we know it, it's here, or it failed recently.
+local function needsName(id: number): boolean
+	return not names[id] and not Players:GetPlayerByUserId(id) and os.clock() >= (nameRetryAt[id] or 0)
+end
+
+-- Fills in display names for ids we haven't seen (yields; called from the refresh loop only). An id Roblox
+-- can't name stays "…" and is asked about again after LEADERBOARD_NAME_RETRY_SECONDS.
 local function fetchNames(ids: { number })
 	local missing = {}
 	for _, id in ids do
-		if not names[id] and id > 0 and not Players:GetPlayerByUserId(id) then
+		if needsName(id) then
 			table.insert(missing, id)
 		end
 	end
@@ -87,7 +96,28 @@ local function fetchNames(ids: { number })
 	for _, id in missing do
 		if not names[id] then
 			local fine, name = pcall(Players.GetNameFromUserIdAsync, Players, id)
-			names[id] = if fine and name then name else "Unknown"
+			if fine and type(name) == "string" then
+				names[id] = name
+			else
+				nameRetryAt[id] = os.clock() + Constants.LEADERBOARD_NAME_RETRY_SECONDS
+			end
+		end
+	end
+end
+
+-- Names are only kept for ids a board shows or players on this server (the cache doesn't grow for ever).
+local function pruneNames(keep: { [number]: boolean })
+	for _, player in Players:GetPlayers() do
+		keep[player.UserId] = true
+	end
+	for id in names do
+		if not keep[id] then
+			names[id] = nil
+		end
+	end
+	for id, at in nameRetryAt do
+		if not keep[id] or os.clock() >= at then
+			nameRetryAt[id] = nil
 		end
 	end
 end
@@ -125,7 +155,7 @@ local function setChampion(id: string, userId: number?)
 		current.model:Destroy()
 	end
 	champions[id] = nil
-	if not userId or userId <= 0 then
+	if not userId then
 		return
 	end
 	local entry = { userId = userId, model = nil :: Model? }
@@ -219,7 +249,7 @@ local function broadcast()
 	local unnamed = {}
 	for _, id in BOARD_IDS do
 		for _, row in payload.boards[id].rows do
-			if not names[row.userId] and row.userId > 0 and not Players:GetPlayerByUserId(row.userId) then
+			if needsName(row.userId) then
 				table.insert(unnamed, row.userId)
 			end
 		end
@@ -306,7 +336,11 @@ local function refresh()
 						local fine, value = SafeStore.call(Enum.DataStoreRequestType.GetAsync, function()
 							return store:GetAsync(tostring(player.UserId))
 						end)
-						board.known[player.UserId] = if fine and type(value) == "number" then value else 0
+						if fine then
+							-- nil = no kills saved yet. A failed read stays unknown and is tried again next refresh
+							-- (it used to be cached as 0, hiding the player's saved total for the whole session).
+							board.known[player.UserId] = if type(value) == "number" then value else 0
+						end
 					end
 				end
 			end
@@ -314,8 +348,27 @@ local function refresh()
 		if SafeStore.isOffline() then
 			board.syncedAt = os.time()
 		end
+		-- Saved totals are only needed for players on this server (the others are in `stored` or not shown).
+		for userId in board.known do
+			if not Players:GetPlayerByUserId(userId) and not board.pending[userId] then
+				board.known[userId] = nil
+			end
+		end
 	end
 	fetchNames(ids)
+	local keep: { [number]: boolean } = {}
+	for _, id in ids do
+		keep[id] = true
+	end
+	for _, id in BOARD_IDS do
+		for userId in boards[id].pending do
+			keep[userId] = true
+		end
+		for userId in boards[id].session do
+			keep[userId] = true
+		end
+	end
+	pruneNames(keep)
 	-- Movement since the last refresh.
 	for _, id in BOARD_IDS do
 		local board = boards[id]
@@ -334,7 +387,10 @@ function LeaderboardService.Init()
 	Remotes.GetLeaderboards.OnServerInvoke = function()
 		return lastPayload
 	end
-	EliminationService.onElimination(function(attacker: Player, _victimId: number)
+	EliminationService.onElimination(function(attacker: Player, _victimId: number, rewarded: boolean)
+		if not rewarded then
+			return -- past the kill-farming limit: it scores in the round, not on the boards
+		end
 		for _, id in BOARD_IDS do
 			local pending = boards[id].pending
 			pending[attacker.UserId] = (pending[attacker.UserId] or 0) + 1

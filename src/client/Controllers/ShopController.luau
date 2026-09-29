@@ -31,6 +31,7 @@ local UserInputService = game:GetService("UserInputService")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Remotes = require(Shared:WaitForChild("Remotes"))
 local CharacterDefs = require(Shared:WaitForChild("Modules"):WaitForChild("CharacterDefs"))
+local Constants = require(Shared:WaitForChild("Modules"):WaitForChild("Constants"))
 local Currency = require(Shared:WaitForChild("Modules"):WaitForChild("Currency"))
 local RobuxCatalog = require(Shared:WaitForChild("Modules"):WaitForChild("RobuxCatalog"))
 local AnimControllers = ReplicatedStorage:WaitForChild("Animations"):WaitForChild("Controllers")
@@ -66,6 +67,8 @@ local HOLD_TO_BUY = 1 -- seconds the BUY button must be held
 local PREVIEW_EVERY = 3.4 -- seconds between the hologram's ability previews
 local EXIT_KEY = Enum.KeyCode.X
 local PASS_GRANT_TIMEOUT = 20 -- seconds to wait for the server to confirm a Game Pass Roblox says was bought
+local pendingFinish: (() -> ())? = nil -- the last close()'s clean-up, while the camera is still gliding out
+local passPromptToken = 0 -- bumped per Game Pass prompt and when Roblox reports it closed
 local UNLOCKED_STAMP = "UNLOCKED  解放"
 
 type Refs = { [string]: any }
@@ -1147,8 +1150,19 @@ function ShopController.pressAction()
 	if def.tier == "Robux" then
 		if def.gamePassId and state.pendingPass == nil then
 			state.pendingPass = def.id
+			passPromptToken += 1
+			local token = passPromptToken
 			refreshDetail()
 			MarketplaceService:PromptGamePassPurchase(localPlayer, def.gamePassId)
+			-- Should Roblox never report the prompt closed, the button doesn't stay dead (audit fix, 2026-09-28).
+			task.delay(Constants.GAMEPASS_PROMPT_TIMEOUT, function()
+				if passPromptToken == token and state.pendingPass == def.id then
+					state.pendingPass = nil
+					if state.open then
+						refreshDetail()
+					end
+				end
+			end)
 		end
 		return
 	end
@@ -1296,6 +1310,10 @@ function ShopController.open()
 	if state.open or state.busy then
 		return
 	end
+	-- Still gliding out from the last visit: finish that clean-up now, so this visit starts from a clean slate.
+	if pendingFinish then
+		pendingFinish()
+	end
 	local shop = findShop()
 	local door = shop and shop:FindFirstChild("ShopDoor")
 	local cameraPart = shop and shop:FindFirstChild("ShopCamera")
@@ -1361,7 +1379,11 @@ function ShopController.close()
 	ShopController.closeBundles()
 	refs.gui.Enabled = false
 	local camera = workspace.CurrentCamera
-	local function finish()
+	local finish
+	function finish()
+		if pendingFinish == finish then
+			pendingFinish = nil
+		end
 		if scene.hologram then
 			scene.hologram:Destroy()
 			scene.hologram = nil
@@ -1376,13 +1398,17 @@ function ShopController.close()
 		scene.hidden = nil
 		setControls(true)
 	end
+	-- The clean-up waits for the camera to glide back out. If the shop is opened again before that, open()
+	-- runs it first (audit fix, 2026-09-28: a quick reopen used to leave the old hologram behind, the HUD
+	-- hidden and the player frozen).
+	pendingFinish = finish
 	if scene.doorway and camera.CameraType == Enum.CameraType.Scriptable then
 		task.spawn(function()
 			cameraTween(scene.doorway, 0.45, Enum.EasingStyle.Quint).Completed:Wait()
-			if scene.returnCFrame then
+			if scene.returnCFrame and pendingFinish == finish then
 				cameraTween(scene.returnCFrame, 0.4).Completed:Wait()
 			end
-			if not state.open then
+			if pendingFinish == finish then
 				finish()
 			end
 		end)
@@ -1441,6 +1467,7 @@ function ShopController.Start()
 		if player ~= localPlayer or not state.pendingPass then
 			return
 		end
+		passPromptToken += 1 -- the prompt closed: its safety timer no longer applies
 		local id = state.pendingPass
 		if not purchased then
 			state.pendingPass = nil

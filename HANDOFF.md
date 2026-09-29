@@ -1,10 +1,11 @@
 # HANDOFF — Numbers Assassin Universe
 
-Last updated: 2026-09-28: the Blender animation pipeline, with every fighter's moves made in Blender (51 clips,
-section 2), uncommitted, on top of 2026-09-27's keyframed clips + impact layer and 2026-09-26's mouse aiming (all uncommitted). Before that, 2026-09-25: the
-teammate's M1 click combo + trade clash, merged to `main` (PR #2, `05c37a5`). 2026-09-24: all work committed and pushed. The owner declared the game's **first drop ready and complete**
-(2026-09-24). Last commits: Boundless rename (`f82898d`), then Yern Credits, original ability names, Phase 3 item 6
-(Robux characters + credit bundles), the speed-lines fix and Robux prices on the lobby bubbles.
+Last updated: 2026-09-29. **Audit fixes + passive yen removed** (this commit): a full security / leak / error audit
+(2026-09-28) and every finding fixed (section 2, "Audit fixes"); passive yen and the friend booster removed at the
+owner's request (2026-09-29). Before that: `7bb6d1e` moved the game to the new "Numbers Assassin Universe"
+experience (2026-09-28) and `56f83d7` committed mouse aiming, the Blender fight animations (51 clips) and the impact
+layer; both pushed. 2026-09-25: the teammate's M1 click combo + trade clash (PR #2, `05c37a5`). The owner declared
+the game's **first drop ready and complete** (2026-09-24); it is **not published**.
 Current state first; a condensed history is at the end.
 
 Labels: **[Verified]** = checked directly (test output, measurement, screenshot, or file/Studio inspection).
@@ -22,12 +23,12 @@ Phase 3 (plan approved 2026-09-23, 8 items), worked in the owner's order:
 | 3 Choose character at the pedestal / respawn screen | Done |
 | 4 Saved progress (yen, owned characters, equipped) | Done 2026-09-23 (section 2), committed |
 | 5 Yen shop | Done (shop cottage in the lobby garden); purchases now saved |
-| 6 Robux characters via Game Passes | Built 2026-09-24 with the Robux credit bundles, from the owner's ids (section 2); committed. Owner: rename product 3714587623 on Roblox from "2000 YERN CREDITS" to "20000 YERN CREDITS" (it grants 20,000) |
-| 7 Team 6v6 mode alongside FFA | Built 2026-09-23, all 8 decisions approved (section 2); committed; needs a multi-player test |
-| 8 Hand-keyframed animations | Playback + fluid placeholders done; clips pending from the owner (`docs/ANIMATING.md`) |
+| 6 Robux characters via Game Passes | Built 2026-09-24 with the Robux credit bundles (section 2); committed. **The pass and product ids belong to the old experience** (universe 10767444751): the owner will create 2 Game Passes + 4 Developer Products in "Numbers Assassin Universe" and send the new ids (owner, 2026-09-29: "will be updated in the future") |
+| 7 Team 6v6 mode alongside FFA | Built 2026-09-23, all 8 decisions approved (section 2); committed; a side that empties now loses by forfeit (2026-09-28); needs a multi-player test |
+| 8 Hand-keyframed animations | Done: 51 clips made in Blender for all 10 fighters + M1 (2026-09-28, section 2); feel at full speed is the owner's to judge |
 
-Extras added at the owner's request this session: swords and slash effects, clashes, kill leaderboards,
-colosseum crowd, passive yen + friend booster, 30-second alert (the four open choices on these were approved as built).
+Extras added at the owner's request: swords and slash effects, clashes, kill leaderboards, colosseum crowd,
+30-second alert. Passive yen + friend booster were added 2026-09-23 and **removed by the owner 2026-09-29**.
 
 **Phase 4** (approved 2026-09-23: all items; map 2 planning skipped for now). Committed (`ad4aa81`):
 
@@ -47,7 +48,8 @@ colosseum crowd, passive yen + friend booster, 30-second alert (the four open ch
 |---|---|---|
 | Round flow: queue → 15 s intermission → 8-min timed round, uncapped eliminations (tie → 60 s sudden death, starting instantly → draw) → 6 s results → lobby + auto-requeue; leave queue; mid-round join; 15 s under-population grace | `Systems/RoundManager`, `Lib/MatchCore` | Unit-tested [Verified]; solo round start [Verified]; with `NAU_DevRoundSeconds = 40`, solo: round end at 0 kills → sudden death at the same instant → draw 60 s later, twice in a row [Verified]; a full 8-min round end [Not tested] |
 | **30-second alert** (owner, 2026-09-23): every fighter in the match gets a "30 SECONDS LEFT" banner (subtitle "MOST ELIMINATIONS WINS"), the clock pops; again 30 s before sudden death ends ("SOLE LEADER WINS · OTHERWISE A DRAW") | `Lib/RoundTimer`, `RoundManager` (alertTimeLeft), `RoundAlert` remote, `HUDController` | 1 unit test; solo shortened rounds: alert at 30 s left in regular time and in sudden death, banner on screen [Verified]. Several fighters [Not tested] |
-| **Passive yen** (owner, 2026-09-23): ¥50 every 2 min to every player in the server; friend booster ¥100 per Roblox friend in the server every 5 min; clocks from join; "+¥50 PLAYTIME" / "+¥200 FRIEND BOOST · 2 FRIENDS HERE" popup beside the yen counter (queued when both land together) | `Lib/IncomeRules`, `Systems/IncomeService`, `IncomeNotice` remote, `HUDController` | 5 unit tests; solo Play: +¥50 at 2:00 and 4:00, +¥200 at 5:00 with `NAU_DevFriends = 2`, balance saved [Verified]. Real friendships (`IsFriendsWith`) [Not tested — needs two friend accounts on a live server] |
+| **Passive yen — removed** (owner, 2026-09-29): the playtime payout and the friend booster are gone (`IncomeService`, `IncomeRules`, their 5 tests, `NAU_DevFriends`, the PASSIVE/FRIEND constants). `IncomeNotice` and the HUD popup remain for credit-bundle purchases only; the 30-second-alert test moved to `RoundTimer.spec` | — | Solo Play 135 s (a round + lobby): 0 income notices, 0 balance changes, no errors [Verified] |
+| **Audit fixes** (2026-09-28, owner: "fix all the bugs"): (security) plate gate judges observers from the movement check's accepted position; dash/knockback/grapple allowances only along their path; a >8-stud unexplained hop holds new numbers 0.6 s; a pull-back replaces every number learned during the move; NaN positions rejected; reading exceptions end with the caster's life (Gozen's count too); banners/canopies block the server's line of sight (server-only WorldModel copy); a character without root/Humanoid dies; Game Pass grants confirmed with Roblox; request throttles (failed ability requests, equips, purchases, GetRoundState); Blur Step can't land behind walls; leaderboard never uses an id's sign. (round flow) team side empties → forfeit after 15 s; a leaver in sudden death can leave a sole leader who wins. (economy) kill-farming limit: the same victim pays at most 3× per 60 s (placeholder). (saves) only real "no access" errors switch saving off; settings changed while loading are kept; players told if saving stops mid-session. (robustness) each server system starts in isolation; round-cleanup, life-check and cast-animation loops can't die on one error. (leaks) old round state, pending clashes, retired codes, name/headshot caches, sounds, the shop's quick close/reopen, Game Pass button stuck | `Lib/MovementRules`, `Lib/MatchCore`, `Lib/ClashRules`, `Lib/RewardRules`, `Lib/RateLimiter`, `Lib/StoreErrors`, `Systems/*` (MovementGuard, NumberAssignmentService, MapService, RoundManager, EliminationService, AbilityService, LeaderboardService, ProfileService, RobuxService, SafeStore, ShopService, PlayerLifeService), `init.server`, `ProvingGrounds` (`BlocksSight`), client controllers, `AbilityAnim` | 158/158 unit tests (15 new) [Verified]. Studio Play [Verified]: sight-blocker copy has 24 parts and stops a ray at a canopy that ordinary raycasts pass through; a 60-stud client teleport pulled back, the log counts replaced numbers; a 20-stud hop inside the budget kept; a character whose root is removed on the server died and respawned (3.8 s); several rounds with 11 bots, ~150 ability requests, 16 self-eliminations: no script errors, instance counts flat. Found: client-side deletion of the root or Humanoid doesn't replicate in this engine (the new check is a safety net). **Not tested (need 2+ players or real purchases):** forfeit, sudden-death leaver, farming limit, Game Pass confirmation, shop quick reopen, reading exceptions ending on death |
 | Modes: FFA + **Team battle 6v6** (picked uniformly, team only with ≥4 queued; auto-balanced Crimson vs Azure; joiners to the smaller team; no friendly fire, teammates never clash; team-coloured plate borders, teammate name tags, YOUR TEAM · clock · enemy scoreboard, kill list/feed in team colours; team ties → sudden death) | `Lib/TeamRules`, `MatchCore`, `RoundManager`, `ClashRules`, `ClientState` (team helpers), `NumberPlateController`, `HUDController` | 6 team unit tests + 1 clash test [Verified]. Solo with `NAU_DevMode = "Team6v6"`: team round starts, I'm Crimson, scores {Crimson 0, Azure 0}, FIGHT banner "YOU'RE CRIMSON…", scoreboard YOUR TEAM/AZURE with team bars, 30 s alert, 0-0 → sudden death → draw [Verified]; 1 queued without the switch → FFA, HUD unchanged [Verified]. **Not tested (needs several players):** team split, joiners, teammate plates/tags, no friendly fire in play, team kill scoring live |
 | Per-observer 4-digit codes; server disclosure gate (11 studs + facing ±60° + line of sight, small slack) | `Lib/CodeBook`, `Systems/NumberAssignmentService`, `Modules/PlateVisibility` | Unit-tested [Verified]; multi-client [Owner-reported] |
 | Number plates: blank "••••" within 60 studs, digits within 11 studs when faced; 2 × 0.8; depth-tested | `Controllers/NumberPlateController` | [Owner-reported] |
@@ -55,12 +57,12 @@ colosseum crowd, passive yen + friend booster, 30-second alert (the four open ch
 | Eliminations: 1 elim + ¥500; 2nd wrong code in a life = self-elimination; 5 s stale window; 0.3 s debounce; jams answer `locked` | `Lib/MatchCore`, `Systems/EliminationService` | Unit-tested [Verified]; live kills [Owner-reported] |
 | Respawn 3 s; spawn protection 3 s (hidden, blind, no submitting/abilities, immune) | `RoundManager`, `MatchCore`, `AbilityService` | [Verified] |
 | **Abilities, all 10 characters** (`docs/ABILITIES.md`): Q mild 8 s, E ultimate 20 s (−10 s per respawn); effects ×1.75 | `Lib/AbilityRules`, `Systems/AbilityService`, `Systems/Abilities/*`, `Controllers/AbilityController`, `animations/Controllers/AbilityFX` | **Audited 2026-09-23** through the real path with `NAU_DevSelfTarget` [Verified]: every jam shows the toast, the server rejects codes, an open box closes; blind whites out; knockbacks, dashes, teleports, speed changes, radar, outlines, clone, grants all behave as documented. Fixed in the audit: Moon Fang trail slowed to 36 % (now 60 %), Eli's camera outlived Eli, Gatling code wipe had no toast. Needs 2 players: Hunter's Eye, clone popping, reading at range, Boundless's 3-kill end, Tornado carry |
-| **Cast animations**: server `cast` event → each client animates the caster (wind-up for the cast time → strike → hold → fade). Placeholders: 20 show-inspired poses as spring *targets* (damped springs per joint, strike boost, wrist drag, breathing sway); authored clip ids in `AnimationIds` replace them per clip | `Modules/AnimTimeline`, `Modules/Spring`, `Modules/AnimationIds`, `animations/Controllers/AbilityAnim` + `AbilityPoses`, `docs/ANIMATING.md` | Unit-tested [Verified]; motion measured (largest one-frame hand move 0.19 / 0.38 strike / 0.18 fade studs) [Verified]; feel [Owner to judge]; authored clips [Not tested — no ids yet] |
+| **Cast animations**: server `cast` event → each client animates the caster (wind-up for the cast time → strike → hold → fade). Placeholders: 20 show-inspired poses as spring *targets* (damped springs per joint, strike boost, wrist drag, breathing sway); authored clip ids in `AnimationIds` replace them per clip | `Modules/AnimTimeline`, `Modules/Spring`, `Modules/AnimationIds`, `animations/Controllers/AbilityAnim` + `AbilityPoses`, `docs/ANIMATING.md` | Unit-tested [Verified]; motion measured (largest one-frame hand move 0.19 / 0.38 strike / 0.18 fade studs) [Verified]; feel [Owner to judge]. (Superseded for playback by the Blender clips below; the placeholders remain the fallback for anything without a clip) |
 | **Swords + slash effects**: swords appear for sword moves. Zorin: red + dark katanas in hand + one in the mouth. Ichiro: black cleaver. Sazuki: straight blade. Trails, guard glint, block sparks (`guard_block`), tornado slash arcs, Flash Step arc, Moon Fang glow + crescent wave, blade lightning. Authoring copies in `ServerStorage.AnimationWork.Swords` (not synced) | `animations/Controllers/Swords`, `AbilityFX`, `AbilityAnim` | Screenshots [Verified]; sparks from a real hit [Not tested] |
 | **Clashes**: the same attack started at each other (≤0.6 s apart, first still winding up, ≤30 studs, aimed within 35°, line of sight) cancels both and locks the pair face to face 7 studs apart for 2.5 s; first correct code wins; both thrown apart. Exchange visuals: parries, beam struggle, grinding spheres, fists; second fighter half a beat off | `Lib/ClashRules`, `AbilityService` (startClash), `AbilityPoses.clashMove` | 9 unit tests [Verified]; real 2-player clash [Owner-reported] |
 | **M1 click combo + trade clash** (owner, 2026-09-25): click = 4-hit combo (jab, cross, hook, launching uppercut) with shove + brief slow, no damage; 3 trades in a row (both landing within 0.35 s) → 3 s fist-exchange clash with a cutscene camera for the two fighters. Written in Studio directly, then exported to the repo with parity proven per file (length + hash) | `Lib/MeleeRules`, `Systems/MeleeService`, `M1` remote, `AbilityService` (meleeClash, knockback, slow), `animations/Controllers/ClashCamera`, `AbilityPoses.Melee`, `AbilityAnim`, `AbilityFX` (melee_hit), `AbilityController` (click) | 10 unit tests; 136/136 [Verified]. Punch poses, hit FX and the clash cutscene against a stand-in dummy (screenshots) [Verified]. Server clean on start [Verified]. **Real hits, trades and a live M1 clash [Not tested — needs Test → Clients and Servers, 2 players; the output prints `M1 a -> b (hit n) TRADE k/3`]**. No punch sound, no touch M1 button yet |
 | **Blender animation pipeline** (owner, 2026-09-28: "implement blender"): `tools/blender` builds the game's exact R15 rig in Blender 5.2 (captured from the avatar in Studio), authors the clips there (foot IK keeps feet planted, optional hand IK, eases like snap/whip/overshoot/elastic/hold, follow-through springs on head and hands), saves `NAU_Fights.blend` (19 editable actions) and exports them baked at 60 fps into `animations/Clips` (dense data; the sampler binary-searches it). Pilot pack re-authored with full-body mechanics: planted fighting stance, hip drive, rear heel pivot, knee drive on the uppercut, palms pressed together by hand IK on Energy Wave. Review sheets render to `tools/blender/renders` (git-ignored). **Same day, owner-approved: the other 8 characters** (32 clips, `clips_krillin/vegeta/zoro/l/naruto/ichigo/sasuke/gojo.py`) in each character's show-like body language: 51 clips in all | `tools/blender/*`, `animations/Clips/*` (generated), `KeyframeClip` (dense path) | `selftest.py`: rest exports as zero, keyed angles round-trip to 0.01°, a 0.6-stud crouch moves the ankles ≤ 0.0002 studs [Verified]. Export reach check found 5 clips with a foot out of reach (leg stretched flat); fixed, 0 warnings [Verified]. 148/148 unit tests (dense = general sampling) [Verified]. Real avatar in Studio: contact sheet of guard / jab / straight / hook / uppercut, and the live finisher through the real code (both frozen on the hit: uppercut rising onto the toes, target thrown back) [Verified]. 19 KeyframeSequences rebuilt from the new data. The 8 other characters: export reach warnings 3 → fixed to 0; review renders of the spin, arms-crossed, squat and orb lunge checked (the lunge's palm pointed into the floor from the torso lean: fixed, and the same on Sazuki's blade); every clip valid (148/148); all 16 moves cast through the real AbilityAnim on the avatar: each started, posed in its release, finished, no errors [Verified]. 51 KeyframeSequences rebuilt. **Not tested:** the 8 new characters on the real avatar in screenshots (Studio's 3D view stopped rendering, likely minimized: Blender renders only), 2-player fights, the feel at full speed (owner), opening/editing the .blend in the Blender UI (built headless) |
-| **Keyframed fight animations + impact layer** (owner-approved 2026-09-27: Studio keyframes, pilot pack, impact layer): 19 clips as data (`animations/Clips`: M1 jab/cross/hook/uppercut, flinch, launched, M1 clash exchange; Gokai Phase Shift + Energy Wave; Luffo Stretch Grapple + Blitz Barrage), played at once by `AbilityAnim` (full body; legs handed back to the walk while moving). Impact layer: hit-stop, shockwaves, dust, afterimages, shake + black-and-white impact frame for the two fighters involved (Screen shake setting). 19 KeyframeSequences built in `ServerStorage.AnimationWork.Clips` for optional publishing | `Modules/KeyframeClip`, `animations/Clips/*`, `AbilityAnim` (clips, freeze, onRelease, launched/clash slots), `animations/Controllers/ImpactFX`, `CameraShake.isEnabled`, `AbilityController` (wiring), `tools/clips/build_keyframe_sequences.luau`, `AnimationIds.Melee.launched/clash` | 10 unit tests (sampler, eases, loop, mirror, planted-foot IK by forward kinematics, every clip valid); 147/147 [Verified]. Contact sheets of every pilot clip (screenshots), tuned: less forward lean on jab/hook, uppercut fist in front of the face, softer flinch/launch arch, Energy Wave eyes and arms on target [Verified]. Live in Play through the real code with a model as the target: finisher lands → both frozen on the strike (attacker's arm 78° up, target arched back), impact frame shown, 64 effect parts [Verified]. The built KeyframeSequences match the data playback: 150 joint samples, 0.0° [Verified]. Found and fixed on the way: strikes peaked 0.04 s after the hit (hit-stop froze the wind-up), reactions blended in over the frozen first frame. **Not tested:** real 2-player punches and clashes, the look at full speed (owner to judge), afterimages and dust in motion, Gokai/Luffo moves cast in a real match, phones |
+| **Keyframed fight animations + impact layer** (owner-approved 2026-09-27: Studio keyframes, pilot pack, impact layer; the 19 pilot clips were re-authored in Blender next day, now 51 clips — row above; counts below are from that day): 19 clips as data (`animations/Clips`: M1 jab/cross/hook/uppercut, flinch, launched, M1 clash exchange; Gokai Phase Shift + Energy Wave; Luffo Stretch Grapple + Blitz Barrage), played at once by `AbilityAnim` (full body; legs handed back to the walk while moving). Impact layer: hit-stop, shockwaves, dust, afterimages, shake + black-and-white impact frame for the two fighters involved (Screen shake setting). 19 KeyframeSequences built in `ServerStorage.AnimationWork.Clips` for optional publishing | `Modules/KeyframeClip`, `animations/Clips/*`, `AbilityAnim` (clips, freeze, onRelease, launched/clash slots), `animations/Controllers/ImpactFX`, `CameraShake.isEnabled`, `AbilityController` (wiring), `tools/clips/build_keyframe_sequences.luau`, `AnimationIds.Melee.launched/clash` | 10 unit tests (sampler, eases, loop, mirror, planted-foot IK by forward kinematics, every clip valid); 147/147 [Verified]. Contact sheets of every pilot clip (screenshots), tuned: less forward lean on jab/hook, uppercut fist in front of the face, softer flinch/launch arch, Energy Wave eyes and arms on target [Verified]. Live in Play through the real code with a model as the target: finisher lands → both frozen on the strike (attacker's arm 78° up, target arched back), impact frame shown, 64 effect parts [Verified]. The built KeyframeSequences match the data playback: 150 joint samples, 0.0° [Verified]. Found and fixed on the way: strikes peaked 0.04 s after the hit (hit-stop froze the wind-up), reactions blended in over the frozen first frame. **Not tested:** real 2-player punches and clashes, the look at full speed (owner to judge), afterimages and dust in motion, Gokai/Luffo moves cast in a real match, phones |
 | **Mouse aiming** (owner, 2026-09-26): abilities and M1 punches go toward what the mouse cursor is on. The client sends the ray through the cursor (screen centre on touch buttons, gamepad, shift-lock, first person); the server finds the point and aims from the attacker's chest toward it; Blur Step / Blink land on the cursor point; the attacker turns to face the aim | `AbilityRules.aimToward`, `AbilityService.cursorAim` (ctx.rawAim / flatAim / cameraAim), `MeleeService` (aim at the click), `AbilityController` (aimRay, faceAim), `M1` remote now `(aim, eye)` | 1 unit test; 137/137 [Verified]. Solo Play as Sazuki with the cursor 93° off the camera's direction: Lightning Dash went 28 studs exactly toward the cursor (0° off; the old aim would have been 93° off), and the character turned to face it; an M1 click turned the character from 168° off to 0° [Verified]. **Not tested:** an M1 punch landing on a real opponent in the aimed cone (needs 2 players), Blink / Blur Step / grapple / Nova Blast with the cursor, touch buttons (screen centre), a zoomed-out camera |
 | **Yen shop**: cottage on stilts in the lobby's south garden (inspired by the owner's reference); door prompt → camera glides in → hologram of your avatar plays the selected character's abilities → holo menu (roster, fighter file, animated balance, hold-to-buy 1 s, UNLOCKED burst, EQUIP, EXIT/[X]). Prices ¥5,000 / 10,000 / 16,500 / 25,000 / 33,500 / 43,500 (placeholders); tier N also grants lower tiers. Sound slots wired, empty | `Lib/ShopRules`, `Systems/ShopService`, `Systems/EconomyService` (inventory, spend), `assets/Builders/ShopHouse`, `Controllers/ShopController` | 6 unit tests; every purchase status through the remote; menu flow with real clicks [Verified]. Phones, several shoppers, persistence [Not tested] |
 | **Kill leaderboards**: all-time + weekly (Monday 00:00 UTC), global via OrderedDataStores; only code eliminations count; kills show live at once, saved every 30 s + on shutdown, top 100 re-read every 60 s. Two floating holo boards by the arrival plaza: top 10 with headshots, podium colours, ▲▼/NEW, "+N LIVE", your line, reset countdown, "SYNCED Xs AGO"; #1's avatar spins above as a hologram | `Lib/WeekClock`, `Lib/LeaderboardRules`, `Systems/SafeStore`, `Systems/LeaderboardService`, `Controllers/LeaderboardController`, `Lobby/Leaderboards` | 5 unit tests; offline mode + injected kills rendering, names, headshots, champion [Verified]. Real DataStores: 3 injected kills written to both stores and read back as the global top list (`offline=false`) [Verified, Studio stores] |
@@ -76,98 +78,99 @@ colosseum crowd, passive yen + friend booster, 30-second alert (the four open ch
 | **Phone / tablet layouts** (Phase 4): touch cluster round Roblox's jump button; two-column touch keypad; kill list 6 rows on phones and hidden while the keypad is open; 44 pt touch targets on the card, settings, keypad, leave-queue; compact phone shop | `UI` (isTouch, isPhone, viewport, touchCluster, gearSize), `AbilityController`, `SubmissionController`, `HUDController`, `LobbyController`, `SettingsController`, `ShopController` (buildPhonePanels) | Emulated 844×390 phone with a measuring script [Verified]: arena HUD, keypad open, lobby, character card, settings and shop all 0 issues (text ≥ 11 pt, targets ≥ 44 pt, nothing off-screen or under the jump button, no overlaps); desktop shop geometry unchanged. Real phones and tablets [Not tested] |
 | **How to play** (Phase 4): five cards on a first visit, reopenable from settings; "seen" saved | `Controllers/TutorialController`, `Settings.tutorialDone` | Opened by itself on first Play, clicked through all five, saved `tutorialDone = true`, didn't reopen after stop → start, HOW TO PLAY reopened it [Verified]. The card-4 mark was changed from ✕ (missing in the font) to X after the last screenshot [Not re-checked visually] |
 | **12-player stress test** (Phase 4): Studio-only bots | `Systems/StressTestService`, `SprintFX` (dresses bots) | Owner's PC, Studio Play (client and server in one process), arena + High crowd [Verified]: 1 fighter 16.7 ms avg (60 fps), 99th pct 21.1 ms; 12 fighters 16.8 ms avg (60 fps), 99th pct 20.1 ms, one 91 ms hitch (bots spawning), memory 2,290 → 2,305 MB, server physics 0.00 → 0.94 ms. Studio's network counters are meaningless here (one process). Phones, real network [Not tested] |
-| **Movement check** (2026-09-24): server samples characters 10×/s against a distance budget; the game's own knockbacks, dashes and grapples raise the limit; server teleports reset it; violations are undone (back up to a second) plus 1.5 s without new numbers; no kicks | `Lib/MovementRules`, `Systems/MovementGuard`, `AbilityService` (sendEffect, teleport/clash resets), `PlayerLifeService` (spawn reset) | 7 unit tests. Solo Play [Verified]: running, strafing and jumping in the lobby, a spawn and two respawns, Luffo's real grapple (26 studs at 120 studs/s) and Vejaro's launch → no pull-backs; a client-side 50-stud teleport → put back at the exact start; forcing 90 studs/s → caught twice within ~0.75 s, net 0.1 studs gained. Multi-player, real network lag, Phase Shift, clash stances [Not tested] |
+| **Movement check** (2026-09-24; hardened by the audit fixes 2026-09-28, row "Audit fixes"): server samples characters 10×/s against a distance budget; the game's own knockbacks, dashes and grapples raise the limit; server teleports reset it; violations are undone (back up to a second) plus 1.5 s without new numbers; no kicks | `Lib/MovementRules`, `Systems/MovementGuard`, `AbilityService` (sendEffect, teleport/clash resets), `PlayerLifeService` (spawn reset) | 7 unit tests. Solo Play [Verified]: running, strafing and jumping in the lobby, a spawn and two respawns, Luffo's real grapple (26 studs at 120 studs/s) and Vejaro's launch → no pull-backs; a client-side 50-stud teleport → put back at the exact start; forcing 90 studs/s → caught twice within ~0.75 s, net 0.1 studs gained. Multi-player, real network lag, Phase Shift, clash stances [Not tested] |
 | **Luffo's Stretch Grapple arm** (2026-09-24): rubber arm from the elbow with Luffo's own hand, ripple and thinning, grab with squash and dust, hold during the pull, snap back | `animations/Controllers/AbilityFX` (luffyGrapple), `Abilities/Luffy` (sends the surface normal) | Real grapple at full speed [Verified]: arm out at the cast, grab + dust 0.33 s later, pull, arm gone and forearm back on arrival. Slowed test screenshots [Verified]: the arm stretching out of the sleeve, the hand gripping a lamp post. Feel at full speed: owner to judge |
 | **Sound** (Phase 4): lobby/arena music, effects for round start, elimination (you / of you), wrong code, 30 s alert, sudden death, win, ability casts (3D), income, shop slots | `src/client/Audio`, hooks in `HUDController`, `SubmissionController`, `FXController`, `ShopController` | All 18 candidate ids load here [Verified]. In Play [Verified]: lobby music in the Music group, arena music + round-start gong on entering, ability cast at the caster, wrong code, eliminated, 30 s alert, income. Sudden death, the kill sound, win [Not tested]. How it all sounds: owner to judge (Claude can't listen) |
-| **Robux characters + credit bundles** (Phase 3 item 6, 2026-09-24, owner's ids): Game Passes for Sazuki/Gozen (2,499 R$), checked with Roblox on join and granted at once when bought in game; four credit bundles (5,000 / 10,000 / 20,000 / 40,000 YC for 199 / 499 / 999 / 1,999 R$). Lobby bubbles under Sazuki/Gozen show "R$ 2,499" (live Game Pass price, owner 2026-09-24) instead of "ROBUX". Shop: BUY WITH ROBUX, live Robux prices, "+ GET CREDITS" on the balance and "NEED X YC · GET MORE" open a CREDITS overlay. Receipts saved with the credit before PurchaseGranted | `Systems/RobuxService`, `Modules/RobuxCatalog`, `ProfileService.creditPurchase`, `Lib/ProfileData` (receipts), `EconomyService` (grantPass), `AbilityService` (owns, pending Robux equip), `ShopController` | 1 unit test (receipts). Studio [Verified]: the owner's account owns both passes → both shown OWNED; credits overlay and live prices (screenshot); fake receipts through the real ProcessReceipt (`NAU_DevReceipt`): 999 R$ bundle credited 20,000 and saved, the same receipt again → granted, no second credit, unknown product → NotProcessedYet, after stop → start the receipt was still recognised; Sazuki equipped → rejoin → still equipped. Studio profile restored afterwards. **Not tested:** Roblox's real purchase dialog (automation can't click it: owner, click a bundle and a pass in Studio for a test purchase), buying a pass in game, live servers, the phone layout of the overlay beyond Studio's small window |
+| **Robux characters + credit bundles** (Phase 3 item 6, 2026-09-24, owner's ids — **of the old experience, to be replaced**, section 4; tests below ran in the old place): Game Passes for Sazuki/Gozen (2,499 R$), checked with Roblox on join and granted at once when bought in game; four credit bundles (5,000 / 10,000 / 20,000 / 40,000 YC for 199 / 499 / 999 / 1,999 R$). Lobby bubbles under Sazuki/Gozen show "R$ 2,499" (live Game Pass price, owner 2026-09-24) instead of "ROBUX". Shop: BUY WITH ROBUX, live Robux prices, "+ GET CREDITS" on the balance and "NEED X YC · GET MORE" open a CREDITS overlay. Receipts saved with the credit before PurchaseGranted | `Systems/RobuxService`, `Modules/RobuxCatalog`, `ProfileService.creditPurchase`, `Lib/ProfileData` (receipts), `EconomyService` (grantPass), `AbilityService` (owns, pending Robux equip), `ShopController` | 1 unit test (receipts). Studio [Verified]: the owner's account owns both passes → both shown OWNED; credits overlay and live prices (screenshot); fake receipts through the real ProcessReceipt (`NAU_DevReceipt`): 999 R$ bundle credited 20,000 and saved, the same receipt again → granted, no second credit, unknown product → NotProcessedYet, after stop → start the receipt was still recognised; Sazuki equipped → rejoin → still equipped. Studio profile restored afterwards. **Not tested:** Roblox's real purchase dialog (automation can't click it: owner, click a bundle and a pass in Studio for a test purchase), buying a pass in game, live servers, the phone layout of the overlay beyond Studio's small window |
 | **Shown names** (owner, 2026-09-24): currency **Yern Credits / YC** (`Modules/Currency`; player-list column "Credits"); original ability names replace the shows' terms (Blitz Barrage, Blinding Burst, Rising Fury, Nova Blast, Cyclone Cut, Mirror Decoy, Vortex Orb, Blur Step, Crescent Wave; Boundless committed earlier) | `Modules/Currency`, `CharacterDefs`, toasts | Studio [Verified]: HUD, player list, lobby bubbles, shop prompt/menu, tutorial text fit; no "Infinity"/"¥" left in scripts. Internal ids keep the old keys |
 
 ## 3. Repository state
 
-- Branch `main` on `origin` (github.com/iamsekou/roblox-game). History: `7719c2f` Rojo setup → `a76340c` Phase 2
-  slice → `268d746` Phase 3 abilities → `295b311` handoff rewrite → `621b746` animations, swords, clashes →
-  `b0ac9f6` fluid motion, ability audit fixes, yen shop, leaderboards, crowd → the saved progress + passive yen +
-  30-second alert commit (see `git log`). Not pushed.
-- All 75+ synced scripts match Studio by length + rolling hash (h = h·31 + byte mod 2³¹−1, CR stripped) [Verified
-  after the crash recovery, and per file after every later change].
-- Git-ignored, on disk only: `art/reference/*` and `art/portraits/*` (third-party reference art + derived portraits).
-- Git warns LF → CRLF on many files (warning only). Git Bash can't fork on this machine; use PowerShell.
-- **Scripts written directly in Studio duplicate on the next pull** (2026-09-26): the teammate's M1 scripts were made in
-  Studio (Team Create), so after pulling them Rojo added its own copies beside them. Four scripts ended up twice
-  (MeleeService, MeleeRules, MeleeRules.spec, ClashCamera), so the game could load either copy. Fixed: Rojo's copies
-  were identified by a temporary marker line and the Studio-made copies removed (content identical to git, or older);
-  0 duplicate names left, all 16 changed files at parity. Going forward, write in the repo and let Rojo sync; after
-  pulling anyone's new files, check for duplicate names in Studio.
+- Branch `main` on `origin` (github.com/iamsekou/roblox-game). Recent history: `7d97bd0` first drop (Robux characters,
+  credit bundles, Yern Credits) → `05c37a5` M1 combo (PR #2) → `56f83d7` mouse aiming + Blender animations + impact
+  layer → `7bb6d1e` move to the new experience → the audit-fixes + passive-yen-removal commit (2026-09-29, not
+  pushed). `git log` has the rest.
+- **All 118 synced scripts match Studio** by path, length and rolling hash (h = h·31 + byte mod 2³¹−1, CR stripped),
+  no duplicate names [Verified 2026-09-29, after the passive-yen removal].
+- Git-ignored, on disk only: `art/`, `tools/blender/renders/`, `*.blend1`, `__pycache__/`.
+- Git warns LF → CRLF on many files (warning only). **Git Bash can't fork on this machine; use PowerShell.**
+- **Scripts written directly in Studio duplicate on the next pull** (2026-09-26, the teammate's M1 scripts): write in
+  the repo and let Rojo sync; after pulling anyone's new files, check for duplicate names in Studio.
 
 ## 4. Outside the repo (Studio, Roblox, machine)
 
-- **Moved to a new experience (2026-09-28):** "Numbers Assassin Universe", placeId 98704863055759, universe
-  10768509193, owned by the owner's account (user 286159463). Rojo synced the repo into it; all 115 scripts match
-  the repo (length + hash) with no duplicates [Verified]. In the new place: 148/148 unit tests, the lobby builds,
-  DataStores reachable (Studio API access already on), R15 avatar with AnimationConstraint joints as before, and a
-  full solo round (queue → round → Gokai's Q and E) with no errors [Verified]. Recreated by hand: the
-  `NAU_DevUnlockAll = false` attribute and the 51 KeyframeSequences in `ServerStorage.AnimationWork.Clips`. Not
-  recreated: `ServerStorage.AnimationWork.Swords` (authoring copies for the old Animation Editor route, superseded
-  by Blender). DataStores are per experience: saves, leaderboards and the Studio test profile start empty here.
-  **Still on the old experience and must be recreated in the new one: both Game Passes and all 4 Developer
-  Products** (checked: product 3714587165 reports UniverseId 10767444751). The ids in `CharacterDefs` and
-  `RobuxCatalog` are the old ones until the owner sends new ones. Owner settings to check in the new experience:
-  Avatar type R15 (not readable from scripts), collaborators (the teammate), name/description/genre/icon.
-
+- **The game lives in "Numbers Assassin Universe"** (placeId 98704863055759, universe 10768509193; Studio's title
+  now reads "Numbers Assassin Universe [NAU] NEW DROPS COMING"), owned by the owner's account (user 286159463).
+  The old place "InDeveopmentPart2" is retired.
+- **Robux ids still belong to the old experience** (universe 10767444751; product 3714587165 checked): both Game
+  Passes and all 4 Developer Products must be recreated in the new experience and the ids replaced in
+  `CharacterDefs` / `RobuxCatalog` **before publishing**, or bundle purchases can't be delivered (owner, 2026-09-29:
+  "will be updated in the future"). Renaming product 3714587623 on the old experience no longer matters.
+- Studio-only state in the new place [Verified 2026-09-29]: `NAU_DevUnlockAll = false` on ServerScriptService (Studio
+  shows real ownership; delete it to unlock all), and the 51 KeyframeSequences in `ServerStorage.AnimationWork.Clips`
+  (optional publishing, docs/ANIMATING.md). `AnimationWork.Swords` was not recreated (superseded by Blender).
+- DataStores are per experience: the Studio test profile and leaderboards started empty here. The Studio profile
+  (account samyudenbackup21) holds 400 YC earned by passive yen during Claude's test runs before it was removed.
+- Place settings untouched by Claude: `Lighting.Technology`, `StreamingEnabled = true`, `CharacterAutoLoads = true`
+  (the server sets false at runtime), HttpService off, **Studio API access on** (Studio uses the `_Studio` stores).
+- Studio printed "Server Save Failure: PublishService AssetUpload failed" (its cloud save of the place) three times on
+  2026-09-28. The place reopened on 2026-09-29 with every change and its Studio-only state intact [Verified], but
+  the owner should watch that File → Save to Roblox succeeds.
 - Uploaded to Roblox under the owner's account (each approved): portraits (ids in `CharacterDefs.luau`; colour-set
   rollback ids: Goku 122903496846585, Luffy 79671763279611, Krillin 91771744627475, Vegeta 72069376256964,
   Zoro 70883204029177, L 102258380243632, Naruto 104230049635730, Ichigo 70771063323340, Sasuke 132657356363462,
   Gojo 117842427607485; previous Gokai silhouette 78521110761755). Nothing else uploaded; nothing published.
-- Studio-only additions not in the repo: `ServerStorage.AnimationWork.Swords` (sword copies for animating).
-- Place settings untouched by Claude: `Lighting.Technology`, `StreamingEnabled = true`, `CharacterAutoLoads = true`
-  (server sets false at runtime), HttpService off. **Studio API access on** (owner, 2026-09-23): Studio uses the
-  `_Studio` stores. The owner's Studio test profile was reset to a fresh start at the owner's request: ¥133,500
-  (enough to buy all six yen characters one by one), nothing bought, Gokai equipped, default settings, walkthrough
-  not yet seen (reset again after the Phase 4 tests). `NAU_DevUnlockAll = false` is
-  saved on ServerScriptService in the place (so Studio shows real ownership; delete the attribute to unlock all again).
-  The Studio leaderboards show 3 injected kills.
-- Rojo 7.4.4 via Rokit. `rojo serve` restarted after the owner's PC crash (2026-09-23 19:05, pids 3068 / 10220);
-  the plugin reconnected [Verified]. After a reboot: run `rojo serve` in the repo root, then Connect. If new files
-  don't appear in Studio, check `/api/read` and restart serve.
+- Rojo 7.4.4 via Rokit, `rojo serve` running in the repo root; the plugin is connected to the new place and syncing
+  [Verified 2026-09-29: new, changed and deleted files reached Studio]. On 2026-09-28 the plugin was briefly
+  disconnected; if edits stop reaching Studio, press Connect in the Rojo plugin (and restart serve if `/api/read`
+  lacks new files), then re-run the parity check.
 
 ## 5. Architecture decisions (details in `docs/DESIGN.md`)
 
 - Repo is the source of truth; Rojo syncs it; Studio is never edited directly.
-- Rules live in pure, unit-tested modules (`Lib/*`, `Modules/PlateVisibility`, `AnimTimeline`, `Spring`); systems
-  are thin adapters.
-- Server-authoritative: identity from the invocation; `SubmitCode` carries only the typed code; codes reach a
-  client only through the disclosure gate; abilities, purchases and equips are requested and decided server-side.
-- DataStores go through `Systems/SafeStore` (budget waits, retries, offline detection, `_Studio` names in Studio).
+- Rules live in pure, unit-tested modules (`Lib/*`, `Modules/PlateVisibility`, `AnimTimeline`, `Spring`,
+  `KeyframeClip`); systems are thin adapters.
+- Server-authoritative: identity from the invocation; `SubmitCode` carries only the typed code; codes reach a client
+  only through the disclosure gate, which judges observers from positions the movement check accepted; abilities,
+  purchases and equips are requested and decided server-side, with per-player throttles.
+- DataStores go through `Systems/SafeStore` (budget waits, retries, strict offline detection, `_Studio` names in Studio).
 - Heavy visuals are client-built (crowd, sword models, poses, board screens); the server sends events, not parts.
-- Every tunable in `Constants`; every remote in `Remotes`; UI and maps built in code; maps follow the map contract.
+- Every tunable in `Constants`; every remote in `Remotes`; UI and maps built in code; maps follow the map contract
+  (decorations that should block the plate gate are tagged `BlocksSight`).
 - Studio-only test switches (ignored live): `NAU_DevMinPlayers`, `NAU_DevSelfTarget`, `NAU_DevUnlockAll`,
-  `NAU_DevGrantYen`, `NAU_DevFakeKills`, `NAU_DevRoundSeconds`, `NAU_DevFriends`, `NAU_DevMode` (see CLAUDE.md).
+  `NAU_DevGrantYen`, `NAU_DevFakeKills`, `NAU_DevRoundSeconds`, `NAU_DevMode`, `NAU_DevReceipt`, `NAU_DevTouchUI`,
+  `NAU_DevViewport`, `NAU_DevStressBots` (see CLAUDE.md). `NAU_DevFriends` was removed with passive yen.
 
 ## 6. Tests
 
-- Unit tests (`TestRunner`, in Play on the Server): **148/148** [Verified, 2026-09-28; dense sampling test added]. Blender
-  pipeline: `tools/blender/selftest.py` all passed [Verified, 2026-09-28]. Specs: CodeBook 11, MatchCore 28,
-  PlateVisibility 10, AbilityRules 13, AnimTimeline 8, ClashRules 10, Spring 6, ShopRules 6, Leaderboard 5, ProfileData 6,
-  Income 6, TeamRules 6.
+- Unit tests (`TestRunner`, in Play on the Server): **158/158** [Verified 2026-09-29]. Specs: CodeBook 11,
+  MatchCore 32, PlateVisibility 10, AbilityRules 14, AnimTimeline 8, ClashRules 11, Spring 6, ShopRules 6,
+  Leaderboard 5, ProfileData 6, RoundTimer 1, TeamRules 6, Settings 4, MovementRules 11, MeleeRules 10,
+  KeyframeClip 11, RewardRules 4, Hardening 2.
+- Blender pipeline: `tools/blender/selftest.py` all passed [Verified 2026-09-28].
 - Owner-reported: 3-player check, multi-client ability test and 2-player clash test passed.
-- **Not tested**: saves on live servers and real server hops; phones/touch layouts (shop, crowd density);
-  12-player performance; the 2-player ability cases listed in section 2; authored animation clips.
+- **Not tested**: saves on live servers and real server hops; phones/touch layouts (shop, crowd density) on real
+  devices; 12-player performance with real players; the 2-player cases in section 2 (including every audit fix that
+  needs an opponent: forfeit, sudden-death leaver, farming limit, reading exceptions ending on death, the plate gate
+  under a real teleport cheat); Roblox's real purchase dialogs.
 
 ## 7. Known issues and risks
 
-- Multi-client behaviour can only be checked by the owner. Solo Play uses the real positive user id.
-- After a crash or a very fast server hop, a joining player waits up to ~35 s (shown ¥0) before their save loads.
-- The game isn't published with these changes; live saves start only once it is (publishing is the owner's call).
-- Placeholder numbers: shop prices, balance values, crowd density; all in `Constants` / `CharacterDefs`.
-- Passive yen pays players idling in the lobby too (as asked: "in server"). Roblox disconnects idle players after
-  20 min, which should cap plain AFK farming at about ¥500 + friend boosts per session [Assumption]; an auto-clicker
-  defeats that.
+- **Robux ids of the old experience** (section 4): publishing before they're replaced means Robux characters and
+  credit bundles don't work in the new experience.
+- Multi-client behaviour can only be checked by the owner (Test → Clients and Servers). Solo Play uses the real
+  positive user id; multi-client test players have negative ids (never judged by sign anywhere now).
+- After a crash or a very fast server hop, a joining player waits up to ~35 s (shown 0 YC) before their save loads.
+- The game isn't published; live saves start only once it is (publishing is the owner's call).
+- Placeholder numbers: shop prices, balance values, crowd density, the kill-farming limit (3 paid eliminations of the
+  same victim per 60 s); all in `Constants` / `CharacterDefs`.
 - Crowd is ~7,500 parts: fine on this PC; low-end devices rely on the quality-based density [Assumption].
 - Studio input automation can't press number-row keys (keypad used in tests).
-- Security: the movement check (2026-09-24) stops speed hacks and teleports, but hops that fit its one-second
-  budget still pass (≤ ~38 studs about once a second, ~32 studs/s average against a legitimate 24). Knockbacks are
-  applied by the victim's own client and can still be ignored by a cheater. Tuning lives in `Constants`
-  (`MOVEMENT_*`); tighter settings mean more false pull-backs for laggy players.
+- Security residuals (accepted): a hop inside the movement budget (≤ ~38 studs after standing still for a second)
+  still moves the player, but can't read anyone for 0.6 s after it; knockbacks are applied by the victim's own client
+  and can be ignored by a cheater; the server discloses a code slightly beyond the drawn plate (2.5 studs / 15°
+  latency slack); a modified client can tell a Mirror Decoy from a fighter. Tuning in `Constants` (`MOVEMENT_*`,
+  `PLATE_SERVER_SLACK_*`).
 - Sound picks are Claude's (it can't listen). Alternatives that load: arena "Storm of the Shogun" 81644581161031,
   "Blades in Motion" 90151190692214; lobby "Bells and Harp (edit)" 1840049555, "A Delicate Art" 1840471940. Swap in
   `src/client/Audio.luau`.
@@ -175,32 +178,34 @@ colosseum crowd, passive yen + friend booster, 30-second alert (the four open ch
   tests only.
 - IP: names are original, but silhouettes come from franchise art, abilities/poses follow the shows, and the shop
   cottage is inspired by a Dragon Ball frame; the Robux passes for Sazuki/Gozen remain the highest-risk part.
-  Gozen's ultimate was renamed Infinity → **Boundless** (owner, 2026-09-24; internal ids too). The currency is shown
-  as **Yern Credits / YC** (owner, 2026-09-24; `Modules/Currency`); internally, and in these notes, it's still "yen".
-  The shows' ability names were replaced with original ones (2026-09-24, list in `docs/ABILITIES.md`).
+  The currency is shown as **Yern Credits / YC** (`Modules/Currency`); internally, and in these notes, it's "yen".
 - Robux pricing is the owner's: bundles give 25 YC per R$ at 199 but 20 YC per R$ at 499 / 999 / 1,999, so bigger
-  bundles are worse value, and the 40,000 bundle alone doesn't reach Ichiro (43,500, which unlocks every yen character).
-- The Roblox product 3714587623 is still named "2000 YERN CREDITS" but grants 20,000 (owner's answer): rename it.
-- Animation placeholders were tuned on one avatar's proportions; very different avatars may land hands off target.
+  bundles are worse value, and the 40,000 bundle alone doesn't reach Ichiro (43,500).
+- With passive yen gone, credits come only from eliminations (500 each, farming-limited) and bundles; the yen ladder
+  (5,000–43,500) was set when passive yen existed, so progression is slower now [owner to judge].
+- Animation clips were authored on one avatar's proportions; very different avatars may land hands off target.
 - `DEV_UNLOCK_ALL_IN_STUDIO` must stay Studio-only (it is).
 
 ## 8. Single next task
 
-**Owner: play every character's moves at full speed** (solo Play: `NAU_DevMinPlayers = 1`, equip each fighter, Q/E
-and the M1 combo; ideally Test → Clients and Servers to fight someone), say what to push further, and approve a
-commit (mouse aiming + the animation work are all uncommitted). Open `tools/blender/NAU_Fights.blend` in Blender to
-look around or tweak. Publishing the built KeyframeSequences is optional (docs/ANIMATING.md).
-
-First drop declared ready by the owner (2026-09-24); committed and pushed (2026-09-24), **not published** (the
-owner's call). Mouse aiming (2026-09-26) is uncommitted until the owner asks. Before or right after publishing: rename product 3714587623 to "20000 YERN CREDITS" on
-Roblox; do one test purchase by hand in Studio (shop → tap the balance → buy a bundle in Roblox's test dialog; no
-Robux are charged); and ideally the multi-player test of team battle (Test → Clients and Servers, 4+ clients). Live
-saves, live purchases and real phones are only exercised once the game is published.
-
-Owner items in parallel: listen to the sounds, review the placeholder animations and shop/leaderboard/crowd look;
-author the first animation clips (Gokai + Luffo).
+**Owner: create the 2 Game Passes and 4 Developer Products in "Numbers Assassin Universe" and send the new ids**
+(Creator Dashboard → the experience → Monetization); Claude then replaces them in `CharacterDefs` / `RobuxCatalog`
+and re-tests with `NAU_DevReceipt`. In parallel: play every character's moves at full speed and say what to push
+further; run Test → Clients and Servers (2–4 clients) to exercise team battle, the forfeit and the farming limit.
+Before publishing: one test purchase by hand in Studio (no Robux are charged), and confirm File → Save to Roblox
+succeeds.
 
 ---
+
+## Session history (2026-09-24 → 2026-09-29, condensed)
+
+- **2026-09-24:** movement check, Luffo's stretch arm, Boundless rename, Yern Credits, original ability names, Robux
+  characters + credit bundles; the owner declared the first drop ready; committed and pushed.
+- **2026-09-25/26:** the teammate's M1 combo + trade clash (PR #2); mouse aiming.
+- **2026-09-27/28:** keyframed clips + impact layer, then the Blender pipeline and 51 clips for every fighter
+  (`56f83d7`); the move to "Numbers Assassin Universe" (`7bb6d1e`); both pushed.
+- **2026-09-28/29:** handoff review; a parallel audit (security, leaks, runtime errors) plus Studio parity and a
+  multi-round leak run; every finding fixed and tested (section 2); passive yen removed; docs updated; committed.
 
 ## Session history (2026-09-23, condensed)
 

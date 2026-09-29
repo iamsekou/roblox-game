@@ -68,4 +68,50 @@ test("[MOVE] a server teleport resets the baseline", function()
 	T.eq(MovementRules.step(s, Vector3.new(502, 0, 0), 1.1, LIMITS), true)
 end)
 
+test("[MOVE] a dash allows extra travel only along the dash", function()
+	-- A 30-stud dash along +X. Along it: fine. The same distance sideways (onto someone's front): caught.
+	local along = MovementRules.new(Vector3.zero, 0, LIMITS)
+	local path = MovementRules.path(Vector3.xAxis, 30, 1) :: MovementRules.Path
+	local ok, _, _, charged = MovementRules.step(along, Vector3.new(30, 0, 0), 0.1, LIMITS, { path })
+	T.eq(ok, true, "along the dash")
+	T.truthy(charged < 1e-6, "none of it is walking")
+	local sideways = MovementRules.new(Vector3.zero, 0, LIMITS)
+	local path2 = MovementRules.path(Vector3.xAxis, 30, 1) :: MovementRules.Path
+	T.eq(MovementRules.step(sideways, Vector3.new(0, 0, 30), 0.1, LIMITS, { path2 }), false, "sideways")
+	local backwards = MovementRules.new(Vector3.zero, 0, LIMITS)
+	local path3 = MovementRules.path(Vector3.xAxis, 30, 1) :: MovementRules.Path
+	T.eq(MovementRules.step(backwards, Vector3.new(-30, 0, 0), 0.1, LIMITS, { path3 }), false, "backwards")
+end)
+
+test("[MOVE] a path is spent as it's used and lapses on time", function()
+	local s = MovementRules.new(Vector3.zero, 0, LIMITS)
+	local path = MovementRules.path(Vector3.xAxis, 30, 1) :: MovementRules.Path
+	T.eq(MovementRules.step(s, Vector3.new(30, 0, 0), 0.1, LIMITS, { path }), true)
+	T.truthy(path.left < 1e-6, "used up")
+	T.eq(MovementRules.step(s, Vector3.new(60, 0, 0), 0.2, LIMITS, { path }), false, "a second dash on the same allowance")
+	-- 45 studs: more than a full walking budget (38), so only a live path could explain it.
+	local late = MovementRules.new(Vector3.zero, 0, LIMITS)
+	local expired = MovementRules.path(Vector3.xAxis, 45, 1) :: MovementRules.Path
+	T.eq(MovementRules.step(late, Vector3.new(45, 0, 0), 1.1, LIMITS, { expired }), false, "after it lapsed")
+end)
+
+test("[MOVE] a rejected step doesn't spend the path", function()
+	local s = MovementRules.new(Vector3.zero, 0, LIMITS)
+	local path = MovementRules.path(Vector3.xAxis, 30, 1) :: MovementRules.Path
+	T.eq(MovementRules.step(s, Vector3.new(30, 0, 40), 0.1, LIMITS, { path }), false, "too far sideways")
+	T.eq(path.left, 30)
+end)
+
+test("[MOVE] NaN and infinite positions are rejected and never poison the budget", function()
+	local s = MovementRules.new(Vector3.zero, 0, LIMITS)
+	local nan = 0 / 0
+	T.eq(MovementRules.step(s, Vector3.new(nan, 0, 0), 0.1, LIMITS), false, "NaN")
+	T.eq(MovementRules.step(s, Vector3.new(math.huge, 0, 0), 0.2, LIMITS), false, "infinite")
+	T.eq(s.flat == s.flat, true, "budget still a number")
+	T.eq(MovementRules.step(s, Vector3.new(80, 0, 0), 0.3, LIMITS), false, "a teleport right after is still caught")
+	T.eq(MovementRules.step(s, Vector3.new(3, 0, 0), 0.4, LIMITS), true, "normal running still passes")
+	T.eq(MovementRules.path(Vector3.new(nan, 0, 0), 10, 1), nil, "no path from a NaN direction")
+	T.eq(MovementRules.path(Vector3.yAxis, 10, 1), nil, "no path straight up")
+end)
+
 return tests

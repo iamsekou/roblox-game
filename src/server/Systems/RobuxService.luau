@@ -32,25 +32,43 @@ end
 
 -- Game Passes ------------------------------------------------------------------------------------
 
-local function checkPasses(player: Player)
-	for passId, def in byPassId do
-		for attempt = 1, Constants.GAMEPASS_CHECK_ATTEMPTS do
-			local ok, owns = pcall(MarketplaceService.UserOwnsGamePassAsync, MarketplaceService, player.UserId, passId)
-			if ok then
-				if owns then
-					EconomyService.grantPass(player, def.id)
-				end
-				break
-			end
-			if not player.Parent then
-				return
-			end
-			if attempt < Constants.GAMEPASS_CHECK_ATTEMPTS then
-				task.wait(Constants.GAMEPASS_CHECK_RETRY_SECONDS)
-			else
-				warn(string.format("[NAU] couldn't check %s's %s pass: %s", player.Name, def.name, tostring(owns)))
-			end
+-- Asks Roblox whether the player owns `passId`, retrying failed requests. Returns (answered, owns, error).
+local function ownsPass(player: Player, passId: number): (boolean, boolean, string?)
+	local lastError = nil
+	for attempt = 1, Constants.GAMEPASS_CHECK_ATTEMPTS do
+		local ok, owns = pcall(MarketplaceService.UserOwnsGamePassAsync, MarketplaceService, player.UserId, passId)
+		if ok then
+			return true, owns == true, nil
 		end
+		lastError = tostring(owns)
+		if not player.Parent then
+			return false, false, lastError
+		end
+		if attempt < Constants.GAMEPASS_CHECK_ATTEMPTS then
+			task.wait(Constants.GAMEPASS_CHECK_RETRY_SECONDS)
+		end
+	end
+	return false, false, lastError
+end
+
+local function checkPasses(player: Player)
+	local failed = {}
+	local lastError = nil
+	for passId, def in byPassId do
+		local answered, owns, err = ownsPass(player, passId)
+		if not player.Parent then
+			return
+		end
+		if answered and owns then
+			EconomyService.grantPass(player, def.id)
+		elseif not answered then
+			table.insert(failed, def.name)
+			lastError = err
+		end
+	end
+	-- One line per player, not one per pass per attempt (Studio's test players can't be looked up at all).
+	if #failed > 0 then
+		warn(string.format("[NAU] couldn't check %s's passes (%s): %s", player.Name, table.concat(failed, ", "), tostring(lastError)))
 	end
 end
 
@@ -102,12 +120,30 @@ end
 
 function RobuxService.Init()
 	MarketplaceService.ProcessReceipt = processReceipt
-	-- Fired on the server by Roblox (not by a client), so `purchased` can be trusted.
+	-- A pass bought in game. The event is only the trigger (audit fix, 2026-09-28): the grant waits for Roblox to
+	-- confirm the player really owns the pass, so a forged "purchased" event can't unlock a Robux character.
 	MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player: Player, passId: number, purchased: boolean)
 		local def = byPassId[passId]
-		if purchased and def then
-			EconomyService.grantPass(player, def.id)
+		if not purchased or not def then
+			return
 		end
+		task.spawn(function()
+			local answered, owns, err = ownsPass(player, passId)
+			-- Should Roblox still answer from before the purchase, ask again a few times.
+			for _ = 1, Constants.GAMEPASS_CHECK_ATTEMPTS do
+				if not answered or owns or not player.Parent then
+					break
+				end
+				task.wait(Constants.GAMEPASS_CHECK_RETRY_SECONDS)
+				answered, owns, err = ownsPass(player, passId)
+			end
+			if answered and owns then
+				EconomyService.grantPass(player, def.id)
+			elseif not answered and player.Parent then
+				-- Roblox is the record: the pass is checked again on the player's next join.
+				warn(string.format("[NAU] couldn't confirm %s's %s purchase: %s", player.Name, def.name, tostring(err)))
+			end
+		end)
 	end)
 	local function onPlayerAdded(player: Player)
 		task.spawn(checkPasses, player)

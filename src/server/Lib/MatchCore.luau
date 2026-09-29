@@ -129,14 +129,64 @@ function MatchCore:addTeam(team: string)
 	end
 end
 
-function MatchCore:removeParticipant(id: number, now: number)
+-- A fighter left. In sudden death the leader is re-checked (audit fix, 2026-09-28): if a tied fighter or team
+-- leaves, whoever is now the sole leader wins at once instead of the round expiring as a draw.
+-- Returns the winner if that ended the round.
+function MatchCore:removeParticipant(id: number, now: number): Winner?
 	if not self.participants[id] then
-		return
+		return nil
 	end
 	self:_removeDecoysOf(id, now)
 	self.codes:retireTarget(id, now)
 	self.codes:removeObserver(id)
 	self.participants[id] = nil
+	if self.ended then
+		return nil
+	end
+	return self:_checkWin()
+end
+
+-- Team battle: the only team that still has fighters, or nil (FFA, nobody left, or two teams still in it).
+function MatchCore:soleTeam(): string?
+	if self.mode ~= "Team6v6" then
+		return nil
+	end
+	local found: string? = nil
+	for _, p in self.participants do
+		if p.team then
+			if found == nil then
+				found = p.team
+			elseif p.team ~= found then
+				return nil
+			end
+		end
+	end
+	return found
+end
+
+-- Team battle: every fighter on the other side left (audit fix, 2026-09-28). The team still standing wins by
+-- forfeit, whatever the score: a team with nobody left can't win or keep a round alive.
+function MatchCore:endByForfeit(team: string): Winner
+	return self:_finish({ kind = "team", team = team, reason = "forfeit" })
+end
+
+-- Replaces `observer`'s codes for `targets` with new ones (the old ones answer "stale": no strike, no kill).
+-- Used when the observer learned them from somewhere they weren't allowed to be (the movement check pulled
+-- them back). Targets the observer holds no code for are skipped. Returns how many were replaced.
+function MatchCore:reissue(observer: number, targets: { number }, now: number): number
+	local replaced = 0
+	for _, target in targets do
+		if self.codes:getCode(observer, target) then
+			self.codes:issue(observer, target, now)
+			replaced += 1
+		end
+	end
+	return replaced
+end
+
+-- Forgets retired codes whose reuse cooldown is over (keeps a long round's bookkeeping small).
+function MatchCore:purge(now: number)
+	self.codes:purgeStale(now)
 end
 
 -- Starts a new life: strikes reset and spawn protection begins. Returns the new lifeId,

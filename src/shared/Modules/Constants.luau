@@ -21,13 +21,8 @@ local Constants = {
 
 	-- Eliminations
 	YEN_PER_ELIMINATION = 500,
-
-	-- Passive yen (owner, 2026-09-23; rules in Lib/IncomeRules). Every player in the server earns it, in the
-	-- lobby or a match; each player's clocks start when they join.
-	PASSIVE_YEN = 50, -- playtime yen...
-	PASSIVE_YEN_SECONDS = 2 * 60, -- ...paid this often
-	FRIEND_YEN_PER_FRIEND = 100, -- friend booster: this much per Roblox friend in the same server...
-	FRIEND_YEN_SECONDS = 5 * 60, -- ...paid this often
+	-- (Passive yen and the friend booster were removed by the owner, 2026-09-29: credits come only from
+	-- eliminations and purchases.)
 	RESPAWN_SECONDS = 3,
 	CODE_LENGTH = 4, -- codes are strings "0000".."9999"; leading zeros allowed
 	WRONG_SUBMISSION_LIMIT = 2, -- approved: 1st wrong code = screen shake, 2nd wrong code in the same life = self-elimination
@@ -88,8 +83,9 @@ local Constants = {
 	PURCHASE_PROFILE_WAIT_SECONDS = 45, -- a receipt arriving while the profile loads waits this long, then Roblox retries
 	GAMEPASS_CHECK_ATTEMPTS = 3, -- asking Roblox whether a joining player owns a Game Pass...
 	GAMEPASS_CHECK_RETRY_SECONDS = 2, -- ...retried this often when the request fails
+	GAMEPASS_PROMPT_TIMEOUT = 90, -- client: a Game Pass prompt Roblox never reports as closed stops blocking the button after this
 	STUDIO_STORE_SUFFIX = "_Studio", -- Studio's DataStores are kept apart from the live game's
-	SETTINGS_MIN_INTERVAL = 0.2,
+	SETTINGS_MIN_INTERVAL = 0.2, -- seconds between accepted settings changes from one player (schema: Modules/Settings)
 
 	-- Movement sanity check (owner-approved 2026-09-24; rules in Lib/MovementRules, applied by Systems/MovementGuard).
 	MOVEMENT_CHECK_INTERVAL = 0.1, -- seconds between position samples
@@ -100,7 +96,22 @@ local Constants = {
 	MOVEMENT_GRANT_TAIL = 0.6, -- a game-granted burst stays allowed this long after it should have ended
 	MOVEMENT_KNOCKBACK_SECONDS = 1.2, -- how long a knockback's speed stays allowed
 	MOVEMENT_PENALTY_SECONDS = 1.5, -- after being pulled back, the fighter learns no numbers for this long
-	MOVEMENT_TELEPORT_GRACE = 0.5, -- after a server teleport, stale positions from the client re-anchor, no penalty -- seconds between accepted settings changes from one player (schema: Modules/Settings)
+	MOVEMENT_TELEPORT_GRACE = 0.5, -- after a server teleport, stale positions from the client re-anchor, no penalty
+	-- Audit fixes (2026-09-28): stop a cheater from hopping onto an opponent's front to read their number.
+	MOVEMENT_PATH_SLACK = 4, -- a dash or grapple may overshoot its path by this many studs (collisions, rounding)
+	MOVEMENT_HOP_STUDS = 8, -- a single accepted step this long that no dash/knockback explains is a "hop" (walking covers ~3)...
+	MOVEMENT_HOP_READ_DELAY = 0.6, -- ...and the fighter learns no new numbers for this long after it
+
+	-- Kill-farming limit (audit fix, 2026-09-28; rules in Lib/RewardRules). Placeholder, owner to tune.
+	FARM_WINDOW_SECONDS = 60, -- eliminating the same victim pays (yen + leaderboard kill)...
+	FARM_MAX_PAID_PER_PAIR = 3, -- ...at most this many times within the window; beyond that it still scores
+
+	-- Request throttles per player (audit fix, 2026-09-28; Lib/RateLimiter).
+	ABILITY_RETRY_INTERVAL = 0.25, -- after an ability request that found no target or no room, the next one waits this long
+	EQUIP_MIN_INTERVAL = 0.25, -- seconds between character equip requests
+	PURCHASE_MIN_INTERVAL = 0.25, -- seconds between yen-shop purchase requests
+	ROUND_STATE_MIN_INTERVAL = 0.5, -- GetRoundState faster than this gets the last broadcast instead of a rebuild
+	CODE_PURGE_SECONDS = 5, -- retired codes past their reuse cooldown are forgotten this often
 
 	-- Kill leaderboards (owner-approved 2026-09-23): all-time + weekly (Monday 00:00 UTC), global via DataStores.
 	LEADERBOARD_FLUSH_SECONDS = 30, -- unsaved kills are added to the stores this often (and on shutdown)
@@ -108,6 +119,8 @@ local Constants = {
 	LEADERBOARD_ROWS = 10, -- rows shown on each board
 	LEADERBOARD_DEPTH = 100, -- how deep the fetched list goes ("YOU · #37"; deeper = unranked)
 	LEADERBOARD_STORE_VERSION = "v1", -- bump to start both boards from zero
+	LEADERBOARD_NAME_RETRY_SECONDS = 300, -- a display name Roblox couldn't give us is asked for again after this long
+	LEADERBOARD_HEADSHOTS_KEPT = 64, -- client: headshot images cached at most (the boards show 10 rows each)
 
 	-- Clashes (owner-approved 2026-09-23, rules in Lib/ClashRules): the same attack ability started at each
 	-- other by two fighters cancels both and locks them face to face; first correct code wins as usual.
@@ -341,9 +354,6 @@ local Constants = {
 	DEV_RECEIPT_RESULT_ATTRIBUTE = "NAU_DevReceiptResult",
 	-- Studio-only: "userId:count,..." on ServerScriptService adds test kills to both leaderboards. Ignored live.
 	DEV_FAKE_KILLS_ATTRIBUTE = "NAU_DevFakeKills",
-	-- Studio-only: a number on a Player makes the friend booster count that many friends in the server (solo
-	-- testing). Ignored live.
-	DEV_FRIENDS_ATTRIBUTE = "NAU_DevFriends",
 	-- Studio-only: a number on ServerScriptService replaces the round length (seconds) for rounds that start
 	-- after it's set, so the 30-second alert and sudden death can be tested without waiting 8 minutes. Ignored live.
 	DEV_ROUND_SECONDS_ATTRIBUTE = "NAU_DevRoundSeconds",

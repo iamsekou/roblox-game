@@ -310,7 +310,10 @@ local function updateVisibility()
 		local scale = 1
 		local root = plate.root
 		local humanoid = plate.humanoid
-		local hidden = hiddenUntil[userId] ~= nil and t < hiddenUntil[userId]
+		if hiddenUntil[userId] ~= nil and t >= hiddenUntil[userId] then
+			hiddenUntil[userId] = nil -- Blur Step over
+		end
+		local hidden = hiddenUntil[userId] ~= nil
 		if
 			canSee
 			and not hidden
@@ -401,8 +404,19 @@ function NumberPlateController.Start()
 
 	ClientState.Changed:Connect(function(kind)
 		if kind == "round" then
+			local r = ClientState.round
+			if r and r.phase ~= "InRound" then
+				table.clear(hiddenUntil) -- nothing from a finished round carries over
+				table.clear(grants)
+			end
 			reconcile()
+		elseif kind == "life" and ClientState.life.alive ~= true then
+			-- Reading exceptions end with our life (the server ends them too: audit fix, 2026-09-28).
+			table.clear(grants)
 		end
+	end)
+	Players.PlayerRemoving:Connect(function(player)
+		hiddenUntil[player.UserId] = nil
 	end)
 
 	task.spawn(function()

@@ -14,6 +14,7 @@ local Constants = require(ReplicatedStorage.Shared.Modules.Constants)
 local MapRegistry = require(ReplicatedStorage.Shared.Modules.MapRegistry)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local MatchCore = require(script.Parent.Parent.Lib.MatchCore)
+local RateLimiter = require(script.Parent.Parent.Lib.RateLimiter)
 local RoundTimer = require(script.Parent.Parent.Lib.RoundTimer)
 local TeamRules = require(script.Parent.Parent.Lib.TeamRules)
 local EconomyService = require(script.Parent.EconomyService)
@@ -40,6 +41,9 @@ local state = {
 local queued: { [Player]: number } = {} -- player -> time they queued (earliest first)
 local pendingRespawn: { [Player]: number } = {} -- player -> lifeId whose respawn is already scheduled
 local lifeStartedHandlers: { (player: Player, match: any, lifeId: number) -> () } = {}
+local stateRequests = RateLimiter.new(Constants.ROUND_STATE_MIN_INTERVAL)
+local lastState: any = nil -- the latest RoundState broadcast (answers GetRoundState requests that come too fast)
+local lastPurge = 0
 
 -- Other systems (AbilityService) hear about every new arena life: round start, respawn, mid-round join.
 function RoundManager.onLifeStarted(handler: (player: Player, match: any, lifeId: number) -> ())
@@ -137,8 +141,12 @@ local function setElims(player: Player, value: number)
 	EconomyService.leaderstat(player, "Elims").Value = value
 end
 
-local function buildState()
-	state.seq += 1
+-- `bump`: a broadcast (a new state). A reply to GetRoundState doesn't bump the sequence number: it's the same
+-- state, and bumping on every request let one client push everyone's sequence along.
+local function buildState(bump: boolean)
+	if bump then
+		state.seq += 1
+	end
 	local match = state.match
 	local participants, scores = {}, {}
 	if match then
@@ -179,7 +187,8 @@ local function broadcast()
 	broadcastScheduled = true
 	task.defer(function()
 		broadcastScheduled = false
-		Remotes.RoundState:FireAllClients(buildState())
+		lastState = buildState(true)
+		Remotes.RoundState:FireAllClients(lastState)
 	end)
 end
 
@@ -298,6 +307,7 @@ function RoundManager.onLifeLost(victimId: number, info: { cause: string, attack
 			setElims(attacker, attackerState.score)
 		end
 	end
+	NumberAssignmentService.endLife(victimId) -- reading exceptions end with the life
 	devLog(string.format("life lost: %s cause=%s t=%.2f", victim.Name, info.cause, os.clock()))
 	Remotes.MatchFeed:FireAllClients({
 		kind = "eliminated",
@@ -503,18 +513,29 @@ local function tick()
 			end
 			joinMidRound(player)
 		end
-		-- Too few fighters: wait a grace period for someone to join, then end with no winner.
-		if match:count() < minPlayers() then
+		-- Too few fighters, or (team battle) one side emptied: wait a grace period for someone to join (joiners go
+		-- to the smaller team), then end. A team left on its own wins by forfeit; otherwise nobody wins.
+		-- (Studio's solo switch, NAU_DevMinPlayers below 2, keeps a one-team test round running.)
+		local soleTeam = if minPlayers() >= 2 then match:soleTeam() else nil
+		if match:count() < minPlayers() or soleTeam ~= nil then
 			if not state.graceEndsAt then
 				state.graceEndsAt = t + Constants.UNDERPOPULATED_GRACE
 				broadcast()
 			elseif t >= state.graceEndsAt then
-				RoundManager.finish(match:endAsDraw("not_enough_players"))
+				if soleTeam then
+					RoundManager.finish(match:endByForfeit(soleTeam))
+				else
+					RoundManager.finish(match:endAsDraw("not_enough_players"))
+				end
 				return
 			end
 		elseif state.graceEndsAt then
 			state.graceEndsAt = nil
 			broadcast()
+		end
+		if t - lastPurge >= Constants.CODE_PURGE_SECONDS then
+			lastPurge = t
+			match:purge(t)
 		end
 		alertTimeLeft(match, t)
 		if t >= state.endsAt then
@@ -604,16 +625,24 @@ function RoundManager.Init()
 	PlayerLifeService.onDied = onDied
 	Remotes.RequestFight.OnServerInvoke = RoundManager.requestFight
 	Remotes.LeaveQueue.OnServerInvoke = RoundManager.leaveQueue
-	Remotes.GetRoundState.OnServerInvoke = function()
-		return buildState()
+	Remotes.GetRoundState.OnServerInvoke = function(player: Player)
+		if lastState and not RateLimiter.allow(stateRequests, player, os.clock()) then
+			return lastState
+		end
+		return buildState(false)
 	end
 	Players.PlayerRemoving:Connect(function(player)
 		queued[player] = nil
 		pendingRespawn[player] = nil
 		lastQueueRequest[player] = nil
+		RateLimiter.forget(stateRequests, player)
 		local match = state.match
 		if match and match.participants[player.UserId] then
-			match:removeParticipant(player.UserId, now())
+			-- In sudden death, a tied fighter leaving can leave a sole leader: they win now.
+			local winner = match:removeParticipant(player.UserId, now())
+			if winner and state.phase == "InRound" and state.match == match then
+				RoundManager.finish(winner)
+			end
 			broadcast()
 		end
 	end)

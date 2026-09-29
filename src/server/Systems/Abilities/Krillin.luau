@@ -73,6 +73,12 @@ Krillin.ultimate = {
 					task.wait(STEP)
 					travelled = math.min(length, travelled + speed * STEP)
 					local position = origin + direction * travelled
+					-- Marks are Krillo's reading exceptions, so they stop with his life (audit fix, 2026-09-28):
+					-- a disc still flying after he's down marks nobody.
+					if not ctx.stillValid() then
+						ctx.fx("krillin_disc_stop", { position = position })
+						break
+					end
 					if ctx.blockedByBarrier(position) then
 						ctx.fx("krillin_disc_stop", { position = position })
 						break

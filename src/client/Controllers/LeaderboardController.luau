@@ -83,19 +83,32 @@ local function text(props: { [string]: any }): TextLabel
 	return label
 end
 
+-- Never judged by the id's sign (Studio's test players are negative): Roblox simply has no picture for an id
+-- it doesn't know, which leaves the slot blank and isn't asked about again for a while.
+local headshotCount = 0
+local headshotRetryAt: { [number]: number } = {}
 local function headshot(userId: number, image: ImageLabel)
 	if headshots[userId] then
 		image.Image = headshots[userId]
 		return
 	end
 	image.Image = ""
-	if userId <= 0 then
+	if os.clock() < (headshotRetryAt[userId] or 0) then
 		return
 	end
+	headshotRetryAt[userId] = os.clock() + Constants.LEADERBOARD_NAME_RETRY_SECONDS -- also: one request in flight
 	task.spawn(function()
 		local ok, content = pcall(Players.GetUserThumbnailAsync, Players, userId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100)
-		if ok and content then
+		if ok and type(content) == "string" and content ~= "" then
+			-- A bounded cache: the boards show 20 rows, so starting over now and then costs a few re-fetches.
+			if headshotCount >= Constants.LEADERBOARD_HEADSHOTS_KEPT then
+				table.clear(headshots)
+				table.clear(headshotRetryAt)
+				headshotCount = 0
+			end
 			headshots[userId] = content
+			headshotCount += 1
+			headshotRetryAt[userId] = nil
 			if image:GetAttribute("UserId") == userId then
 				image.Image = content
 			end
@@ -366,8 +379,8 @@ local function animate()
 			gradient.Rotation = (now * 50) % 360
 		end
 		local champion = board.floating:FindFirstChild("Champion")
-		if champion and champion:IsA("Model") then
-			local anchor = board.floating:FindFirstChild("ChampionAnchor") :: BasePart
+		local anchor = board.floating:FindFirstChild("ChampionAnchor")
+		if champion and champion:IsA("Model") and anchor and anchor:IsA("BasePart") then
 			if champion ~= board.champion then
 				board.champion = champion
 				board.championOffset = anchor.CFrame:ToObjectSpace(champion:GetPivot())

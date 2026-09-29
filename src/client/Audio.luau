@@ -6,6 +6,7 @@ local SoundService = game:GetService("SoundService")
 local Audio = {}
 
 local WORLD_SOUND_RANGE = 120 -- studs: a sound in the world (e.g. an ability cast) fades out by this distance
+local ONE_SHOT_MAX_SECONDS = 10 -- a one-shot effect is removed after this even if Roblox never says it ended
 
 -- Phase 4 picks (owner-approved: Creator Store audio chosen by Claude for the owner to review). Only licensed
 -- library audio Roblox publishes for every experience: APM Music ("APMOfficial"), Pro Sound Effects
@@ -23,7 +24,7 @@ Audio.SOUNDS = {
 	sudden_death = { id = "rbxassetid://9114631461", volume = 0.6 }, -- gong whoosh (PSE)
 	round_won = { id = "rbxassetid://9042539915", volume = 0.6 }, -- "There's No Stopping Us - Hit" (APM)
 	ability_cast = { id = "rbxassetid://9114159659", volume = 0.45 }, -- doppler whoosh, at the caster (PSE)
-	income = { id = "rbxassetid://9113381319", volume = 0.4 }, -- passive yen: beads, like coins (PSE)
+	income = { id = "rbxassetid://9113381319", volume = 0.4 }, -- credits from a purchase: beads, like coins (PSE)
 	-- Shop (owner-approved slots)
 	shop_boot = { id = "rbxassetid://9120984896", volume = 0.6 }, -- the menu powers up: glassy zap (PSE)
 	shop_select = { id = "rbxassetid://9118383130", volume = 0.5 }, -- a roster card is picked: servo (PSE)
@@ -80,12 +81,14 @@ function Audio.play(name: string, parent: Instance?)
 		s:Play()
 	else
 		SoundService:PlayLocalSound(s)
-		task.delay(10, function()
-			if s.Parent then
-				s:Destroy()
-			end
-		end)
 	end
+	-- Ended never fires if the sound fails to load or its part leaves the world mid-sound (a caster streaming
+	-- out, respawning): this makes sure every one-shot goes away (audit fix, 2026-09-28; the effects are short).
+	task.delay(ONE_SHOT_MAX_SECONDS, function()
+		if s.Parent then
+			s:Destroy()
+		end
+	end)
 end
 
 local current: Sound? = nil

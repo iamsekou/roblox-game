@@ -16,6 +16,7 @@ local VOID_Y = -40
 local VOID_CHECK_INTERVAL = 0.5
 
 local spawnTokens: { [Player]: number } = {}
+local brokenReported: { [Player]: Model } = {} -- player -> a character that lost its root/Humanoid, already sent down
 
 -- The template SpawnLocation hands out a 10-second ForceField. Nothing in NAU is damage-based,
 -- and a bubble would wrongly suggest the player can't be eliminated.
@@ -85,7 +86,8 @@ local function watchCharacter(player: Player, character: Model)
 	if not humanoid then
 		return
 	end
-	humanoid.Died:Connect(function()
+	-- Once: a humanoid dies once, and the connection (holding this player and character) goes with it.
+	humanoid.Died:Once(function()
 		if player.Character == character and PlayerLifeService.onDied then
 			PlayerLifeService.onDied(player)
 		end
@@ -110,19 +112,46 @@ function PlayerLifeService.Init()
 	end
 	Players.PlayerRemoving:Connect(function(player)
 		spawnTokens[player] = nil
+		brokenReported[player] = nil
 	end)
 end
 
--- Anyone who falls far below the map dies through the normal death path.
+-- Characters that lost their root part or their Humanoid (audit fix, 2026-09-28). A client can delete parts of
+-- its own character and the deletion reaches the server: without a root nobody could read that fighter's number
+-- or hit them, so they'd be unkillable while still eliminating others. Such a character dies through the normal
+-- death path (no credit to anyone, same respawn rules). Reported once per character.
+local function checkPlayer(player: Player)
+	local character = player.Character
+	if not character or not character.Parent or brokenReported[player] == character then
+		return
+	end
+	local root = character:FindFirstChild("HumanoidRootPart")
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if humanoid and humanoid.Health <= 0 then
+		return -- already dead: the Died path handles it
+	end
+	if not humanoid or not root or not root:IsA("BasePart") then
+		brokenReported[player] = character
+		if humanoid then
+			humanoid.Health = 0 -- fires Died -> onDied
+		elseif PlayerLifeService.onDied then
+			PlayerLifeService.onDied(player) -- no Humanoid left to fire Died
+		end
+		return
+	end
+	-- Anyone who falls far below the map dies through the normal death path.
+	if root.Position.Y < VOID_Y then
+		humanoid.Health = 0
+	end
+end
+
 function PlayerLifeService.Start()
 	while true do
 		task.wait(VOID_CHECK_INTERVAL)
 		for _, player in Players:GetPlayers() do
-			local character = player.Character
-			local root = character and character:FindFirstChild("HumanoidRootPart")
-			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-			if root and humanoid and humanoid.Health > 0 and (root :: BasePart).Position.Y < VOID_Y then
-				humanoid.Health = 0
+			local ok, err = pcall(checkPlayer, player)
+			if not ok then
+				warn("[NAU] life check failed: " .. tostring(err))
 			end
 		end
 	end

@@ -9,23 +9,41 @@
 --
 -- No global lookup exists anywhere a client can read: every change goes out with FireClient to the
 -- single observer it belongs to, and GetMyCodes answers for the caller's own identity.
+--
+-- Audit fixes (2026-09-28):
+--   * The observer is judged from the position the movement check last accepted (MovementGuard), never the
+--     raw position its client reports, so a teleport or a hop onto someone's front discloses nothing.
+--   * When the movement check pulls a player back, every number they learned since the spot they're put
+--     back to is replaced (revokeSince): a number read from an illegal spot is useless.
+--   * Reading exceptions (Krillin / Sasuke / Gojo) end with the caster's life (endLife).
+--   * Decorations that hide a plate on screen (banners, tree canopies: CanQuery off, so ordinary raycasts pass
+--     through them) block the server's line of sight too, through a server-only copy (MapService.sightBlockers).
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Constants = require(ReplicatedStorage.Shared.Modules.Constants)
 local PlateVisibility = require(ReplicatedStorage.Shared.Modules.PlateVisibility)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
+local MapService = require(script.Parent.MapService)
 
 local NumberAssignmentService = {}
 
 local VIEW_DISTANCE = Constants.PLATE_VIEW_DISTANCE + Constants.PLATE_SERVER_SLACK_DISTANCE
 local VIEW_CONE = Constants.PLATE_VIEW_CONE_DEGREES + Constants.PLATE_SERVER_SLACK_DEGREES
+local EYES = Vector3.new(0, 1.5, 0)
 
 local attached = false
+local currentMatch: any = nil
 local assigned: { [number]: { [number]: string } } = {} -- observer -> target -> code (server truth)
 local disclosed: { [number]: { [number]: string } } = {} -- observer -> target -> code the client was sent
+local disclosedAt: { [number]: { [number]: number } } = {} -- observer -> target -> when it was sent
 local pending: { [number]: { { target: number, code: string | boolean } } } = {}
 local flushScheduled = false
+
+-- Where an observer is, for the gate: set by MovementGuard (the last position it accepted). nil = don't judge.
+local positionSource: (Player) -> Vector3? = function(_player)
+	return nil
+end
 
 -- Ability hooks (approved sheet, docs/ABILITIES.md), all set by AbilityService:
 local grants: { [number]: { PlateVisibility.Grant } } = {} -- observer -> reading exceptions (Krillin/Sasuke/Gojo)
@@ -63,6 +81,9 @@ end
 function NumberAssignmentService.onCodeChange(observer: number, target: number, code: string?)
 	local mine = assigned[observer]
 	if not mine then
+		if code == nil then
+			return -- a retirement for an observer we hold nothing for (they left): nothing to record or tell
+		end
 		mine = {}
 		assigned[observer] = mine
 	end
@@ -70,6 +91,9 @@ function NumberAssignmentService.onCodeChange(observer: number, target: number, 
 	local told = disclosed[observer]
 	if told and told[target] and told[target] ~= code then
 		told[target] = nil
+		if disclosedAt[observer] then
+			disclosedAt[observer][target] = nil
+		end
 		queue(observer, target, false)
 	end
 end
@@ -106,8 +130,9 @@ local function granted(observerId: number, targetId: number, distance: number, t
 	return false
 end
 
--- Nothing solid between the two heads (other fighters don't block; decorations with CanQuery off don't either).
-local function lineOfSight(from: BasePart, to: BasePart): boolean
+-- Nothing solid between the two heads (other fighters don't block). Decorations that hide a plate on screen
+-- block too: they don't take ordinary raycasts, so the map keeps a server-only copy of them to test against.
+local function lineOfSight(from: Vector3, to: Vector3): boolean
 	local params = RaycastParams.new()
 	local characters = {}
 	for _, player in Players:GetPlayers() do
@@ -123,16 +148,21 @@ local function lineOfSight(from: BasePart, to: BasePart): boolean
 	end
 	params.FilterDescendantsInstances = characters
 	params.FilterType = Enum.RaycastFilterType.Exclude
-	local origin = from.Position + Vector3.new(0, 1.5, 0)
-	local goal = to.Position + Vector3.new(0, 1.5, 0)
-	return workspace:Raycast(origin, goal - origin, params) == nil
+	local origin = from + EYES
+	local goal = to + EYES
+	if workspace:Raycast(origin, goal - origin, params) ~= nil then
+		return false
+	end
+	local blockers = MapService.sightBlockers()
+	return blockers == nil or blockers:Raycast(origin, goal - origin) == nil
 end
 
 local function discloseVisibleCodes()
 	local t = workspace:GetServerTimeNow()
 	for observerId, targets in assigned do
-		local observerRoot = rootOf(Players:GetPlayerByUserId(observerId))
-		if observerRoot and not (blindUntil[observerId] and t < blindUntil[observerId]) then
+		local observer = Players:GetPlayerByUserId(observerId)
+		local observerPosition = if observer and rootOf(observer) then positionSource(observer) else nil
+		if observerPosition and not (blindUntil[observerId] and t < blindUntil[observerId]) then
 			for targetId, code in targets do
 				local told = disclosed[observerId]
 				if not told or told[targetId] ~= code then
@@ -141,15 +171,17 @@ local function discloseVisibleCodes()
 					local readable = root ~= nil
 						and not hidden
 						and (
-							PlateVisibility.canRead(root.CFrame, observerRoot.Position, VIEW_DISTANCE, VIEW_CONE)
-							or granted(observerId, targetId, (root.Position - observerRoot.Position).Magnitude, t)
+							PlateVisibility.canRead(root.CFrame, observerPosition, VIEW_DISTANCE, VIEW_CONE)
+							or granted(observerId, targetId, (root.Position - observerPosition).Magnitude, t)
 						)
-					if readable and lineOfSight(root :: BasePart, observerRoot) then
+					if readable and lineOfSight((root :: BasePart).Position, observerPosition) then
 						if not told then
 							told = {}
 							disclosed[observerId] = told
 						end
 						told[targetId] = code
+						disclosedAt[observerId] = disclosedAt[observerId] or {}
+						disclosedAt[observerId][targetId] = t
 						queue(observerId, targetId, code)
 					end
 				end
@@ -158,14 +190,48 @@ local function discloseVisibleCodes()
 	end
 end
 
-function NumberAssignmentService.attach(_match: any)
+function NumberAssignmentService.attach(match: any)
 	attached = true
+	currentMatch = match
 	table.clear(assigned)
 	table.clear(disclosed)
+	table.clear(disclosedAt)
 	table.clear(grants)
 	table.clear(blindUntil)
 	table.clear(hiddenUntil)
 	table.clear(decoyRoots)
+end
+
+-- Movement check hooks ---------------------------------------------------------------------------
+
+-- MovementGuard hands over where each player may be judged from (the last position it accepted).
+function NumberAssignmentService.setPositionSource(source: (Player) -> Vector3?)
+	positionSource = source
+end
+
+-- The movement check pulled this observer back to where they were at `since`: every number disclosed to them
+-- from then on was read from somewhere they weren't allowed to be. Those codes are replaced (the old ones
+-- answer "stale": no kill, no strike) and the plates drop. Returns how many were replaced.
+function NumberAssignmentService.revokeSince(observerId: number, since: number): number
+	local times = disclosedAt[observerId]
+	if not times or not currentMatch or currentMatch.ended then
+		return 0
+	end
+	local targets = {}
+	for target, at in times do
+		if at >= since then
+			table.insert(targets, target)
+		end
+	end
+	if #targets == 0 then
+		return 0
+	end
+	return currentMatch:reissue(observerId, targets, workspace:GetServerTimeNow())
+end
+
+-- A fighter's life ended: their reading exceptions end with it (they don't carry into the next life).
+function NumberAssignmentService.endLife(observerId: number)
+	grants[observerId] = nil
 end
 
 -- Ability hooks ----------------------------------------------------------------------------------
@@ -201,8 +267,13 @@ end
 -- Round over: forget everything and tell every client to drop all plates.
 function NumberAssignmentService.detach()
 	attached = false
+	currentMatch = nil
 	table.clear(assigned)
 	table.clear(disclosed)
+	table.clear(disclosedAt)
+	table.clear(grants)
+	table.clear(hiddenUntil)
+	table.clear(decoyRoots)
 	pending = {}
 	for _, player in Players:GetPlayers() do
 		Remotes.CodesChanged:FireClient(player, { reset = true, changes = {} })
@@ -220,8 +291,10 @@ function NumberAssignmentService.Init()
 	Players.PlayerRemoving:Connect(function(player)
 		assigned[player.UserId] = nil
 		disclosed[player.UserId] = nil
+		disclosedAt[player.UserId] = nil
 		grants[player.UserId] = nil
 		blindUntil[player.UserId] = nil
+		hiddenUntil[player.UserId] = nil
 	end)
 end
 

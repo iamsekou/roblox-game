@@ -30,6 +30,8 @@ type Entry = {
 	profile: ProfileData.Profile,
 	loaded: boolean, -- false until the saved profile arrived (nothing is saved before that)
 	saving: boolean,
+	settingsChanged: boolean?, -- the player changed a setting before the save arrived: keep their choice
+	toldOffline: boolean?, -- they've been told this session isn't being saved
 }
 
 -- In Studio, game.JobId is empty; a random id keeps each Play session's lock distinct.
@@ -94,7 +96,9 @@ local function load(player: Player)
 			entry.profile.yen = EconomyService.getBalance(player)
 			entry.profile.owned = EconomyService.boughtList(player)
 			entry.profile.equipped = AbilityService.applySavedEquip(player, profile.equipped)
-			entry.profile.settings = profile.settings
+			if not entry.settingsChanged then
+				entry.profile.settings = profile.settings -- (a change made while loading wins, and is saved from now on)
+			end
 			entry.profile.receipts = profile.receipts
 			log(string.format("loaded %s: %d YC, %d bought, equipped %s%s", player.Name, profile.yen, #profile.owned, profile.equipped, if force then " (lock taken over)" else ""))
 			tell(player, "loaded", entry.profile.settings)
@@ -124,6 +128,12 @@ function save(player: Player, entry: Entry, release: boolean): boolean
 	local store = if entry.loaded then SafeStore.regular(Constants.PROFILE_STORE) else nil
 	if not store then
 		inFlight -= 1
+		-- DataStores became unreachable after this player's profile loaded: tell them once, like a player who
+		-- joined while they were down (the settings menu shows the unsaved-session notice).
+		if entry.loaded and SafeStore.isOffline() and not entry.toldOffline and not release then
+			entry.toldOffline = true
+			tell(player, "offline", entry.profile.settings)
+		end
 		return false
 	end
 	entry.saving = true
@@ -205,6 +215,7 @@ local function handleSetSettings(player: Player, changes: any)
 		return { status = "malformed", settings = entry.profile.settings }
 	end
 	entry.profile.settings = updated
+	entry.settingsChanged = true
 	return { status = "ok", settings = updated }
 end
 

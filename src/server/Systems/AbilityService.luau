@@ -23,6 +23,7 @@ local CharacterDefs = require(ReplicatedStorage.Shared.Modules.CharacterDefs)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local AbilityRules = require(script.Parent.Parent.Lib.AbilityRules)
 local ClashRules = require(script.Parent.Parent.Lib.ClashRules)
+local RateLimiter = require(script.Parent.Parent.Lib.RateLimiter)
 local MapService = require(script.Parent.MapService)
 local RoundManager = require(script.Parent.RoundManager)
 local NumberAssignmentService = require(script.Parent.NumberAssignmentService)
@@ -77,6 +78,10 @@ local barriers: { { owner: number, root: BasePart, radius: number, untilTime: nu
 local eliminationListeners: { [any]: (attacker: Player, victimId: number) -> () } = {}
 local decoyModels: { [number]: Model } = {}
 local decoyFolder: Folder? = nil
+-- Request throttles (audit fix, 2026-09-28). An ability whose prepare() found no target or no room spends no
+-- cooldown, so without this a client could ask again every frame and make the server raycast each time.
+local failedRequests: { [Player]: number } = {} -- when the player's last request failed in prepare()
+local equipRequests = RateLimiter.new(Constants.EQUIP_MIN_INTERVAL)
 
 local function now(): number
 	return workspace:GetServerTimeNow()
@@ -286,6 +291,7 @@ end
 -- The toolkit an ability module works with. Everything here is server-side and validated.
 local function makeContext(player: Player, entry: Entry, aim: any, eye: any)
 	local match = entry.match
+	local lifeId = entry.lifeId -- the life this cast belongs to (entry.lifeId moves on when the fighter respawns)
 	local ctx = {}
 	ctx.player = player
 	ctx.userId = player.UserId
@@ -317,7 +323,7 @@ local function makeContext(player: Player, entry: Entry, aim: any, eye: any)
 			and not match.ended
 			and p ~= nil
 			and p.alive
-			and p.lifeId == entry.lifeId
+			and p.lifeId == lifeId
 			and rootOf(player) ~= nil
 	end
 
@@ -660,11 +666,13 @@ local function makeContext(player: Player, entry: Entry, aim: any, eye: any)
 		return true
 	end
 
-	-- Calls `handler(victimId)` for each elimination this caster makes until the returned stop() runs.
+	-- Calls `handler(victimId)` for each elimination this caster makes in this life until the returned stop()
+	-- runs (an elimination in a later life never counts toward this cast: audit fix, 2026-09-28).
 	function ctx.onMyEliminations(handler: (victimId: number) -> ()): () -> ()
 		local key = {}
 		eliminationListeners[key] = function(attacker: Player, victimId: number)
-			if attacker == player then
+			local p = match.participants[player.UserId]
+			if attacker == player and p and p.lifeId == lifeId then
 				handler(victimId)
 			end
 		end
@@ -791,12 +799,19 @@ local function handleUse(player: Player, slot: any, aim: any, eye: any)
 		return { status = "not_available" }
 	end
 
-	-- prepare() never yields: it validates targets and returns the plan, or a reason (no cooldown spent).
+	-- prepare() never yields: it validates targets and returns the plan, or a reason (no cooldown spent). It
+	-- raycasts, so a player whose last request failed there waits ABILITY_RETRY_INTERVAL before the next.
+	local failedAt = failedRequests[player]
+	if failedAt and t - failedAt < Constants.ABILITY_RETRY_INTERVAL then
+		return { status = "rate_limited" }
+	end
 	local ctx = makeContext(player, entry, aim, eye)
 	local plan, why = ability.prepare(ctx)
 	if not plan then
+		failedRequests[player] = t
 		return { status = why or "no_target" }
 	end
+	failedRequests[player] = nil
 	AbilityRules.activate(entry.rules, slot, t, COOLDOWNS[slot], plan.castSeconds or 0)
 	pushState(player)
 	if RunService:IsStudio() then
@@ -840,6 +855,9 @@ local function handleUse(player: Player, slot: any, aim: any, eye: any)
 end
 
 local function handleEquip(player: Player, characterId: any)
+	if not RateLimiter.allow(equipRequests, player, os.clock()) then
+		return { status = "rate_limited" }
+	end
 	local def = if type(characterId) == "string" then CharacterDefs.byId[characterId] else nil
 	if not def then
 		return { status = "unknown" }
@@ -976,7 +994,27 @@ function AbilityService.Init()
 		mildBlockedUntil[player.UserId] = nil
 		lastGuardSpark[player.UserId] = nil
 		clashCasts[player.UserId] = nil
+		failedRequests[player] = nil
+		RateLimiter.forget(equipRequests, player)
+		ClashRules.forget(clashState, player.UserId)
 	end)
+end
+
+-- A round started or ended: drop everything that belonged to the old one (clones, barriers, listeners, pending
+-- clash casts, and each player's ability state, which pointed at the finished match and kept it alive).
+local function clearRound(live: any)
+	for decoyId in decoyModels do
+		removeDecoy(decoyId)
+	end
+	table.clear(barriers)
+	table.clear(eliminationListeners)
+	table.clear(clashCasts)
+	ClashRules.clearPending(clashState)
+	for player, entry in entries do
+		if entry.match ~= live then
+			entries[player] = nil
+		end
+	end
 end
 
 -- Tell clients when a round starts or ends, so ability slots come and go with it; clear leftovers.
@@ -988,13 +1026,16 @@ function AbilityService.Start()
 		local live = if match and not match.ended then match else nil
 		if live ~= lastMatch then
 			lastMatch = live
-			for decoyId in decoyModels do
-				removeDecoy(decoyId)
+			-- One bad step must not stop this loop for the server's life (it clears every round's leftovers).
+			local ok, err = pcall(clearRound, live)
+			if not ok then
+				warn("[NAU] ability round cleanup failed: " .. tostring(err))
 			end
-			table.clear(barriers)
-			table.clear(eliminationListeners)
 			for _, player in Players:GetPlayers() do
-				pushState(player)
+				local sent, why = pcall(pushState, player)
+				if not sent then
+					warn("[NAU] ability state push failed: " .. tostring(why))
+				end
 			end
 		end
 	end

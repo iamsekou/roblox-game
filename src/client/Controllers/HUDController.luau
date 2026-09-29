@@ -792,20 +792,14 @@ local function onRoundAlert(alert: any)
 	UIMotion.pop(refs.timer)
 end
 
--- Passive yen: a "+50 YC" that slides out to the left of the yen counter (the kill feed sits below it), with
--- what it was for. Payouts that land together (playtime and the friend boost every 10 minutes) show one
--- after the other. Yields until the popup is gone.
+-- A credit bundle arrived: a "+5,000 YC" that slides out to the left of the yen counter (the kill feed sits
+-- below it). Notices that land together show one after the other. Yields until the popup is gone.
+-- (Passive yen and the friend booster used this popup too; the owner removed them, 2026-09-29.)
 local incomeQueue: { any } = {}
 local showingIncome = false
 
 local function showIncome(notice: any)
-	local caption = "PLAYTIME"
-	if notice.source == "purchase" then
-		caption = "PURCHASED · THANK YOU!"
-	elseif notice.source == "friends" then
-		local friends = if type(notice.friends) == "number" then notice.friends else 0
-		caption = string.format("FRIEND BOOST · %d %s HERE", friends, if friends == 1 then "FRIEND" else "FRIENDS")
-	end
+	local caption = "PURCHASED · THANK YOU!"
 	-- A CanvasGroup fades the plate, its accent and the text together.
 	local popup = UI.new("CanvasGroup", {
 		Name = "IncomePopup",
@@ -840,7 +834,7 @@ local function showIncome(notice: any)
 end
 
 local function onIncome(notice: any)
-	if type(notice) ~= "table" or type(notice.amount) ~= "number" or not refs.yenPanel then
+	if type(notice) ~= "table" or notice.source ~= "purchase" or type(notice.amount) ~= "number" or not refs.yenPanel then
 		return
 	end
 	table.insert(incomeQueue, notice)

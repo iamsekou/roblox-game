@@ -22,6 +22,17 @@ test("[CLASH] same ability, aimed at each other, close in time and space: clash"
 	T.eq(#s.pending, 0, "both leave the pending list")
 end)
 
+test("[CLASH] a leaver's pending cast is dropped; a round end drops them all", function()
+	local s = ClashRules.new()
+	ClashRules.offer(s, cast(1, "Goku.ultimate", 0, 0, EAST), PARAMS)
+	ClashRules.offer(s, cast(3, "Luffy.ultimate", 0, 50, EAST), PARAMS)
+	ClashRules.forget(s, 1)
+	T.eq(ClashRules.offer(s, cast(2, "Goku.ultimate", 0.4, 20, WEST), PARAMS), nil, "nobody left to clash with")
+	T.eq(#s.pending, 2, "player 3's cast and player 2's new one")
+	ClashRules.clearPending(s)
+	T.eq(#s.pending, 0)
+end)
+
 test("[CLASH] teammates never clash; opposing teams do", function()
 	local s = ClashRules.new()
 	local a = cast(1, "Goku.ultimate", 0, 0, EAST)

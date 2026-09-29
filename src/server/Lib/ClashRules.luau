@@ -134,6 +134,16 @@ function ClashRules.isClashing(state: State, id: number): boolean
 	return state.clashing[id] == true
 end
 
+-- A fighter left the server: drop their pending cast (a clash they're in ends through its own loop).
+function ClashRules.forget(state: State, id: number)
+	removeFor(state, id)
+end
+
+-- A round ended: no cast from it may clash with one from the next.
+function ClashRules.clearPending(state: State)
+	table.clear(state.pending)
+end
+
 -- Where the two stand for the exchange: on the line between them, `distance` apart around the midpoint,
 -- each keeping their own height. Returns (standA, standB, axisAtoB).
 function ClashRules.stances(a: Vector3, b: Vector3, distance: number): (Vector3, Vector3, Vector3)

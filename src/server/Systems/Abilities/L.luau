@@ -50,6 +50,9 @@ L.mild = {
 				end
 				if cameraTokens[ctx.userId] == token then
 					ctx.fx("l_camera_end", { token = token })
+					if not ctx.player.Parent then
+						cameraTokens[ctx.userId] = nil -- Eli left: nothing more to track for them
+					end
 				end
 			end,
 		}

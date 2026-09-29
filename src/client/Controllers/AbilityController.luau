@@ -267,24 +267,41 @@ local function showRadar(points: { Vector3 }, untilTime: number)
 	end
 end
 
--- Deduction: every listed opponent's outline shows through walls for us, until untilTime.
+-- Deduction: every listed opponent's outline shows through walls for us, until untilTime. With streaming on, a
+-- far opponent's character may not be on this client yet: it's outlined as soon as it streams in, for as long
+-- as the Deduction lasts (audit fix, 2026-09-28; before, it was silently skipped).
+local DEDUCTION_RETRY = 0.25
 local function deduce(targets: { number }, untilTime: number)
-	for _, userId in targets do
+	local outlined: { [number]: Model } = {}
+	local function outline(userId: number)
 		local player = Players:GetPlayerByUserId(userId)
 		local character = player and player.Character
-		if character then
-			local outline = Instance.new("Highlight")
-			outline.Name = "NAU_Deduction"
-			outline.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-			outline.FillTransparency = 1
-			outline.OutlineColor = UI.Colors.Gold
-			outline.Adornee = character
-			outline.Parent = workspace.CurrentCamera -- client-local, so only we see it
-			task.delay(math.max(0, untilTime - now()), function()
-				outline:Destroy()
-			end)
+		if not character or not character.Parent or outlined[userId] == character then
+			return
 		end
+		outlined[userId] = character
+		local highlight = Instance.new("Highlight")
+		highlight.Name = "NAU_Deduction"
+		highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+		highlight.FillTransparency = 1
+		highlight.OutlineColor = UI.Colors.Gold
+		highlight.Adornee = character
+		highlight.Parent = workspace.CurrentCamera -- client-local, so only we see it
+		task.delay(math.max(0, untilTime - now()), function()
+			highlight:Destroy()
+		end)
 	end
+	for _, userId in targets do
+		outline(userId)
+	end
+	task.spawn(function()
+		while now() < untilTime do
+			task.wait(DEDUCTION_RETRY)
+			for _, userId in targets do
+				outline(userId)
+			end
+		end
+	end)
 end
 
 -- A clash (owner-approved 2026-09-23): the server has already put us face to face with the opponent and

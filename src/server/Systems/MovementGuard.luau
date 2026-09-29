@@ -6,6 +6,12 @@
 -- A move that doesn't fit is undone: the character is put back where it last moved legitimately, and for
 -- MOVEMENT_PENALTY_SECONDS it learns no numbers (so teleporting in front of someone to read them gains nothing).
 -- Nobody is kicked: a bad network spike can only ever cost a short pull-back.
+--
+-- Reading numbers (audit fixes, 2026-09-28). The plate gate (NumberAssignmentService) judges an observer from
+-- the last position this check accepted, never the raw one a client reports. Knockbacks, dashes and grapples
+-- allow extra travel only along their own path (Lib/MovementRules). A long step that no path explains (a hop:
+-- a lag spike, or a small cheat that still fits the budget) holds new numbers back for MOVEMENT_HOP_READ_DELAY.
+-- A pull-back also replaces every number the player learned since the spot they're pulled back to.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -21,7 +27,8 @@ type Entry = {
 	character: Model,
 	state: MovementRules.State,
 	lastGood: CFrame,
-	grants: { Grant },
+	grants: { Grant }, -- game-granted upward speed (launches)
+	paths: { MovementRules.Path }, -- game-granted horizontal travel (knockbacks, dashes, grapples)
 	violations: number,
 	graceUntil: number, -- just after a server teleport the client may still report where it was
 	-- Accepted positions over the last burst window. The server receives a client's teleport smoothed over a
@@ -69,6 +76,7 @@ local function entryFor(player: Player): Entry?
 			state = nil :: any,
 			lastGood = root.CFrame,
 			grants = {},
+			paths = {},
 			violations = 0,
 			graceUntil = now() + Constants.MOVEMENT_TELEPORT_GRACE,
 			history = { { t = now(), cframe = root.CFrame } },
@@ -89,6 +97,7 @@ function MovementGuard.reset(player: Player)
 		entry.lastGood = root.CFrame
 		entry.graceUntil = t + Constants.MOVEMENT_TELEPORT_GRACE
 		entry.history = { { t = t, cframe = root.CFrame } } -- never pull back across a server teleport
+		table.clear(entry.paths) -- a dash's direction means nothing from the new spot
 	end
 end
 
@@ -105,21 +114,38 @@ function MovementGuard.expect(player: Player, payload: any)
 	local t = now()
 	if payload.kind == "knockback" and typeof(payload.velocity) == "Vector3" then
 		local v = payload.velocity :: Vector3
-		local flat = Vector3.new(v.X, 0, v.Z).Magnitude
-		table.insert(entry.grants, {
-			speed = flat,
-			rise = math.max(v.Y, 0) + Constants.MOVEMENT_RISE_SPEED,
-			untilTime = t + Constants.MOVEMENT_KNOCKBACK_SECONDS,
-		})
+		local untilTime = t + Constants.MOVEMENT_KNOCKBACK_SECONDS
+		local flatSpeed = Vector3.new(v.X, 0, v.Z).Magnitude
+		local path = MovementRules.path(v, flatSpeed * Constants.MOVEMENT_KNOCKBACK_SECONDS, untilTime)
+		if path then
+			table.insert(entry.paths, path)
+		end
+		table.insert(entry.grants, { speed = 0, rise = math.max(v.Y, 0) + Constants.MOVEMENT_RISE_SPEED, untilTime = untilTime })
 	elseif payload.kind == "grapple" and typeof(payload.target) == "Vector3" and type(payload.speed) == "number" then
 		local root = rootOf(entry.character)
-		local distance = if root then (payload.target - root.Position).Magnitude else 50
-		table.insert(entry.grants, {
-			speed = payload.speed,
-			rise = payload.speed,
-			untilTime = t + distance / math.max(payload.speed, 1) + Constants.MOVEMENT_GRANT_TAIL,
-		})
+		if not root then
+			return
+		end
+		local offset = payload.target - root.Position
+		local untilTime = t + offset.Magnitude / math.max(payload.speed, 1) + Constants.MOVEMENT_GRANT_TAIL
+		local flatLength = Vector3.new(offset.X, 0, offset.Z).Magnitude
+		local path = MovementRules.path(offset, flatLength + Constants.MOVEMENT_PATH_SLACK, untilTime)
+		if path then
+			table.insert(entry.paths, path)
+		end
+		-- Pulled upward (a grapple onto a ledge, Blur Step looking up): allow the climb.
+		table.insert(entry.grants, { speed = 0, rise = if offset.Y > 0 then payload.speed else 0, untilTime = untilTime })
 	end
+end
+
+-- The position the plate gate judges this player from: the last one this check accepted (nil until the
+-- current character has been checked once). A position a client merely reports never discloses anything.
+function MovementGuard.trustedPosition(player: Player): Vector3?
+	local entry = entries[player]
+	if entry and entry.character == player.Character then
+		return entry.lastGood.Position
+	end
+	return nil
 end
 
 local function pullBack(player: Player, entry: Entry, flat: number, up: number)
@@ -128,17 +154,21 @@ local function pullBack(player: Player, entry: Entry, flat: number, up: number)
 		return
 	end
 	entry.violations += 1
+	local since = if entry.history[1] then entry.history[1].t else now()
 	local back = if entry.history[1] then entry.history[1].cframe else entry.lastGood
 	entry.character:PivotTo(back)
 	root.AssemblyLinearVelocity = Vector3.zero
 	local t = now()
 	entry.lastGood = back
 	entry.history = { { t = t, cframe = back } }
+	table.clear(entry.paths)
 	MovementRules.reset(entry.state, back.Position, t, limitsFor(entry, t))
 	entry.graceUntil = t + Constants.MOVEMENT_TELEPORT_GRACE -- the pull-back is a server teleport too
 	NumberAssignmentService.blind(player.UserId, t + Constants.MOVEMENT_PENALTY_SECONDS)
+	-- Anything learned on the way (the undone stretch) is replaced: those numbers now answer "stale".
+	local replaced = NumberAssignmentService.revokeSince(player.UserId, since)
 	if RunService:IsStudio() then
-		print(string.format("[NAU] movement check: %s pulled back (%.1f studs across, %.1f up in one step; %d so far)", player.Name, flat, up, entry.violations))
+		print(string.format("[NAU] movement check: %s pulled back (%.1f studs across, %.1f up in one step; %d so far; %d numbers replaced)", player.Name, flat, up, entry.violations, replaced))
 	end
 end
 
@@ -154,8 +184,18 @@ local function check()
 					table.remove(entry.grants, i)
 				end
 			end
-			local ok, flat, up = MovementRules.step(entry.state, root.Position, t, limitsFor(entry, t))
+			for i = #entry.paths, 1, -1 do
+				if t >= entry.paths[i].untilTime or entry.paths[i].left <= 0 then
+					table.remove(entry.paths, i)
+				end
+			end
+			local ok, flat, up, charged = MovementRules.step(entry.state, root.Position, t, limitsFor(entry, t), entry.paths)
 			if ok then
+				if charged > Constants.MOVEMENT_HOP_STUDS then
+					-- Set before the new position becomes trusted (no yield in between), so the plate gate never
+					-- judges the far end of a hop without the hold in place.
+					NumberAssignmentService.blind(player.UserId, t + Constants.MOVEMENT_HOP_READ_DELAY)
+				end
 				entry.lastGood = root.CFrame
 				table.insert(entry.history, { t = t, cframe = root.CFrame })
 				local keep = t - Constants.MOVEMENT_BURST_SECONDS
@@ -181,6 +221,7 @@ function MovementGuard.violations(player: Player): number
 end
 
 function MovementGuard.Init()
+	NumberAssignmentService.setPositionSource(MovementGuard.trustedPosition)
 	Players.PlayerRemoving:Connect(function(player)
 		entries[player] = nil
 	end)

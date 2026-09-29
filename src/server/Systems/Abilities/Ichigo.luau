@@ -34,11 +34,20 @@ Ichigo.mild = {
 					return
 				end
 				local start = root.Position
-				local finish: Vector3
+				local chest = start + CHEST
+				local finish: Vector3? = nil
 				if surface and surface.Normal.Y > 0.6 then
-					finish = surface.Position + Vector3.new(0, 3, 0) -- standing on the spot you looked at
-				else
-					local chest = start + CHEST
+					-- Standing on the spot you looked at, if the way there is clear. The look ray starts at the
+					-- camera, which may sit on the far side of a wall (and a client can place it there on
+					-- purpose), so the dash itself must not pass through anything (audit fix, 2026-09-28).
+					local spot = surface.Position + Vector3.new(0, 3, 0)
+					local way = spot + CHEST - chest
+					if way.Magnitude < 0.5 or ctx.clearDistance(chest, way.Unit, way.Magnitude) >= way.Magnitude - 0.5 then
+						finish = spot
+					end
+				end
+				if not finish then
+					-- A wall, thin air, or a blocked landing: dash toward it and stop just short of anything solid.
 					local offset = target - chest
 					if offset.Magnitude < 1 then
 						return
@@ -47,7 +56,7 @@ Ichigo.mild = {
 					finish = start + offset.Unit * math.max(reach, 0)
 				end
 				ctx.hidePlate(Constants.ICHIGO_FLASH_HIDE)
-				ctx.dashTo(finish, Constants.ICHIGO_FLASH_SPEED)
+				ctx.dashTo(finish :: Vector3, Constants.ICHIGO_FLASH_SPEED)
 				ctx.fx("ichigo_flash", { from = start, to = finish, speed = Constants.ICHIGO_FLASH_SPEED })
 			end,
 		}

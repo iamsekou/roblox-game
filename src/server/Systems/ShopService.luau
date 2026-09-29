@@ -2,18 +2,26 @@
 -- PurchaseItem; the server checks it against Lib/ShopRules (sold for yen? already owned? enough yen?), takes
 -- the yen and grants the character plus every cheaper yen tier. The check, the spend and the grant happen
 -- with no yield in between, so two quick clicks can't buy twice or overspend.
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local CharacterDefs = require(ReplicatedStorage.Shared.Modules.CharacterDefs)
+local Constants = require(ReplicatedStorage.Shared.Modules.Constants)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
+local RateLimiter = require(script.Parent.Parent.Lib.RateLimiter)
 local ShopRules = require(script.Parent.Parent.Lib.ShopRules)
 local EconomyService = require(script.Parent.EconomyService)
 local AbilityService = require(script.Parent.AbilityService)
 
 local ShopService = {}
 
+local requests = RateLimiter.new(Constants.PURCHASE_MIN_INTERVAL)
+
 local function handlePurchase(player: Player, id: any)
+	if not RateLimiter.allow(requests, player, os.clock()) then
+		return { status = "rate_limited", yen = EconomyService.getBalance(player) }
+	end
 	local owned: { [string]: boolean } = {}
 	for _, def in CharacterDefs.list do
 		if AbilityService.owns(player, def.id) then
@@ -37,6 +45,9 @@ end
 
 function ShopService.Init()
 	Remotes.PurchaseItem.OnServerInvoke = handlePurchase
+	Players.PlayerRemoving:Connect(function(player)
+		RateLimiter.forget(requests, player)
+	end)
 end
 
 return ShopService

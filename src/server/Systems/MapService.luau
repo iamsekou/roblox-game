@@ -25,6 +25,33 @@ local lobby: Model
 local arena: Model? = nil
 local arenaId: string? = nil
 local arenaBuilder: any = nil
+local blockers: WorldModel? = nil
+
+-- Decorations tagged BlocksSight (banners, tree canopies) hide a plate on every screen, but they don't take
+-- raycasts (CanQuery off, so abilities, aiming and the camera pass through them). The plate gate still has to
+-- treat them as cover (audit fix, 2026-09-28), so the server keeps a copy of them that does take raycasts, in a
+-- WorldModel in ServerStorage: never replicated, never touched by physics, invisible to everything else.
+local function buildSightBlockers(map: Model): WorldModel?
+	local model: WorldModel? = nil
+	for _, part in map:GetDescendants() do
+		if part:IsA("BasePart") and part:GetAttribute("BlocksSight") == true then
+			if not model then
+				model = Instance.new("WorldModel")
+				model.Name = "NAU_SightBlockers"
+			end
+			local copy = part:Clone()
+			copy:ClearAllChildren()
+			copy.Anchored = true
+			copy.CanQuery = true
+			copy.CFrame = part.CFrame
+			copy.Parent = model
+		end
+	end
+	if model then
+		model.Parent = ServerStorage
+	end
+	return model
+end
 
 -- Small maps are sent to every client up front, so nobody spawns onto unstreamed ground.
 local function makePersistent(model: Model)
@@ -68,6 +95,10 @@ function MapService.loadMap(mapId: string): Model
 			arenaBuilder.clearTerrain(ARENA_CFRAME)
 		end
 	end
+	if blockers then
+		blockers:Destroy()
+		blockers = nil
+	end
 	local def = MapRegistry.get(mapId)
 	assert(def, "MapService: unknown map " .. tostring(mapId))
 	local builder = require(Builders:WaitForChild(def.builder))
@@ -79,7 +110,13 @@ function MapService.loadMap(mapId: string): Model
 		builder.buildTerrain(ARENA_CFRAME)
 	end
 	arena, arenaId, arenaBuilder = newArena, mapId, builder
+	blockers = buildSightBlockers(newArena)
 	return newArena
+end
+
+-- The loaded arena's sight-blocking decorations as a raycastable WorldModel (nil if it has none).
+function MapService.sightBlockers(): WorldModel?
+	return blockers
 end
 
 local function characterList(): { Instance }

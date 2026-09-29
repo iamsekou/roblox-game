@@ -12,6 +12,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local Constants = require(ReplicatedStorage.Shared.Modules.Constants)
+local StoreErrors = require(script.Parent.Parent.Lib.StoreErrors)
 
 local SafeStore = {}
 
@@ -38,11 +39,9 @@ function SafeStore.regular(base: string): DataStore?
 	return store
 end
 
+-- Only Roblox's "no access" errors (Lib/StoreErrors) switch the whole server offline; anything else is retried.
 local function looksPermanent(message: string): boolean
-	return string.find(message, "StudioAccessToApisNotAllowed", 1, true) ~= nil
-		or string.find(message, "403", 1, true) ~= nil
-		or string.find(message, "must publish", 1, true) ~= nil
-		or string.find(message, "not allowed", 1, true) ~= nil
+	return StoreErrors.isPermanent(message)
 end
 
 -- True once DataStores have been found unreachable for this server's lifetime.

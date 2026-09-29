@@ -15,7 +15,7 @@ local DEFINITIONS: { [string]: string } = {
 	RoundState = "RemoteEvent", -- S->all RoundState
 
 	-- Number system
-	SubmitCode = "RemoteFunction", -- C->S (code: string)       -> { status, strikesLeft?, targetName?, yen? }
+	SubmitCode = "RemoteFunction", -- C->S (code: string)       -> { status, strikesLeft?, targetName?, yen? } (yen 0: past the kill-farming limit)
 	GetMyCodes = "RemoteFunction", -- C->S ()                   -> { { target, code } } (the caller's own view only)
 	CodesChanged = "RemoteEvent", -- S->one observer { reset?, changes = { { target, code | false } } }
 
@@ -38,8 +38,8 @@ local DEFINITIONS: { [string]: string } = {
 
 	-- Economy (names kept from the original scaffold)
 	UpdateCurrency = "RemoteEvent", -- S->one player { yen }
-	IncomeNotice = "RemoteEvent", -- S->one player { source = "passive" | "friends" | "purchase", amount, friends? }
-	PurchaseItem = "RemoteFunction", -- C->S (characterId) -> { status = bought|insufficient|owned|not_for_yen|unknown, granted?, price?, yen }
+	IncomeNotice = "RemoteEvent", -- S->one player { source = "purchase", amount } (a credit bundle was granted)
+	PurchaseItem = "RemoteFunction", -- C->S (characterId) -> { status = bought|insufficient|owned|not_for_yen|unknown|rate_limited, granted?, price?, yen }
 
 	-- Saved progress
 	ProfileState = "RemoteEvent", -- S->one { status = "loaded" | "offline", settings }

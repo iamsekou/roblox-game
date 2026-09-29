@@ -581,9 +581,21 @@ local function step()
 	local now = os.clock()
 	for character, cast in casts do
 		local alive = character.Parent ~= nil and cast.humanoid.Parent ~= nil and cast.humanoid.Health > 0
-		if not alive then
-			endCast(character, 0)
-		elseif not applyCast(cast, now) then
+		-- One broken cast (a joint gone mid-pose) is dropped instead of erroring every frame and stopping every
+		-- cast after it (audit fix, 2026-09-28).
+		local ok, running = true, true
+		if alive then
+			ok, running = pcall(applyCast, cast, now)
+			if not ok then
+				warn("[NAU] cast animation failed: " .. tostring(running))
+			end
+		end
+		if not alive or not ok then
+			local ended = pcall(endCast, character, 0)
+			if not ended then
+				casts[character] = nil
+			end
+		elseif not running then
 			-- Pose finished. An authored release clip keeps playing to its own end (a looping one is
 			-- stopped by its hold timer), so only drop the bookkeeping here (and put the swords away).
 			casts[character] = nil

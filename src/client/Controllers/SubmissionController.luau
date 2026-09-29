@@ -149,8 +149,12 @@ local function onResult(result: any)
 	local status = result.status
 	if status == "eliminated" then
 		Audio.play("elimination")
+		local yen = if type(result.yen) == "number" then result.yen else Constants.YEN_PER_ELIMINATION
 		HUDController.toast(
-			string.format("ELIMINATED %s   +%s", tostring(result.targetName), Currency.amount(UI.formatNumber(result.yen or Constants.YEN_PER_ELIMINATION))),
+			if yen > 0
+				then string.format("ELIMINATED %s   +%s", tostring(result.targetName), Currency.amount(UI.formatNumber(yen)))
+				-- The kill-farming limit: the same fighter again too soon still scores, but pays nothing.
+				else string.format("ELIMINATED %s   (same fighter again: no %s)", tostring(result.targetName), Currency.SHORT),
 			"good"
 		)
 	elseif status == "wrong" then
