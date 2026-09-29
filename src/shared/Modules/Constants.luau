@@ -338,6 +338,20 @@ local Constants = {
 	PLATE_MIN_OFFSET = 1.2,
 	PLATE_MAX_OFFSET = 9,
 
+	-- Fighter auras + name chips (owner, 2026-09-29): which fighter each player is using, in the arena only.
+	-- The server tags each arena character (and Mirror Decoys, which copy it) with this attribute.
+	FIGHTER_ATTRIBUTE = "NAU_Fighter",
+	FIGHTER_CHIP_SIZE = Vector2.new(2.2, 0.42), -- studs: the chip under the plate
+	FIGHTER_CHIP_GAP = 0.08, -- studs between the plate's bottom edge and the chip
+	AURA_WISP_RATE = 26, -- wisps per second rising off each fighter
+	AURA_WISP_LIFETIME = 1.1, -- seconds (rising from the feet to about head height)
+	AURA_WISP_SIZE = 1.7, -- studs at their widest
+	AURA_WISP_TRANSPARENCY = 0.2, -- at their most visible (1 = invisible); tuned to read on the arena's sand
+	AURA_RING_RADIUS = 2.4, -- studs: the ring at the feet
+	AURA_RING_WIDTH = 0.3,
+	AURA_RING_TRANSPARENCY = 0.45,
+	AURA_MAX_DISTANCE = 150, -- studs from you: farther fighters draw no aura (performance)
+
 	-- Arena spawns (owner rule, 2026-09-23): random anywhere on the map, nothing marks where they are
 	SPAWN_MIN_DISTANCE_FROM_OPPONENTS = 30,
 	SPAWN_SAMPLE_ATTEMPTS = 60,

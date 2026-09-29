@@ -26,6 +26,7 @@ Settings.DEFS = {
 	{ key = "cameraSway", kind = "toggle", label = "Camera sway", section = "MOTION", default = true, hint = "Camera leans into turns and bobs with your stride" },
 	{ key = "runFov", kind = "toggle", label = "Wide running view", section = "MOTION", default = true, hint = "The view widens while you run" },
 	{ key = "screenShake", kind = "toggle", label = "Screen shake", section = "MOTION", default = true, hint = "Off: a red edge flash instead" },
+	{ key = "fighterAuras", kind = "toggle", label = "Fighter auras", section = "VISUALS", default = true, hint = "A coloured aura shows which fighter each player is using" },
 	{ key = "crowd", kind = "choice", label = "Crowd", section = "VISUALS", default = "Auto", options = { "Auto", "Off", "Low", "Medium", "High" }, hint = "Auto follows your graphics quality" },
 	{ key = "music", kind = "slider", label = "Music", section = "AUDIO", default = 60, min = 0, max = 100 },
 	{ key = "effects", kind = "slider", label = "Effects", section = "AUDIO", default = 80, min = 0, max = 100 },

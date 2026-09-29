@@ -28,6 +28,8 @@ export type CharacterDef = {
 	accent: Color3,
 	bubbleCenter: Color3,
 	bubbleEdge: Color3,
+	aura: Color3?, -- arena aura + name chip colour (set below from AURAS)
+	auraDark: boolean?,
 	portrait: string?,
 	abilities: { mild: string, ultimate: string }, -- display names (approved sheet, docs/ABILITIES.md)
 }
@@ -181,9 +183,28 @@ local list: { CharacterDef } = {
 	},
 }
 
+-- Arena aura colours (owner, 2026-09-29: show which fighter an opponent is using). A separate set from the
+-- lobby/shop accents, picked to be told apart at a glance: no two alike, and clear of the team colours
+-- (Constants.TEAMS; checked by a unit test). `dark` = drawn as dark smoke instead of a glow.
+local AURAS: { [string]: { color: Color3, dark: boolean? } } = {
+	Goku = { color = Color3.fromRGB(255, 140, 20) }, -- orange
+	Luffy = { color = Color3.fromRGB(255, 60, 200) }, -- magenta
+	Krillin = { color = Color3.fromRGB(245, 245, 255) }, -- white
+	Vegeta = { color = Color3.fromRGB(255, 225, 50) }, -- gold
+	Zoro = { color = Color3.fromRGB(50, 210, 80) }, -- green
+	L = { color = Color3.fromRGB(170, 255, 40) }, -- chartreuse
+	Naruto = { color = Color3.fromRGB(40, 225, 210) }, -- turquoise
+	Ichigo = { color = Color3.fromRGB(22, 16, 26), dark = true }, -- black smoke
+	Sasuke = { color = Color3.fromRGB(150, 80, 255) }, -- violet
+	Gojo = { color = Color3.fromRGB(160, 220, 255) }, -- ice blue
+}
+
 local byId: { [string]: CharacterDef } = {}
 for _, def in list do
 	byId[def.id] = def
+	local aura = AURAS[def.id]
+	def.aura = aura.color
+	def.auraDark = aura.dark == true
 end
 
 return {

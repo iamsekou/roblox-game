@@ -13,6 +13,7 @@ local RunFOV = require(AnimControllers:WaitForChild("RunFOV"))
 local SprintFX = require(AnimControllers:WaitForChild("SprintFX"))
 local LightingFX = require(AnimControllers:WaitForChild("LightingFX"))
 local Crowd = require(AnimControllers:WaitForChild("Crowd"))
+local FighterAura = require(AnimControllers:WaitForChild("FighterAura"))
 local ClientState = require(script.Parent.Parent:WaitForChild("ClientState"))
 local Audio = require(script.Parent.Parent:WaitForChild("Audio"))
 
@@ -59,6 +60,7 @@ function FXController.Start()
 	LightingFX.start(lightingPreset())
 	Audio.music(if ClientState.life.inMatch then "arena" else "lobby")
 	Crowd.start() -- builds the colosseum crowd whenever an arena with Crowd rows appears
+	FighterAura.start() -- which fighter each opponent is using (arena characters only)
 	ClientState.Changed:Connect(function(kind)
 		if kind == "life" then
 			LightingFX.apply(lightingPreset())

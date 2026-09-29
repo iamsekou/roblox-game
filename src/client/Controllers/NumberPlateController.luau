@@ -12,6 +12,9 @@
 --
 -- Team battle (owner-approved 2026-09-23): every plate's border takes its fighter's team colour, and teammates
 -- also get a small name tag above their plate (arena names are otherwise hidden).
+--
+-- Fighter chip (owner, 2026-09-29): under every plate, the fighter that player is using, with a dot in the
+-- fighter's aura colour (the aura itself: animations/Controllers/FighterAura). Shown whenever the plate is.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -20,6 +23,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Remotes = require(Shared:WaitForChild("Remotes"))
 local Constants = require(Shared:WaitForChild("Modules"):WaitForChild("Constants"))
 local PlateVisibility = require(Shared:WaitForChild("Modules"):WaitForChild("PlateVisibility"))
+local CharacterDefs = require(Shared:WaitForChild("Modules"):WaitForChild("CharacterDefs"))
 local UIMotion = require(ReplicatedStorage:WaitForChild("Animations"):WaitForChild("Controllers"):WaitForChild("UIMotion"))
 local Client = script.Parent.Parent
 local ClientState = require(Client:WaitForChild("ClientState"))
@@ -52,6 +56,12 @@ type Plate = {
 	stroke: UIStroke,
 	tag: BillboardGui, -- teammate name tag (team battle only)
 	tagLabel: TextLabel,
+	chip: BillboardGui, -- which fighter they're using (owner, 2026-09-29), under the plate
+	chipDot: Frame,
+	chipStroke: UIStroke,
+	chipLabel: TextLabel,
+	fighter: string?, -- the fighter the chip shows (nil: not tagged yet, no chip)
+	offset: number, -- the plate's height above the head
 	ally: boolean,
 	root: BasePart?,
 	humanoid: Humanoid?,
@@ -144,8 +154,55 @@ local function createPlate(userId: number): Plate
 	tagLabel.TextStrokeTransparency = 0.4
 	tagLabel.Parent = tag
 
+	-- The fighter chip: a coloured dot (the fighter's aura colour) and the fighter's name.
+	local chip = Instance.new("BillboardGui")
+	chip.Name = "NAU_FighterChip_" .. userId
+	chip.ResetOnSpawn = false
+	chip.AlwaysOnTop = false
+	chip.LightInfluence = 0
+	chip.Size = UDim2.fromScale(Constants.FIGHTER_CHIP_SIZE.X, Constants.FIGHTER_CHIP_SIZE.Y)
+	chip.Enabled = false
+	local chipFrame = Instance.new("Frame")
+	chipFrame.Name = "Chip"
+	chipFrame.Size = UDim2.fromScale(1, 1)
+	chipFrame.BackgroundColor3 = Color3.fromRGB(14, 16, 24)
+	chipFrame.BackgroundTransparency = 0.25
+	chipFrame.Parent = chip
+	local chipCorner = Instance.new("UICorner")
+	chipCorner.CornerRadius = UDim.new(0.5, 0)
+	chipCorner.Parent = chipFrame
+	local chipStroke = Instance.new("UIStroke")
+	chipStroke.Thickness = 1
+	chipStroke.Parent = chipFrame
+	local chipDot = Instance.new("Frame")
+	chipDot.Name = "Dot"
+	chipDot.AnchorPoint = Vector2.new(0, 0.5)
+	chipDot.Position = UDim2.new(0.06, 0, 0.5, 0)
+	chipDot.Size = UDim2.fromScale(0.13, 0.62)
+	chipDot.Parent = chipFrame
+	local dotAspect = Instance.new("UIAspectRatioConstraint")
+	dotAspect.Parent = chipDot
+	local dotCorner = Instance.new("UICorner")
+	dotCorner.CornerRadius = UDim.new(0.5, 0)
+	dotCorner.Parent = chipDot
+	local dotStroke = Instance.new("UIStroke")
+	dotStroke.Color = Color3.fromRGB(255, 255, 255)
+	dotStroke.Transparency = 0.5
+	dotStroke.Parent = chipDot
+	local chipLabel = Instance.new("TextLabel")
+	chipLabel.Name = "Fighter"
+	chipLabel.BackgroundTransparency = 1
+	chipLabel.Position = UDim2.fromScale(0.24, 0.12)
+	chipLabel.Size = UDim2.fromScale(0.7, 0.76)
+	chipLabel.Font = Enum.Font.GothamBlack
+	chipLabel.TextScaled = true
+	chipLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+	chipLabel.TextXAlignment = Enum.TextXAlignment.Left
+	chipLabel.Parent = chipFrame
+
 	gui.Parent = playerGui
 	tag.Parent = playerGui
+	chip.Parent = playerGui
 	return {
 		gui = gui,
 		frame = frame,
@@ -153,6 +210,12 @@ local function createPlate(userId: number): Plate
 		stroke = stroke,
 		tag = tag,
 		tagLabel = tagLabel,
+		chip = chip,
+		chipDot = chipDot,
+		chipStroke = chipStroke,
+		chipLabel = chipLabel,
+		fighter = nil,
+		offset = Constants.PLATE_MIN_OFFSET,
 		ally = false,
 		root = nil,
 		humanoid = nil,
@@ -177,6 +240,27 @@ local function applyTeam(plate: Plate, userId: number, decoy: Model?)
 		plate.tagLabel.TextColor3 = color :: Color3
 	end
 	plate.tag.Enabled = plate.ally and plate.mode ~= "hidden"
+end
+
+-- The chip sits just under the plate, whatever size the plate is drawn at.
+local function placeChip(plate: Plate)
+	local below = (Constants.PLATE_SIZE.Y * plate.scale + Constants.FIGHTER_CHIP_SIZE.Y) / 2 + Constants.FIGHTER_CHIP_GAP
+	plate.chip.StudsOffsetWorldSpace = Vector3.new(0, plate.offset - below, 0)
+end
+
+-- Which fighter this is: the server tags arena characters (and decoys, copies of them) with it.
+local function applyFighter(plate: Plate, character: Model)
+	local fighter = character:GetAttribute(Constants.FIGHTER_ATTRIBUTE)
+	local def = if type(fighter) == "string" then CharacterDefs.byId[fighter] else nil
+	plate.fighter = if def and def.aura then def.id else nil
+	if def and def.aura then
+		plate.chipLabel.Text = string.upper(def.name)
+		plate.chipDot.BackgroundColor3 = def.aura
+		-- A dark aura (Ichiro) is outlined light so the chip still reads on the dark background.
+		plate.chipStroke.Color = if def.auraDark then Color3.fromRGB(200, 200, 210) else def.aura
+		plate.chipStroke.Transparency = if def.auraDark then 0.4 else 0.2
+	end
+	plate.chip.Enabled = plate.fighter ~= nil and plate.mode ~= "hidden"
 end
 
 -- Naruto's Mirror Decoys (server models tagged DecoyId / Owner), except our own.
@@ -231,6 +315,7 @@ local function reconcile()
 		if not opponents[userId] then
 			plate.gui:Destroy()
 			plate.tag:Destroy()
+			plate.chip:Destroy()
 			plates[userId] = nil
 		end
 	end
@@ -254,7 +339,11 @@ local function reconcile()
 			plate.gui.StudsOffsetWorldSpace = Vector3.new(0, offset, 0)
 			plate.tag.Adornee = head
 			plate.tag.StudsOffsetWorldSpace = Vector3.new(0, offset + (Constants.PLATE_SIZE.Y + TAG_SIZE.Y) / 2 + TAG_GAP, 0)
+			plate.offset = offset
+			plate.chip.Adornee = head
+			placeChip(plate)
 			applyTeam(plate, userId, decoys[userId])
+			applyFighter(plate, character)
 		elseif plate then
 			plate.root = nil -- character not loaded or streamed in yet
 		end
@@ -268,6 +357,7 @@ local function setMode(plate: Plate, userId: number, mode: Mode)
 	plate.mode = mode
 	plate.gui.Enabled = mode ~= "hidden"
 	plate.tag.Enabled = plate.ally and mode ~= "hidden"
+	plate.chip.Enabled = plate.fighter ~= nil and mode ~= "hidden"
 	if mode == "revealed" then
 		plate.label.Text = codes[userId] or MASK_TEXT
 		plate.label.TextColor3 = CODE_TEXT_COLOR
@@ -296,6 +386,7 @@ local function setScale(plate: Plate, scale: number)
 	if math.abs(plate.scale - scale) > 0.05 then
 		plate.scale = scale
 		plate.gui.Size = UDim2.fromScale(Constants.PLATE_SIZE.X * scale, Constants.PLATE_SIZE.Y * scale)
+		placeChip(plate)
 	end
 end
 

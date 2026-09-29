@@ -898,6 +898,12 @@ local function onLifeStarted(player: Player, match: any, lifeId: number)
 	end
 	entry.lifeId = lifeId
 	entry.character = equipped[player] or Constants.DEFAULT_CHARACTER
+	-- Every client shows which fighter this is (aura + name chip, owner 2026-09-29). Public information: casts
+	-- already show it. On the character, so it replicates by itself, goes with the body, and Mirror Decoys (copies
+	-- of the character) carry it too. Lobby characters are new models without it.
+	if player.Character then
+		player.Character:SetAttribute(Constants.FIGHTER_ATTRIBUTE, entry.character)
+	end
 	speedMods[player] = nil
 	guardUntil[player.UserId] = nil
 	mildBlockedUntil[player.UserId] = nil
