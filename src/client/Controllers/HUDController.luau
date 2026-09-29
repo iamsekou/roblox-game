@@ -34,6 +34,7 @@ local LEADERBOARD_PHONE_ROWS = 6 -- rows shown on phones (short side of the scre
 local refs: { [string]: any } = {}
 local lastPhase: string? = nil
 local lastSuddenDeath = false
+local countdownFor: number? = nil -- the break (its end time) the lobby's "round begins in 5" was shown for
 local wasInMatch = false
 local wasAlive = true -- so a death is heard once, not on every LifeState while waiting to respawn
 local bannerToken, toastToken, feedOrder = 0, 0, 0
@@ -71,8 +72,8 @@ local function resultText(result: any): string
 			return "YOUR TEAM WINS"
 		end
 		return string.upper(string.format("%s wins", tostring(result.team)))
-	elseif result.reason == "not_enough_players" then
-		return "NOT ENOUGH FIGHTERS"
+	elseif result.reason == "no_fighters" then
+		return "NO FIGHTERS THIS ROUND"
 	end
 	return "DRAW"
 end
@@ -555,12 +556,46 @@ local function onFeed(event: any)
 	end
 end
 
+-- Lobby announcements (owner, 2026-09-30: rounds run on their own schedule, so players in the lobby hear each
+-- step). Only for players watching from the lobby: fighters get their own FIGHT and result banners, and training
+-- servers have no lobby.
+local function announceToLobby(): boolean
+	return not ClientState.isParticipant() and not ClientState.isTraining()
+end
+
+local function announceLobbyPhase(r: any)
+	if not announceToLobby() then
+		return
+	end
+	if r.phase == "Intermission" then
+		local seconds = math.max(0, math.ceil((r.endsAt or 0) - workspace:GetServerTimeNow()))
+		showBanner(string.format("NEXT ROUND IN %d", seconds), "PRESS FIGHT TO JOIN", UI.Colors.Text, 3)
+	elseif r.phase == "InRound" then
+		Audio.play("round_start")
+		showBanner("ROUND STARTING NOW", "PRESS FIGHT TO JUMP IN ANY TIME", UI.Colors.Accent, 3)
+	elseif r.phase == "RoundEnd" then
+		showBanner("ROUND OVER", resultText(r.result), UI.Colors.Text, 4)
+	end
+end
+
+-- "ROUND BEGINS IN 5", once per break (keyed by the break's end time).
+local function maybeCountdown(r: any, remaining: number)
+	if countdownFor == r.endsAt or remaining > Constants.LOBBY_COUNTDOWN_SECONDS or remaining <= 0 or not announceToLobby() then
+		return
+	end
+	countdownFor = r.endsAt
+	showBanner(string.format("ROUND BEGINS IN %d", math.ceil(remaining)), if ClientState.isQueued() then "YOU'RE IN · GET READY" else "PRESS FIGHT TO JOIN", UI.Colors.Gold, 2)
+end
+
 local function onRoundChanged()
 	local r = ClientState.round
 	if not r then
 		return
 	end
 	if r.phase ~= lastPhase then
+		if lastPhase ~= nil then
+			announceLobbyPhase(r) -- not on the first state after joining: nothing just happened
+		end
 		if r.phase == "RoundEnd" and lastPhase == "InRound" and ClientState.isParticipant() then
 			local won = r.result
 				and (r.result.userId == localPlayer.UserId or (r.result.team ~= nil and r.result.team == ClientState.myTeam()))
@@ -636,21 +671,18 @@ local function refresh()
 
 	local training = r.training -- Training Grounds: { bots } (the dummy count)
 	if r.phase == "Waiting" then
-		refs.phase.Text = if training then "TRAINING GROUNDS" else "LOBBY · WAITING FOR FIGHTERS"
-		refs.timer.Text = if training then "READY" else string.format("%d / %d", queuedCount, r.minPlayers or Constants.MIN_PLAYERS_TO_START)
+		refs.phase.Text = if training then "TRAINING GROUNDS" else "ARENA"
+		refs.timer.Text = "STARTING"
 	elseif r.phase == "Intermission" then
-		refs.phase.Text = if training then "TRAINING · STARTING" else string.format("NEXT ROUND · %d/%d QUEUED", queuedCount, r.maxPlayers or Constants.MAX_PLAYERS)
+		refs.phase.Text = if training then "TRAINING · STARTING" else string.format("NEXT ROUND IN · %d/%d JOINING", queuedCount, r.maxPlayers or Constants.MAX_PLAYERS)
 		refs.timer.Text = formatClock(remaining)
+		maybeCountdown(r, remaining)
 	elseif r.phase == "InRound" then
 		refs.phase.Text = if training
 			then string.format("TRAINING GROUNDS · %d %s", training.bots or 0, if training.bots == 1 then "DUMMY" else "DUMMIES")
 			else string.upper(string.format("%s · %s", MODE_NAMES[r.mode] or tostring(r.mode), r.mapName or ""))
 		if training then
 			refs.timer.Text = "FREE PLAY" -- the round never runs out
-		elseif r.graceEndsAt then
-			refs.phase.Text = "NEED FIGHTERS · ROUND ENDS IN"
-			refs.timer.Text = formatClock(r.graceEndsAt - t)
-			timerColor = UI.Colors.Bad
 		elseif r.suddenDeath then
 			refs.phase.Text = "SUDDEN DEATH"
 			phaseColor = UI.Colors.Bad

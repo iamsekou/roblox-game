@@ -9,13 +9,14 @@ local Constants = {
 	ABILITY_EFFECT_TIME_SCALE = EFFECT_TIME,
 	-- Match size and flow
 	MAX_PLAYERS = 12,
-	MIN_PLAYERS_TO_START = 2, -- approved
+	-- Always-on rounds (owner, 2026-09-30): the arena cycles break -> round -> results with or without fighters;
+	-- FIGHT joins at any time. (No minimum player count any more.)
 	-- Rounds are time-based with no elimination target (owner, 2026-09-23): most eliminations at the cap wins.
 	ROUND_TIME_CAP = 8 * 60, -- approved
 	SUDDEN_DEATH_SECONDS = 60, -- approved: a tie at the cap goes to sudden death; the next sole leader wins
-	INTERMISSION_SECONDS = 15, -- approved
+	INTERMISSION_SECONDS = 15, -- approved: the break between rounds
 	ROUND_END_SECONDS = 6, -- results banner before everyone returns to the lobby
-	UNDERPOPULATED_GRACE = 15, -- a round below MIN_PLAYERS_TO_START waits this long for a joiner, then ends with no winner
+	LOBBY_COUNTDOWN_SECONDS = 5, -- lobby players get a "round begins in 5" announcement this long before a start
 	QUEUE_MIN_INTERVAL = 0.5, -- seconds between FIGHT / leave-queue requests from one player (each one broadcasts)
 	ROUND_WARNING_SECONDS = 30, -- owner, 2026-09-23: everyone in the match is alerted this long before time runs out
 
@@ -398,9 +399,6 @@ local Constants = {
 		{ name = "Azure", color = Color3.fromRGB(72, 148, 232) },
 	},
 
-	-- Studio-only: set this attribute (a number) on ServerScriptService to lower the minimum
-	-- player count for solo testing. Ignored in live servers.
-	DEV_MIN_PLAYERS_ATTRIBUTE = "NAU_DevMinPlayers",
 	-- Studio-only: set this attribute (true) on ServerScriptService and every ability also treats its caster as
 	-- an opponent, so a single player can test every on-target effect end to end. Ignored in live servers.
 	DEV_SELF_TARGET_ATTRIBUTE = "NAU_DevSelfTarget",

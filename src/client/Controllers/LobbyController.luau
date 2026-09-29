@@ -32,8 +32,8 @@ local XP_NUMERALS = { "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X
 local MESSAGES: { [string]: { string } } = {
 	joined = { "Dropping into the fight!", "good" },
 	rate_limited = { "One moment...", "info" },
-	queued = { "You're queued. The round starts when enough fighters are ready.", "info" },
-	queued_round_ending = { "This round is wrapping up. You're queued for the next one.", "info" },
+	queued = { "You're in: you'll drop into the arena when the next round starts.", "info" },
+	queued_round_ending = { "This round is wrapping up. You're in the next one.", "info" },
 	queued_match_full = { "The match is full (12/12). You'll drop in as soon as a slot opens.", "info" },
 	already_queued = { "You're already queued.", "info" },
 	already_in_match = { "You're already in the fight.", "info" },
@@ -450,6 +450,12 @@ function LobbyController.actionStack(): Frame
 	return refs.holder
 end
 
+-- m:ss for the status line.
+local function clock(seconds: number): string
+	local s = math.max(0, math.ceil(seconds))
+	return string.format("%d:%02d", s // 60, s % 60)
+end
+
 local function refresh()
 	local r = ClientState.round
 	local inMatch = ClientState.isParticipant()
@@ -474,27 +480,40 @@ local function refresh()
 	local nQueued = #(r.queued or {})
 	local nFighting = #(r.participants or {})
 	local maxPlayers = r.maxPlayers or 12
-	if r.phase == "Waiting" then
-		refs.status.Text = string.format("Waiting for fighters (%d/%d)", nQueued, r.minPlayers or 2)
-	elseif r.phase == "Intermission" then
-		refs.status.Text = string.format(
-			"Round starts in %ds · %d/%d queued",
-			math.max(0, math.ceil((r.endsAt or t) - t)),
-			nQueued,
-			maxPlayers
-		)
+	-- Always-on rounds (owner, 2026-09-30): the status says where the arena's cycle is; FIGHT always works.
+	if r.phase == "Intermission" or r.phase == "Waiting" then
+		refs.status.Text = string.format("Next round in %ds · %d/%d joining", math.max(0, math.ceil((r.endsAt or t) - t)), nQueued, maxPlayers)
+		if not queued then
+			refs.fight.caption.Text = "JOIN THE NEXT ROUND"
+		end
 	elseif r.phase == "InRound" then
 		refs.status.Text = if nFighting >= maxPlayers
-			then string.format("Battle full (%d/%d) · FIGHT takes the next open slot", nFighting, maxPlayers)
-			else string.format("Battle in progress (%d/%d) · FIGHT to drop in", nFighting, maxPlayers)
+			then string.format("Round in progress · full (%d/%d) · FIGHT takes the next open slot", nFighting, maxPlayers)
+			else string.format("Round in progress · %d/%d fighting · %s left", nFighting, maxPlayers, clock((r.endsAt or t) - t))
+		if not queued then
+			refs.fight.caption.Text = "JUMP IN NOW"
+		end
 	else
-		refs.status.Text = "Round ending · FIGHT to queue for the next one"
+		refs.status.Text = "Round over · the next one starts in a moment"
+		if not queued then
+			refs.fight.caption.Text = "JOIN THE NEXT ROUND"
+		end
 	end
 end
 
 function LobbyController.Start()
 	build()
 	refs.card:GetPropertyChangedSignal("Visible"):Connect(refresh) -- the stack hides while a card is open
+	-- The status line's countdowns tick between round broadcasts.
+	task.spawn(function()
+		while true do
+			task.wait(1)
+			local ok, err = pcall(refresh)
+			if not ok then
+				warn("[NAU] lobby refresh failed: " .. tostring(err))
+			end
+		end
+	end)
 	ClientState.Changed:Connect(function(kind)
 		refresh()
 		if kind == "ability" then

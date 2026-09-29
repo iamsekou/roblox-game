@@ -24,7 +24,7 @@ Source of truth for approved decisions, contracts and phase status. Code constan
 |---|---|
 | Players / modes | ≤12 per match. 6v6 team or FFA. **Rounds are time-based with uncapped eliminations** (owner, 2026-09-23; replaced "first to 20"): most eliminations (player, or team total) when time runs out wins. Uniform random mode + map each round; **repeats allowed, no history** (approved) |
 | Round cap | 8 min. Sole leader with ≥1 elimination wins; a tie → 60 s sudden death, starting the instant time runs out (owner, 2026-09-23), next sole leader wins (also the moment a tied fighter or team leaves, audit fix 2026-09-28); sudden death expiring → draw. **Everyone in the match gets a "30 SECONDS LEFT" alert** (owner, 2026-09-23), again 30 s before sudden death ends (`Lib/RoundTimer`) |
-| Intermission | 15 s. Min 2 queued players to start. Below 2 mid-round → 15 s grace for a joiner, then the round ends with no winner. **Team battle: if every fighter on one side leaves**, the same 15 s grace (joiners go to the empty team), then the team still standing **wins by forfeit** (audit fix, 2026-09-28; before, the round ran on with nobody able to score). Studio's solo switch (`NAU_DevMinPlayers` below 2) skips the forfeit so one-team test rounds keep running |
+| Intermission | **Always-on rounds (owner, 2026-09-30): "have the arena matches running even if people did not queue".** The arena cycles on its own: a 15 s break → the round (8 min, sudden death on a tie) → 6 s results → the next break, with or without fighters. FIGHT joins at any time: straight into a running round (if it has a slot), else the next one. A round never ends early for lack of fighters; one with nobody in it ends as a draw ("NO FIGHTERS THIS ROUND") at its time cap. Fighters from a round are kept in for the next one (LEAVE QUEUE opts out). **Lobby announcements** (players watching from the lobby only): "NEXT ROUND IN 15 · PRESS FIGHT TO JOIN", "ROUND BEGINS IN 5", "ROUND STARTING NOW · PRESS FIGHT TO JUMP IN ANY TIME", "ROUND OVER · <result>"; the status line over FIGHT counts down and shows fighters and time left. Replaced: the 2-player minimum, the under-population grace and the team forfeit (MatchCore keeps `soleTeam`/`endByForfeit`, unused) |
 | Mid-round join | FIGHT joins instantly if the match has <12; otherwise the player is queued and drops in when a slot opens |
 | After a round | 6 s results, everyone returns to the lobby and is auto-queued for the next round (can leave the queue) |
 | Codes | 4-character strings `"0000"`–`"9999"`; leading zeros allowed; compared as strings, never numbers |
@@ -164,7 +164,7 @@ Run the unit tests during Play, with the command bar set to the Server (fresh mo
 `print(require(game.ServerScriptService.Server.Tests.TestRunner).run())`
 From the Edit-mode command bar Studio may serve cached copies of edited modules.
 
-Solo testing in Studio: set attribute `NAU_DevMinPlayers = 1` on ServerScriptService (ignored outside Studio).
+Solo testing in Studio: rounds run on their own; press FIGHT to join (always-on rounds, 2026-09-30).
 
 ## Roster (in game)
 

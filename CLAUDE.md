@@ -44,8 +44,9 @@ player's saves and the boards). Players see only "Code Clash" / "CC". The old pl
 - **Run unit tests during Play on the Server:**
   `print(require(game.ServerScriptService.Server.Tests.TestRunner).run())`. The Edit-mode command bar
   caches modules and returns stale results.
-- Solo testing: set attribute `NAU_DevMinPlayers = 1` on ServerScriptService *inside a Play session*
-  (Studio-only, ignored live). Add `NAU_DevSelfTarget = true` to make every ability also hit its caster, which
+- Solo testing: rounds run on their own (always-on, 2026-09-30): press FIGHT (or invoke RequestFight) and you join the
+  running round or the next one. (`NAU_DevMinPlayers` is gone.) Studio-only switches, ignored live: set
+  `NAU_DevSelfTarget = true` on ServerScriptService to make every ability also hit its caster, which
   exercises the full on-target path (server → effect → client UI) with one player. For the shop:
   `NAU_DevUnlockAll = false` (ServerScriptService) shows real ownership, `NAU_DevGrantYen = <n>` (on a Player) grants yen.
   Studio API access is on. In Studio every DataStore name gets `_Studio` (`SafeStore.name`), so saves and leaderboards

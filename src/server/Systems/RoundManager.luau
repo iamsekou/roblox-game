@@ -1,7 +1,10 @@
--- Round flow: lobby queue -> intermission -> round -> results -> everyone back to the lobby.
+-- Round flow: always-on rounds (owner, 2026-09-30). The arena runs on its own schedule whether or not anyone
+-- pressed FIGHT, and anyone can join at any time (straight into a running round, or at the next start):
 --
---   Waiting --(>= MIN queued)--> Intermission --(15s)--> InRound --(win / cap / too few)--> RoundEnd --(6s)--> Waiting
---        ^------(queue drops below MIN)------'
+--   Intermission (15 s) --> InRound (time cap, sudden death on a tie) --> RoundEnd (6 s) --> Intermission --> ...
+--
+-- A round never ends early for lack of fighters; one nobody joined ends as a draw at its time cap. Players in the
+-- lobby hear every step through their HUD (HUDController's lobby announcements).
 --
 -- The rules of a round live in Lib/MatchCore (pure, unit-tested). This module turns them into spawns,
 -- timers and broadcasts. Modes: FFA and Team6v6 (team rules in Lib/TeamRules).
@@ -34,9 +37,8 @@ local RoundManager = {}
 local TICK_SECONDS = 0.25
 
 local state = {
-	phase = "Waiting", -- "Waiting" | "Intermission" | "InRound" | "RoundEnd"
+	phase = "Waiting", -- "Waiting" (only until the first tick) | "Intermission" | "InRound" | "RoundEnd"
 	endsAt = 0,
-	graceEndsAt = nil :: number?,
 	mode = nil :: string?,
 	mapId = nil :: string?,
 	match = nil :: any,
@@ -86,19 +88,6 @@ local function devLog(...)
 	if RunService:IsStudio() then
 		print("[NAU]", ...)
 	end
-end
-
-local function minPlayers(): number
-	if ServerMode.isTraining then
-		return 1 -- the player; bots join once the round runs
-	end
-	if RunService:IsStudio() then
-		local override = ServerScriptService:GetAttribute(Constants.DEV_MIN_PLAYERS_ATTRIBUTE)
-		if typeof(override) == "number" and override >= 1 then
-			return math.floor(override)
-		end
-	end
-	return Constants.MIN_PLAYERS_TO_START
 end
 
 local TEAM_NAMES = {}
@@ -202,12 +191,10 @@ local function buildState(bump: boolean)
 		seq = state.seq,
 		phase = state.phase,
 		endsAt = state.endsAt,
-		graceEndsAt = state.graceEndsAt,
 		mode = state.mode,
 		mapName = if mapDef then mapDef.displayName else nil,
 		suddenDeath = match ~= nil and match.suddenDeath == true,
 		maxPlayers = Constants.MAX_PLAYERS,
-		minPlayers = minPlayers(),
 		participants = participants,
 		queued = queue,
 		scores = scores,
@@ -523,7 +510,6 @@ function RoundManager.finish(winner: any)
 	state.result = result
 	state.phase = "RoundEnd"
 	state.endsAt = now() + Constants.ROUND_END_SECONDS
-	state.graceEndsAt = nil
 	-- Everyone who fought is queued for the next round automatically; they can leave the queue in the lobby.
 	local t = now()
 	for id in match.participants do
@@ -563,7 +549,6 @@ local function startRound()
 	state.mode = mode
 	state.mapId = mapDef.id
 	state.result = nil
-	state.graceEndsAt = nil
 	NumberAssignmentService.attach(match)
 
 	local t = now()
@@ -637,8 +622,9 @@ local function returnToLobby()
 	state.mode = nil
 	state.mapId = nil
 	state.result = nil
-	state.phase = "Waiting"
-	state.endsAt = 0
+	-- Always-on rounds (owner, 2026-09-30): straight into the next break, whoever is around.
+	state.phase = "Intermission"
+	state.endsAt = now() + intermissionSeconds()
 	table.clear(pendingRespawn)
 	table.clear(pendingBotRespawn)
 	NumberAssignmentService.detach()
@@ -653,18 +639,13 @@ local function tick()
 	local t = now()
 	local phase = state.phase
 	if phase == "Waiting" then
-		if #queuedPlayers() >= minPlayers() then
-			state.phase = "Intermission"
-			state.endsAt = t + intermissionSeconds()
-			broadcast()
-		end
+		-- Only when the server has just started: the first break begins at once.
+		state.phase = "Intermission"
+		state.endsAt = t + intermissionSeconds()
+		broadcast()
 	elseif phase == "Intermission" then
-		if #queuedPlayers() < minPlayers() then
-			state.phase = "Waiting"
-			state.endsAt = 0
-			broadcast()
-		elseif t >= state.endsAt then
-			startRound()
+		if t >= state.endsAt then
+			startRound() -- with whoever pressed FIGHT, or nobody: the arena runs either way
 		end
 	elseif phase == "InRound" then
 		local match = state.match
@@ -679,33 +660,17 @@ local function tick()
 			end
 			joinMidRound(player)
 		end
-		-- Too few fighters, or (team battle) one side emptied: wait a grace period for someone to join (joiners go
-		-- to the smaller team), then end. A team left on its own wins by forfeit; otherwise nobody wins.
-		-- (Studio's solo switch, NAU_DevMinPlayers below 2, keeps a one-team test round running.)
-		local soleTeam = if minPlayers() >= 2 then match:soleTeam() else nil
-		if match:count() < minPlayers() or soleTeam ~= nil then
-			if not state.graceEndsAt then
-				state.graceEndsAt = t + Constants.UNDERPOPULATED_GRACE
-				broadcast()
-			elseif t >= state.graceEndsAt then
-				if soleTeam then
-					RoundManager.finish(match:endByForfeit(soleTeam))
-				else
-					RoundManager.finish(match:endAsDraw("not_enough_players"))
-				end
-				return
-			end
-		elseif state.graceEndsAt then
-			state.graceEndsAt = nil
-			broadcast()
-		end
+		-- Always-on rounds (owner, 2026-09-30): a round runs its full time however few fighters are in it (anyone
+		-- can drop in); it never ends early for lack of fighters.
 		if t - lastPurge >= Constants.CODE_PURGE_SECONDS then
 			lastPurge = t
 			match:purge(t)
 		end
 		alertTimeLeft(match, t)
 		if t >= state.endsAt then
-			if match.suddenDeath then
+			if match:count() == 0 then
+				RoundManager.finish(match:endAsDraw("no_fighters")) -- nobody joined (or everyone left): no sudden death
+			elseif match.suddenDeath then
 				RoundManager.finish(match:endAsDraw("sudden_death_expired"))
 			else
 				local winner = match:resolveTimeCap()
