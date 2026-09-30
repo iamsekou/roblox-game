@@ -430,6 +430,20 @@ local Constants = {
 	-- Studio-only: true on ServerScriptService (set before Play) and players count as owning no Game Passes, so the
 	-- BUY WITH ROBUX buttons can be tested with an account that owns them. Ignored live.
 	DEV_IGNORE_PASSES_ATTRIBUTE = "NAU_DevIgnorePasses",
+
+	-- Admin panel (owner, 2026-09-30; rules in Lib/AdminRules, run by Systems/AdminService). Works live and in
+	-- Studio. Admins are these Roblox user ids; in Studio every player is one (so Test -> Clients and Servers works).
+	ADMIN_USER_IDS = {
+		283105341, -- Ueticon (Sekou)
+		286159463, -- samyudenbackup21 (Sam, the game's owner account)
+	},
+	ADMIN_MIN_INTERVAL = 0.2, -- seconds between admin commands per admin
+	ADMIN_MAX_CREDITS = 1000000, -- most credits one give / take can move
+	ADMIN_MAX_XP = 100000, -- most XP one grant can give
+	ADMIN_MIN_SECONDS = 5, -- SET TIME LEFT accepts this many seconds...
+	ADMIN_MAX_SECONDS = 3600, -- ...up to this many
+	ADMIN_MAX_REASON = 120, -- characters in a kick reason
+	ADMIN_LOG_SIZE = 30, -- recent admin actions shown in the panel
 }
 
 return Constants

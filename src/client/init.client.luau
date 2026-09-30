@@ -16,6 +16,7 @@ local ORDER = {
 	"SettingsController", -- after FXController: it switches the effects FXController started
 	"TutorialController",
 	"TrainingController", -- after TutorialController: the training menu opens HOW TO PLAY
+	"AdminController", -- admin panel; only shows for admins
 }
 
 ClientState.Start()

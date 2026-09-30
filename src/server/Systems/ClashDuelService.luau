@@ -557,6 +557,19 @@ local function devDuel(player: Player, spec: any)
 	end
 end
 
+-- Admin panel: the same duel test, live too. "watch" = two bots duel in front of the admin; anything else = the
+-- admin against a bot that slips on its 4th digit. Returns (ok, message).
+function ClashDuelService.testDuel(player: Player, spec: string): (boolean, string)
+	if duels[player.UserId] then
+		return false, "You're already in a duel"
+	end
+	if not rootOf(player.Character) then
+		return false, "You need a character first"
+	end
+	task.spawn(devDuel, player, spec)
+	return true, if spec == "watch" then "Two bots are dueling in front of you" else "Duel started against a bot"
+end
+
 function ClashDuelService.Init()
 	Remotes.ClashInput.OnServerEvent:Connect(function(player: Player, step: any, digit: any)
 		local duel = duels[player.UserId]

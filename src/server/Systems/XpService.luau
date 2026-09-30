@@ -120,6 +120,17 @@ function XpService.award(player: Player, character: string?, amount: number, rea
 	end
 end
 
+-- The admin panel's grant: exactly `amount`, even on a training server (the multiplier is skipped).
+function XpService.awardExact(player: Player, character: string?, amount: number, reason: string)
+	local was = scale
+	scale = 1
+	local ok, err = pcall(XpService.award, player, character, amount, reason)
+	scale = was
+	if not ok then
+		error(err, 0)
+	end
+end
+
 -- Training Grounds: every payout is multiplied by this.
 function XpService.setScale(value: number)
 	scale = value

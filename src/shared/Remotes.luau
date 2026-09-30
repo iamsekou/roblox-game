@@ -60,6 +60,10 @@ local DEFINITIONS: { [string]: string } = {
 	-- Saved progress
 	ProfileState = "RemoteEvent", -- S->one { status = "loaded" | "offline", settings }
 	SetSettings = "RemoteFunction", -- C->S ({ [key] = value }) -> { status = "ok" | "rate_limited" | "malformed", settings }
+
+	-- Admin panel (Systems/AdminService): only admins get AdminState; every command is re-checked on the server
+	AdminCommand = "RemoteFunction", -- C->S (command: string, args: { [kind] = value }) -> { status = "ok" | "refused" | "denied" | "rate_limited" | "error" | "unknown_command" | "malformed" | "bad_<kind>", message? }
+	AdminState = "RemoteEvent", -- S->one admin { admin = true, log = { { t, text } }, mode?, unlockAll, ghost }
 }
 
 local isServer = RunService:IsServer()

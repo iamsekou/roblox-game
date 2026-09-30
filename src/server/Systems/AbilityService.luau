@@ -153,7 +153,12 @@ end
 -- owns (Phase 3 item 6; checked with Roblox by RobuxService).
 -- In Studio everything is unlocked for testing (owner request; live servers ignore this) unless
 -- ServerScriptService's NAU_DevUnlockAll attribute is set false, which shows the real inventory.
+local adminUnlock: { [Player]: boolean } = {} -- admins who unlocked every fighter for this session (admin panel)
+
 local function owns(player: Player, def: any): boolean
+	if adminUnlock[player] then
+		return true
+	end
 	if
 		Constants.DEV_UNLOCK_ALL_IN_STUDIO
 		and RunService:IsStudio()
@@ -1011,7 +1016,14 @@ function AbilityService.Init()
 end
 
 -- A fighter left (a player leaving, or a training bot removed): drop everything held for them.
+-- Admin panel: every fighter counts as owned by this admin until they turn it off or leave (never saved).
+function AbilityService.setAdminUnlock(player: Player, on: boolean)
+	adminUnlock[player] = if on then true else nil
+	pushState(player)
+end
+
 function AbilityService.forget(player: Player)
+	adminUnlock[player] = nil
 	equipped[player] = nil
 	pendingEquip[player] = nil
 	entries[player] = nil

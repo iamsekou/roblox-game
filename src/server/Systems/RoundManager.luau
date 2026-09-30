@@ -66,6 +66,7 @@ local botHooks: BotHooks? = nil
 local roundStartedHandlers: { (match: any) -> () } = {}
 local lifeStartedHandlers: { (player: Player, match: any, lifeId: number) -> () } = {}
 local stateRequests = RateLimiter.new(Constants.ROUND_STATE_MIN_INTERVAL)
+local adminMode: string? = nil -- "FFA" | "Team6v6" forced from the admin panel; nil = random
 local lastState: any = nil -- the latest RoundState broadcast (answers GetRoundState requests that come too fast)
 local lastPurge = 0
 
@@ -99,6 +100,9 @@ end
 local function pickMode(queuedCount: number): string
 	if ServerMode.isTraining then
 		return "FFA"
+	end
+	if adminMode then
+		return adminMode -- an admin picked it (admin panel); team battle then skips its minimum, like the Studio switch
 	end
 	if RunService:IsStudio() then
 		local forced = ServerScriptService:GetAttribute(Constants.DEV_MODE_ATTRIBUTE)
@@ -350,6 +354,48 @@ local function scheduleBotRespawn(id: number, lifeId: number)
 			spawnBot(id)
 		end
 	end)
+end
+
+-- Admin panel (Systems/AdminService) ----------------------------------------------------------------------
+-- Each returns (ok, message for the admin). They only move the round along its normal path: start the break's
+-- round early, end a round the way its time cap would, or move the clock.
+
+function RoundManager.adminStartNow(): (boolean, string)
+	if state.phase == "InRound" then
+		return false, "A round is already running"
+	elseif state.phase ~= "Intermission" then
+		return false, "The round just ended: the next one starts after the break"
+	end
+	state.endsAt = now()
+	return true, "Round starting now"
+end
+
+function RoundManager.adminEndNow(): (boolean, string)
+	local match = state.match
+	if state.phase ~= "InRound" or not match or match.ended then
+		return false, "No round is running"
+	end
+	local winner = if match:count() == 0 then match:endAsDraw("no_fighters") else (match:resolveTimeCap() or match:endAsDraw("admin"))
+	RoundManager.finish(winner)
+	return true, "Round ended"
+end
+
+function RoundManager.adminSetTimeLeft(seconds: number): (boolean, string)
+	if state.phase ~= "InRound" and state.phase ~= "Intermission" then
+		return false, "Wait for the next break"
+	end
+	state.endsAt = now() + seconds
+	state.warnedFor = nil
+	broadcast()
+	return true, string.format("%s now ends in %d s", if state.phase == "InRound" then "The round" else "The break", seconds)
+end
+
+function RoundManager.adminSetMode(mode: string?)
+	adminMode = mode
+end
+
+function RoundManager.adminMode(): string?
+	return adminMode
 end
 
 -- Training Grounds ------------------------------------------------------------------------------------------

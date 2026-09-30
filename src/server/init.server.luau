@@ -20,6 +20,7 @@ local ORDER = {
 	"ProfileService",
 	"RobuxService", -- after ProfileService: bundle receipts are saved through it
 	"TrainingService", -- Training Grounds: teleports everywhere; bots and the menu on training servers
+	"AdminService", -- admin panel; after every system it drives
 	"StressTestService", -- Studio only
 }
 
